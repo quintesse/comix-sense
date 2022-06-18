@@ -15,7 +15,8 @@ const config = {
             assets: "public"
         }),
         paths: {
-            base: dev ? "" : "/comix-sense",
+//            base: dev ? "" : "/comix-sense",
+            base: ""
         }
 	}
 };
