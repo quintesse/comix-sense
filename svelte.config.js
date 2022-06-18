@@ -12,8 +12,8 @@ const config = {
 	kit: {
         adapter: adapter(),
         paths: {
-//            base: dev ? "" : "/comix-sense",
-            base: ""
+            base: dev ? "" : "/comix-sense"
+            // base: ""
         }
 	}
 };
