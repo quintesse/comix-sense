@@ -10,10 +10,7 @@ const config = {
 	preprocess: preprocess(),
 
 	kit: {
-        adapter: adapter({
-            pages: "public",
-            assets: "public"
-        }),
+        adapter: adapter(),
         paths: {
 //            base: dev ? "" : "/comix-sense",
             base: ""
