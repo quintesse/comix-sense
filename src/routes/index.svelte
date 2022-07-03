@@ -13,6 +13,7 @@
 		//
 		Button
 	} from 'carbon-components-svelte';
+	import { base } from "$app/paths";
 	import ComicsTree from '$lib/ComicsTree.svelte';
 	import type { Comic } from '$lib/types/Comic';
 	import ComicPage from '$lib/ComicPage.svelte';
@@ -37,15 +38,15 @@
 		<SkipToContent />
 	</svelte:fragment>
 	<HeaderNav>
-		<HeaderNavItem href="/" text="Link 1" />
-		<HeaderNavItem href="/" text="Link 2" />
-		<HeaderNavItem href="/" text="Link 3" />
-		<HeaderNavMenu text="Menu">
-			<HeaderNavItem href="/" text="Link 1" />
-			<HeaderNavItem href="/" text="Link 2" />
-			<HeaderNavItem href="/" text="Link 3" />
+		<HeaderNavItem href="{base}/" text="Link 1" />
+		<HeaderNavItem href="{base}/" text="Link 2" />
+		<HeaderNavItem href="{base}/" text="Link 3" />
+		<HeaderNavMenu text="Menu" href="{base}#">
+			<HeaderNavItem href="{base}/" text="Link 1" />
+			<HeaderNavItem href="{base}/" text="Link 2" />
+			<HeaderNavItem href="{base}/" text="Link 3" />
 		</HeaderNavMenu>
-		<HeaderNavItem href="/" text="Link 4" />
+		<HeaderNavItem href="{base}/" text="Link 4" />
 	</HeaderNav>
 </Header>
 
