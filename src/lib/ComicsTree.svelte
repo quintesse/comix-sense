@@ -3,7 +3,7 @@
 	import { TreeView } from 'carbon-components-svelte';
 	import type { TreeNode, TreeNodeId } from 'carbon-components-svelte/types/TreeView/TreeView.svelte';
 	import type { Comic } from './types/Comic';
-import { baseNameExt } from './types/funcs';
+	import { baseNameExt } from './types/funcs';
 
 	const dispatch = createEventDispatcher();
 

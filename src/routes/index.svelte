@@ -1,13 +1,9 @@
 <script lang="ts">
 	import 'carbon-components-svelte/css/white.css';
 	import {
-		Header,
-		HeaderNav,
-		HeaderNavItem,
-		HeaderNavMenu,
+		Header, HeaderNav, HeaderNavItem, HeaderNavMenu,
 		SideNav,
-		SkipToContent,
-		Content,
+		SkipToContent, Content,
 		//
 		FileUploaderDropContainer,
 		//
@@ -33,7 +29,7 @@
 	}
 </script>
 
-<Header company="IBM" platformName="Carbon Svelte" bind:isSideNavOpen>
+<Header platformName="Comix Sense" bind:isSideNavOpen>
 	<svelte:fragment slot="skip-to-content">
 		<SkipToContent />
 	</svelte:fragment>
@@ -79,12 +75,15 @@
 	{/if}
 </SideNav>
 
-<Content style="padding: 0">
-	<Zoom>
-		<ComicPage comic={selectedComic}>
-			Select a comic from the left
-		</ComicPage>
-	</Zoom>
+<Content style="padding: 0" class="fullsize">
+	{#if selectedComic}
+		<Zoom level="width">
+			<ComicPage comic={selectedComic}>
+			</ComicPage>
+		</Zoom>
+	{:else}
+		Select a comic from the left
+	{/if}
 </Content>
 
 <style>

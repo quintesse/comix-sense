@@ -60,13 +60,17 @@ export class DirectoryComicStore implements ComicStore {
     }
 
     async getImageUrl(c: Comic): Promise<string> {
-        const imgHandle = await resolveFile(this.dir, c.path);
-        const imgFile = await imgHandle.getFile();
+        const imgFile = await resolveFile(this.dir, c.path).then(hdl => hdl.getFile());
         const url = URL.createObjectURL(imgFile);
         return url;
     }
 
     async getBubbles(c: Comic, language?: string): Promise<Bubble[]> {
-        throw new Error("Method not implemented.");
+        const lang = language ? language : c.languages[0];
+        const bblPath = baseNameExt(c.path)[0] + (lang !== "" ? "." + lang : "") + ".bbl";
+        const jsonText = await resolveFile(this.dir, bblPath).then(hdl => hdl.getFile()).then(file => file.text());
+        const json = JSON.parse(jsonText);
+        console.log("BBL", json);
+        return json.pages[0].bubbles;
     }
 }
