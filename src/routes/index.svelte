@@ -10,11 +10,12 @@
 		Button
 	} from 'carbon-components-svelte';
 	import { base } from "$app/paths";
-	import ComicsTree from '$lib/ComicsTree.svelte';
 	import type { Comic } from '$lib/types/Comic';
-	import ComicPage from '$lib/ComicPage.svelte';
-	import Zoom from '$lib/Zoom.svelte';
 	import { DirectoryComicStore, type ComicStore } from '$lib/types/ComicStore';
+	import ComicsTree from '$lib/ComicsTree.svelte';
+	import ComicPage from '$lib/ComicPage.svelte';
+	import ComicBubble from '$lib/ComicBubble.svelte';
+	import Zoom from '$lib/Zoom.svelte';
 
 	let isSideNavOpen = false;
 
@@ -60,9 +61,7 @@
 			<FileUploaderDropContainer
 				multiple
 				labelText="Drag and drop files here or click to upload"
-				validateFiles={(files) => {
-					return files.filter((file) => file.type.startsWith("image/"));
-				}}
+				validateFiles={(files) => files}
 				on:change={(e) => {
 					console.log('files', e.detail);
 				}}
@@ -77,10 +76,17 @@
 
 <Content style="padding: 0" class="fullsize">
 	{#if selectedComic}
+		{#await selectedComic.getImageUrl() then imgurl}
+		{#await selectedComic.getBubbles() then bubbles}
 		<Zoom level="width">
-			<ComicPage comic={selectedComic}>
+			<ComicPage img={imgurl} let:shapeonly>
+				{#each bubbles as bubble}
+    	            <ComicBubble {...bubble} {shapeonly} />
+	            {/each}
 			</ComicPage>
 		</Zoom>
+		{/await}
+		{/await}
 	{:else}
 		Select a comic from the left
 	{/if}
