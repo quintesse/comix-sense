@@ -21,11 +21,10 @@
 
 	let selectedComic: Comic|null = null;
 
-	let comicsp: ComicStore|null = null; //new DummyComicStore();
+	let comicsp: ComicStore|null = null;
 
 	async function selectDirectory() {
 		let comicsFolder = await window.showDirectoryPicker();
-		//comicsp = new DummyComicStore();
 		comicsp = new DirectoryComicStore(comicsFolder);
 	}
 </script>
@@ -79,9 +78,9 @@
 		{#await selectedComic.getImageUrl() then imgurl}
 		{#await selectedComic.getBubbles() then bubbles}
 		<Zoom level="width">
-			<ComicPage img={imgurl} let:shapeonly>
+			<ComicPage img={imgurl}>
 				{#each bubbles as bubble}
-    	            <ComicBubble {...bubble} {shapeonly} />
+    	            <ComicBubble {...bubble} />
 	            {/each}
 			</ComicPage>
 		</Zoom>

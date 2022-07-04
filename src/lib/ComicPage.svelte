@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { setContext } from "svelte";
+import Context from "./Context.svelte";
     import Resource from "./Resource.svelte";
 
     export let img: string;
@@ -13,6 +15,8 @@
         svg.setAttribute('width', w + 'px');
         svg.setAttribute('height', h + 'px');
     }
+
+    setContext("bubble-shape-only", false);
 </script>
 
     <svg bind:this={svg}>
@@ -21,7 +25,9 @@
                 <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>
             </filter>
             <clipPath id="svgclip">
-                <slot shapeonly={true} />
+                <Context key="bubble-shape-only" value={true}>
+                    <slot />
+                </Context>
             </clipPath>
         </defs>
         <image x="0%" y="0%" id="img" href={img} on:load={resizeSvg}></image>

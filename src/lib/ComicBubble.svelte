@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { bounds, type BblShape, type Vertex } from "./types/Comic";
     import type { StrStrMap } from "./types/funcs";
 
@@ -8,7 +9,6 @@
     export let lang: string | undefined = undefined;
     export let style: StrStrMap = {};
     export let shape: BblShape;
-    export let shapeonly: boolean = false;
     $: shapeStyle = defaultStyle + styleString(style);
     $: bb = bounds(shape.vs);
 
@@ -19,23 +19,27 @@
     function points(vs: Vertex[]): string {
         return vs.map(v => v.x + "," + v.y).join(" ");
     }
+
+    function shapeOnly(): boolean {
+        return getContext("bubble-shape-only");
+    }
 </script>
 
 {#if shape.type === "box"}
     <rect x={bb.x1} y={bb.y1} width={bb.w} height={bb.h} style={shapeStyle}>
-        {#if text && !shapeonly}
+        {#if text && !shapeOnly()}
             <title>{text}</title>
         {/if}
     </rect>
 {:else if shape.type === "poly"}
     <polygon points={points(shape.vs)} style={shapeStyle}>
-        {#if text && !shapeonly}
+        {#if text && !shapeOnly()}
             <title>{text}</title>
         {/if}
     </polygon>
 {/if}
 
-{#if text && !shapeonly}
+{#if text && !shapeOnly()}
     <foreignObject x={bb.x1} y={bb.y1} width={bb.w} height={bb.h} style="overflow: visible;">
         <div class="bubbletext">{text}</div>
     </foreignObject>
