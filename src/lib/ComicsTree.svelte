@@ -9,10 +9,8 @@
 
 	export let comics: Comic[] = [];
 	export let selectedComic: Comic|null = null;
-	$: selectedComic, activeId = selectedComic ? selectedComic.path : "";
+	$: activeId = selectedComic ? selectedComic.path : "";
 
-	let activeId: TreeNodeId = "";
-	
 	type TreeChild = TreeNode & { children?: TreeChild[] };
 
 	function comicsChildren(cs: Comic[], idx: number[] = [0], prefix: string = ""): TreeChild[] {
@@ -42,12 +40,10 @@
 	function forwardSelect(event) {
 		if (!event.detail.id.endsWith("/")) {
 			let comic = comics.filter(c => c.path === event.detail.id);
-			if (comic.length == 1) {
+			if (comic.length == 1 && selectedComic !== comic[0]) {
 				selectedComic = comic[0];
 				console.log("COMIC:", selectedComic);
 				dispatch('select', comic);
-			} else {
-				selectedComic = null;
 			}
 		}
 	}

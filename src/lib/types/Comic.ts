@@ -19,6 +19,9 @@ export class Comic {
     }
 
     getBubbles(language?: string): Promise<Bubble[]> {
+        if (language === "org") {
+            return Promise.resolve([]);
+        }
         const lang = language ? language : this.languages[0];
         if  (lang in this.langBubbles) {
             return Promise.resolve(this.langBubbles[lang]);

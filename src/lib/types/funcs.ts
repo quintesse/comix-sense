@@ -18,6 +18,15 @@ export function baseNameExt(name: string): [string, string] {
     }
 }
 
+export function dirFileName(name: string) {
+    const p = name.lastIndexOf("/");
+    if (p > 0) {
+        return [name.substring(0, p), name.substring(p + 1)];
+    } else {
+        return ["", name];
+    }
+}
+
 /**
  * Takes a base directory handle and a path to a file and returns
  * a handle to the file.
@@ -27,5 +36,9 @@ export async function resolveFile(dir: FileSystemDirectoryHandle, path: string):
     for (let i = 0; i < parts.length - 1; i++) {
         dir = await dir.getDirectoryHandle(parts[i]);
     }
-    return await dir.getFileHandle(parts[parts.length - 1]);
+    return dir.getFileHandle(parts[parts.length - 1]);
+}
+
+export function dedup(arr: any[]) {
+    return [...new Set(arr)];
 }

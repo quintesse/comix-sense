@@ -68,9 +68,14 @@ export class DirectoryComicStore implements ComicStore {
     async getBubbles(c: Comic, language?: string): Promise<Bubble[]> {
         const lang = language ? language : c.languages[0];
         const bblPath = baseNameExt(c.path)[0] + (lang !== "" ? "." + lang : "") + ".bbl";
-        const jsonText = await resolveFile(this.dir, bblPath).then(hdl => hdl.getFile()).then(file => file.text());
-        const json = JSON.parse(jsonText);
-        console.log("BBL", json);
-        return json.pages[0].bubbles;
+        try {
+            const jsonText = await resolveFile(this.dir, bblPath).then(hdl => hdl.getFile()).then(file => file.text());
+            const json = JSON.parse(jsonText);
+            console.log("BBL", json);
+            return json.pages[0].bubbles;
+        } catch (e) {
+            console.error("BBL not found or could not be read:", language);
+            return [];
+        }
     }
 }

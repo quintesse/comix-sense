@@ -1,10 +1,8 @@
 <script lang="ts">
     import { setContext } from "svelte";
-import Context from "./Context.svelte";
-    import Resource from "./Resource.svelte";
+    import Context from "./Context.svelte";
 
     export let img: string;
-    let shapeonly: boolean;
 
     let svg: SVGGraphicsElement;
 
@@ -36,8 +34,6 @@ import Context from "./Context.svelte";
             <slot />
         </g>
     </svg>
-    <!-- this tracks the imgurl and revokes it when it's no longer needed -->
-    <Resource url={img} />
 
 <style>
     #imgblurred {

@@ -2,30 +2,42 @@
 	import 'carbon-components-svelte/css/white.css';
 	import {
 		Header, HeaderNav, HeaderNavItem, HeaderNavMenu,
+		HeaderUtilities, HeaderAction,
 		SideNav,
 		SkipToContent, Content,
 		//
 		FileUploaderDropContainer,
 		//
-		Button
+		Button,
+		TileGroup,
+		RadioTile
 	} from 'carbon-components-svelte';
 	import { base } from "$app/paths";
+	import { writable } from 'svelte/store';
+	import { collectionStore } from '$lib/stores/CollectionStore';
 	import type { Comic } from '$lib/types/Comic';
 	import { DirectoryComicStore, type ComicStore } from '$lib/types/ComicStore';
 	import ComicsTree from '$lib/ComicsTree.svelte';
 	import ComicPage from '$lib/ComicPage.svelte';
 	import ComicBubble from '$lib/ComicBubble.svelte';
 	import Zoom from '$lib/Zoom.svelte';
+	import Resource from '$lib/Resource.svelte';
+	import { dedup } from '$lib/types/funcs';
 
 	let isSideNavOpen = false;
 
-	let selectedComic: Comic|null = null;
+	let store: ComicStore|null = null;
+	let comics = writable<Comic[]>([]);
+	let selectedComic = writable<Comic|null>(null);
+	let collection = collectionStore(comics, selectedComic);
+	$: languages = dedup($collection.flatMap(c => c.languages));
 
-	let comicsp: ComicStore|null = null;
+	let selectedLanguage: string = "org";
 
 	async function selectDirectory() {
 		let comicsFolder = await window.showDirectoryPicker();
-		comicsp = new DirectoryComicStore(comicsFolder);
+		store = new DirectoryComicStore(comicsFolder);
+		comics.set(await store.list());
 	}
 </script>
 
@@ -37,35 +49,33 @@
 		<HeaderNavItem href="{base}/" text="Link 1" />
 		<HeaderNavItem href="{base}/" text="Link 2" />
 		<HeaderNavItem href="{base}/" text="Link 3" />
-		<HeaderNavMenu text="Menu" href="{base}#">
-			<HeaderNavItem href="{base}/" text="Link 1" />
-			<HeaderNavItem href="{base}/" text="Link 2" />
-			<HeaderNavItem href="{base}/" text="Link 3" />
+		<HeaderNavMenu text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
+			<TileGroup bind:selected={selectedLanguage}>
+				<RadioTile value="org">ORG</RadioTile>
+				{#each languages as lang}
+					<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
+				{/each}
+			</TileGroup>
 		</HeaderNavMenu>
-		<HeaderNavItem href="{base}/" text="Link 4" />
 	</HeaderNav>
 </Header>
 
 <SideNav bind:isOpen={isSideNavOpen}>
-	{#if comicsp}
-		{#await comicsp.list()}
-			Loading...
-		{:then comics}
-			<div class="tree">
-				<ComicsTree
-					{comics}
-					bind:selectedComic
-				/>
-			</div>
-			<FileUploaderDropContainer
-				multiple
-				labelText="Drag and drop files here or click to upload"
-				validateFiles={(files) => files}
-				on:change={(e) => {
-					console.log('files', e.detail);
-				}}
+	{#if store}
+		<div class="tree">
+			<ComicsTree
+				comics={$comics}
+				bind:selectedComic={$selectedComic}
 			/>
-		{/await}
+		</div>
+		<FileUploaderDropContainer
+			multiple
+			labelText="Drag and drop files here or click to upload"
+			validateFiles={(files) => files}
+			on:change={(e) => {
+				console.log('files', e.detail);
+			}}
+		/>
 	{:else}
 		<div>
 			<Button on:click={selectDirectory}>Select directory...</Button>
@@ -74,9 +84,9 @@
 </SideNav>
 
 <Content style="padding: 0" class="fullsize">
-	{#if selectedComic}
-		{#await selectedComic.getImageUrl() then imgurl}
-		{#await selectedComic.getBubbles() then bubbles}
+	{#if $selectedComic}
+		{#await $selectedComic.getImageUrl() then imgurl}
+		{#await $selectedComic.getBubbles(selectedLanguage) then bubbles}
 		<Zoom level="width">
 			<ComicPage img={imgurl}>
 				{#each bubbles as bubble}
@@ -85,6 +95,8 @@
 			</ComicPage>
 		</Zoom>
 		{/await}
+		<!-- this tracks the imgurl and revokes it when it's no longer needed -->
+		<Resource url={imgurl} />
 		{/await}
 	{:else}
 		Select a comic from the left
