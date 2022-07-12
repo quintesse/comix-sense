@@ -13,13 +13,14 @@
     $: shapeStyle = defaultStyle + styleString(style);
     $: bb = bounds(shape.vs);
     export let editable: boolean = false;
+    export let renderMode: string = "normal";
 
     function styleString(style: StrStrMap): string {
         return Object.entries(style).map(e => e[0] + ":" + e[1] + ";").join("");
     }
 
     function shapeOnly(): boolean {
-        return getContext("bubble-shape-only");
+        return renderMode === "clippath";
     }
 </script>
 

@@ -1,7 +1,4 @@
 <script lang="ts">
-    import { setContext } from "svelte";
-    import Context from "./Context.svelte";
-
     export let img: string;
 
     let svg: SVGGraphicsElement;
@@ -13,8 +10,6 @@
         svg.setAttribute('width', w + 'px');
         svg.setAttribute('height', h + 'px');
     }
-
-    setContext("bubble-shape-only", false);
 </script>
 
 <svg bind:this={svg}>
@@ -23,15 +18,13 @@
             <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>
         </filter>
         <clipPath id="svgclip">
-            <Context key="bubble-shape-only" value={true}>
-                <slot />
-            </Context>
+            <slot renderMode="clippath" />
         </clipPath>
     </defs>
     <image x="0%" y="0%" id="img" href={img} on:load={resizeSvg}></image>
     <image x="0%" y="0%" id="imgblurred" href={img} filter="url(#blurry)"></image>
     <g id="svgcontent">
-        <slot />
+        <slot renderMode="normal" />
     </g>
 </svg>
 
