@@ -2,7 +2,6 @@
 	import 'carbon-components-svelte/css/white.css';
 	import {
 		Header, HeaderNav, HeaderNavItem, HeaderNavMenu,
-		HeaderUtilities, HeaderAction,
 		SideNav,
 		SkipToContent, Content,
 		//
@@ -33,6 +32,7 @@
 	$: languages = dedup($collection.flatMap(c => c.languages));
 
 	let selectedLanguage: string = "org";
+	let selectedShape: string = "box";
 
 	async function selectDirectory() {
 		let comicsFolder = await window.showDirectoryPicker();
@@ -48,13 +48,18 @@
 	<HeaderNav>
 		<HeaderNavItem href="{base}/" text="Link 1" />
 		<HeaderNavItem href="{base}/" text="Link 2" />
-		<HeaderNavItem href="{base}/" text="Link 3" />
 		<HeaderNavMenu text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
 			<TileGroup bind:selected={selectedLanguage}>
 				<RadioTile value="org">ORG</RadioTile>
 				{#each languages as lang}
 					<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
 				{/each}
+			</TileGroup>
+		</HeaderNavMenu>
+		<HeaderNavMenu text={selectedShape.toUpperCase()}>
+			<TileGroup bind:selected={selectedShape}>
+				<RadioTile value="box">Box</RadioTile>
+				<RadioTile value="poly">Poly</RadioTile>
 			</TileGroup>
 		</HeaderNavMenu>
 	</HeaderNav>

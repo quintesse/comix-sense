@@ -47,6 +47,14 @@ export type Vertex = {
     y: number;
 };
 
+export function vertex(x: number, y: number): Vertex {
+    return { x: x, y: y };
+}
+
+export function points(vs: Vertex[]): string {
+    return vs.map(v => v.x + "," + v.y).join(" ");
+}
+
 export type Bounds = {
     x1: number;
     y1: number;

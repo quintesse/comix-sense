@@ -17,23 +17,23 @@
     setContext("bubble-shape-only", false);
 </script>
 
-    <svg bind:this={svg}>
-        <defs>
-            <filter id="blurry" x="0%" y="0%" height="100%" width="100%">
-                <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>
-            </filter>
-            <clipPath id="svgclip">
-                <Context key="bubble-shape-only" value={true}>
-                    <slot />
-                </Context>
-            </clipPath>
-        </defs>
-        <image x="0%" y="0%" id="img" href={img} on:load={resizeSvg}></image>
-        <image x="0%" y="0%" id="imgblurred" href={img} filter="url(#blurry)"></image>
-        <g id="svgcontent">
-            <slot />
-        </g>
-    </svg>
+<svg bind:this={svg}>
+    <defs>
+        <filter id="blurry" x="0%" y="0%" height="100%" width="100%">
+            <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>
+        </filter>
+        <clipPath id="svgclip">
+            <Context key="bubble-shape-only" value={true}>
+                <slot />
+            </Context>
+        </clipPath>
+    </defs>
+    <image x="0%" y="0%" id="img" href={img} on:load={resizeSvg}></image>
+    <image x="0%" y="0%" id="imgblurred" href={img} filter="url(#blurry)"></image>
+    <g id="svgcontent">
+        <slot />
+    </g>
+</svg>
 
 <style>
     #imgblurred {
