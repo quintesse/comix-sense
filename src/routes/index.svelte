@@ -33,6 +33,8 @@
 
 	let selectedLanguage: string = "org";
 	let selectedShape: string = "box";
+	let selectedEdit: string = "no";
+	$: editable = selectedEdit === "yes";
 
 	async function selectDirectory() {
 		let comicsFolder = await window.showDirectoryPicker();
@@ -56,12 +58,20 @@
 				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
+		<HeaderNavMenu text={"EDIT: " + selectedEdit.toUpperCase()}>
+			<TileGroup bind:selected={selectedEdit}>
+				<RadioTile value="yes">Yes</RadioTile>
+				<RadioTile value="no">No</RadioTile>
+			</TileGroup>
+		</HeaderNavMenu>
+		{#if editable}
 		<HeaderNavMenu text={selectedShape.toUpperCase()}>
 			<TileGroup bind:selected={selectedShape}>
 				<RadioTile value="box">Box</RadioTile>
 				<RadioTile value="poly">Poly</RadioTile>
 			</TileGroup>
 		</HeaderNavMenu>
+		{/if}
 	</HeaderNav>
 </Header>
 
@@ -93,9 +103,9 @@
 		{#await $selectedComic.getImageUrl() then imgurl}
 		{#await $selectedComic.getBubbles(selectedLanguage) then bubbles}
 		<Zoom level="width">
-			<ComicPage img={imgurl}>
+			<ComicPage img={imgurl} let:renderMode>
 				{#each bubbles as bubble}
-    	            <ComicBubble {...bubble} />
+    	            <ComicBubble {...bubble} {renderMode} {editable} />
 	            {/each}
 			</ComicPage>
 		</Zoom>
