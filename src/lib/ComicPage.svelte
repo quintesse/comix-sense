@@ -1,5 +1,10 @@
 <script lang="ts">
+    import ShapeEditor from "./ShapeEditor.svelte";
+    import { BblShapeType, type BblShape } from "./types/Comic";
+
     export let img: string;
+    export let editable: boolean = false;
+	export let selectedShape: BblShapeType = BblShapeType.box;
 
     let svg: SVGGraphicsElement;
 
@@ -21,15 +26,18 @@
             <slot renderMode="clippath" />
         </clipPath>
     </defs>
-    <image x="0%" y="0%" id="img" href={img} on:load={resizeSvg}></image>
-    <image x="0%" y="0%" id="imgblurred" href={img} filter="url(#blurry)"></image>
+    <image x="0%" y="0%" href={img} on:load={resizeSvg}></image>
+    <image x="0%" y="0%" href={img} filter="url(#blurry)" style="clip-path: url(#svgclip)"></image>
     <g id="svgcontent">
         <slot renderMode="normal" />
     </g>
+    {#if editable}
+        <ShapeEditor {svg} shape={selectedShape} on:shape />
+    {/if}
 </svg>
 
 <style>
-    #imgblurred {
-        clip-path: url(#svgclip)
-    }    
+    svg {
+        user-select: none;
+    }
 </style>

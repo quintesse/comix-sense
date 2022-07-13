@@ -14,7 +14,7 @@
 	import { base } from "$app/paths";
 	import { writable } from 'svelte/store';
 	import { collectionStore } from '$lib/stores/CollectionStore';
-	import type { Comic } from '$lib/types/Comic';
+	import { BblShapeType, type BblShape, type Bubble, type Comic } from '$lib/types/Comic';
 	import { DirectoryComicStore, type ComicStore } from '$lib/types/ComicStore';
 	import ComicsTree from '$lib/ComicsTree.svelte';
 	import ComicPage from '$lib/ComicPage.svelte';
@@ -25,21 +25,47 @@
 
 	let isSideNavOpen = false;
 
+	let selectedZoom: string = "width";
+	let selectedLanguage: string = "org";
+	let selectedShape: BblShapeType = BblShapeType.box;
+	let selectedEdit: string = "no";
+	$: editable = selectedEdit === "yes";
+
 	let store: ComicStore|null = null;
 	let comics = writable<Comic[]>([]);
 	let selectedComic = writable<Comic|null>(null);
 	let collection = collectionStore(comics, selectedComic);
 	$: languages = dedup($collection.flatMap(c => c.languages));
+	let bubbles = writable<Bubble[]>([]);
 
-	let selectedLanguage: string = "org";
-	let selectedShape: string = "box";
-	let selectedEdit: string = "no";
-	$: editable = selectedEdit === "yes";
+	selectedComic.subscribe(c => {
+		if (c) {
+			c.getBubbles(selectedLanguage)
+				.then(bs => bubbles.set(bs))
+				.catch(err => {
+					console.error(err);
+					bubbles.set([]);
+				});
+		} else {
+			bubbles.set([]);
+		}
+	});
+
+	$: selectedLanguage, update();
+	function update() {
+		selectedComic.set($selectedComic);
+	}
 
 	async function selectDirectory() {
 		let comicsFolder = await window.showDirectoryPicker();
 		store = new DirectoryComicStore(comicsFolder);
 		comics.set(await store.list());
+	}
+
+    function handleNewBubble(evt: CustomEvent<BblShape>) {
+		console.log("NEW BUBBLE", evt);
+		$bubbles.push({ text: "", shape: evt.detail } as Bubble);
+		bubbles.set($bubbles);
 	}
 </script>
 
@@ -50,6 +76,16 @@
 	<HeaderNav>
 		<HeaderNavItem href="{base}/" text="Link 1" />
 		<HeaderNavItem href="{base}/" text="Link 2" />
+		<HeaderNavMenu text={selectedZoom.toUpperCase()}>
+			<TileGroup bind:selected={selectedZoom}>
+				<RadioTile value="fit">Fit</RadioTile>
+				<RadioTile value="width">Width</RadioTile>
+				<RadioTile value="100%">100%</RadioTile>
+				<RadioTile value="75%">75%</RadioTile>
+				<RadioTile value="50%">50%</RadioTile>
+				<RadioTile value="25%">25%</RadioTile>
+			</TileGroup>
+		</HeaderNavMenu>
 		<HeaderNavMenu text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
 			<TileGroup bind:selected={selectedLanguage}>
 				<RadioTile value="org">ORG</RadioTile>
@@ -80,7 +116,7 @@
 		<div class="tree">
 			<ComicsTree
 				comics={$comics}
-				bind:selectedComic={$selectedComic}
+				on:select={e => selectedComic.set(e.detail)}
 			/>
 		</div>
 		<FileUploaderDropContainer
@@ -101,15 +137,13 @@
 <Content style="padding: 0" class="fullsize">
 	{#if $selectedComic}
 		{#await $selectedComic.getImageUrl() then imgurl}
-		{#await $selectedComic.getBubbles(selectedLanguage) then bubbles}
-		<Zoom level="width">
-			<ComicPage img={imgurl} let:renderMode>
-				{#each bubbles as bubble}
-    	            <ComicBubble {...bubble} {renderMode} {editable} />
+		<Zoom level={selectedZoom}>
+			<ComicPage img={imgurl} {editable} {selectedShape} let:renderMode on:shape={handleNewBubble}>
+				{#each $bubbles as bubble}
+    	            <ComicBubble {bubble} {renderMode} {editable} />
 	            {/each}
 			</ComicPage>
 		</Zoom>
-		{/await}
 		<!-- this tracks the imgurl and revokes it when it's no longer needed -->
 		<Resource url={imgurl} />
 		{/await}

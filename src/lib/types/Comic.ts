@@ -30,6 +30,7 @@ export class Comic {
         }
     }
 };
+
 export type Bubble = {
     text: string;
     lang?: string;
@@ -37,8 +38,12 @@ export type Bubble = {
     shape: BblShape;
 }
 
+export enum BblShapeType {
+    box = "box", poly = "poly"
+}
+
 export type BblShape = {
-    type: string;
+    type: BblShapeType;
     vs: Vertex[];
 }
 
@@ -76,6 +81,18 @@ export function bounds(vs: Vertex[]): Bounds {
         maxY = Math.max(maxY, v.y);
     }
     return { x1: minX, y1: minY, x2: maxX, y2: maxY, w: maxX - minX, h: maxY - minY };
+}
+
+export function boundsv(bs: Vertex[]|Bounds): Vertex[] {
+    if (Array.isArray(bs)) {
+        return boundsv(bounds(bs));
+    } else {
+        return [vertex(bs.x1, bs.y1), vertex(bs.x2, bs.y2)];
+    }
+}
+
+export function distance(v1: Vertex, v2: Vertex) {
+    return Math.sqrt(Math.pow(v1.x - v2.x, 2) + Math.pow(v1.y - v2.y, 2));
 }
 
 export abstract class Shape {

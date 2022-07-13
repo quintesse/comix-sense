@@ -25,7 +25,7 @@ export function draggable(node: Element) {
                 originalEvent: mevt
             }
         });
-        console.log("dragstart", e);
+        //console.log("dragstart", e);
         document.addEventListener("mouseup", onMouseUp, true);
         document.addEventListener("mousemove", onMouseMove, true);
         node.dispatchEvent(e);
@@ -42,7 +42,7 @@ export function draggable(node: Element) {
                     originalEvent: event
                 }
             });
-            console.log("drag", e);
+            //console.log("drag", e);
             node.dispatchEvent(e);
         }
 	};
@@ -58,7 +58,7 @@ export function draggable(node: Element) {
                 originalEvent: event
             }
         });
-        console.log("dragend", e);
+        //console.log("dragend", e);
         node.dispatchEvent(e);
         document.removeEventListener("mousemove", onMouseMove, true);
         document.removeEventListener("mouseup", onMouseUp, true);

@@ -74,8 +74,7 @@ export class DirectoryComicStore implements ComicStore {
             console.log("BBL", json);
             return json.pages[0].bubbles;
         } catch (e) {
-            console.error("BBL not found or could not be read:", language);
-            return [];
+            throw "BBL not found or could not be read: " + language;
         }
     }
 }

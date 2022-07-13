@@ -7,6 +7,7 @@
     export let shape: BblShape;
     export let index: number;
     $: pos = shape.vs[index];
+    export let style: string|undefined;
 
     function updateShape(e: Event) {
         const ce: CustomEvent = e as CustomEvent;
@@ -16,4 +17,12 @@
     }
 </script>
 
-<circle cx={pos.x} cy={pos.y} r=6 style={dragHandleStyle} use:draggable on:drag={updateShape} />
+<circle cx={pos.x} cy={pos.y} r=6 {style} use:draggable on:drag={updateShape} />
+
+<style>
+    circle {
+        cursor: nw-resize;
+        opacity: 0.2;
+        user-select: none;
+    }
+</style>

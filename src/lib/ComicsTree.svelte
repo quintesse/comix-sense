@@ -43,7 +43,7 @@
 			if (comic.length == 1 && selectedComic !== comic[0]) {
 				selectedComic = comic[0];
 				console.log("COMIC:", selectedComic);
-				dispatch('select', comic);
+				dispatch('select', selectedComic);
 			}
 		}
 	}
