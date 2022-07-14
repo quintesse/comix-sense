@@ -95,6 +95,18 @@ export function distance(v1: Vertex, v2: Vertex) {
     return Math.sqrt(Math.pow(v1.x - v2.x, 2) + Math.pow(v1.y - v2.y, 2));
 }
 
+export function samev(v1: Vertex, v2: Vertex) {
+    return v1.x === v2.x && v1.y === v2.y;
+}
+
+export function samevs(vs1: Vertex[], vs2: Vertex[]) {
+    return vs1.length === vs2.length && zip(vs1, vs2).every(([v1, v2]) => samev(v1, v2));
+}
+
+export function zip(...arr: any[]) {
+    return Array(Math.max(...arr.map(a => a.length))).fill(undefined).map((_,i) => arr.map(a => a[i]));
+}
+
 export abstract class Shape {
     abstract readonly type: string;
     abstract vertices(): Vertex[];

@@ -9,12 +9,17 @@
 		//
 		Button,
 		TileGroup,
-		RadioTile
+		RadioTile,
+		//
+		ContextMenu,
+		ContextMenuDivider,
+		ContextMenuOption,
+ContextMenuRadioGroup,
 	} from 'carbon-components-svelte';
-	import { base } from "$app/paths";
+  	import { base } from "$app/paths";
 	import { writable } from 'svelte/store';
 	import { collectionStore } from '$lib/stores/CollectionStore';
-	import { BblShapeType, type BblShape, type Bubble, type Comic } from '$lib/types/Comic';
+	import { BblShapeType, boundsv, samevs, Shape, vertex, type BblShape, type Bubble, type Comic, type Vertex } from '$lib/types/Comic';
 	import { DirectoryComicStore, type ComicStore } from '$lib/types/ComicStore';
 	import ComicsTree from '$lib/ComicsTree.svelte';
 	import ComicPage from '$lib/ComicPage.svelte';
@@ -63,10 +68,93 @@
 	}
 
     function handleNewBubble(evt: CustomEvent<BblShape>) {
-		console.log("NEW BUBBLE", evt);
 		$bubbles.push({ text: "", shape: evt.detail } as Bubble);
-		bubbles.set($bubbles);
+		bubbles.set($bubbles); // force update
 	}
+
+	let menuTargetBubble: Bubble|undefined;
+
+	function setupMenu(evt: CustomEvent<Element>) {
+		const target = evt.detail;
+		const isBubble = (evt.detail.tagName.toLowerCase() === "div") && editable;
+		if (isBubble) {
+			menuTargetBubble = findBubble(target);
+		} else {
+			menuTargetBubble = undefined;
+		}
+	}
+
+	function findBubble(elem: Element): Bubble|undefined {
+		const fo: SVGForeignObjectElement|null = elem.closest("foreignobject");
+		if (fo) {
+			const elem = fo.previousElementSibling;
+			if (elem?.tagName.toLowerCase() === "rect" || elem?.tagName.toLowerCase() === "polygon") {
+				let vs: Vertex[];
+				if (elem?.tagName.toLowerCase() === "rect") {
+					const rect = elem as SVGRectElement;
+					const v1 = vertex(rect.x.baseVal.value, rect.y.baseVal.value);
+					const v2 = vertex(v1.x + rect.width.baseVal.value, v1.y + rect.height.baseVal.value);
+					vs = [v1, v2];
+				} else {
+					const poly = elem as SVGPolygonElement;
+					vs = [];
+					for (let i = 0; i < poly.points.length; i++) {
+						const p = poly.points[i];
+						vs.push(vertex(p.x, p.y));
+					}
+				}
+				const bbl = $bubbles.find(b => samevs(b.shape.vs, vs));
+				return bbl;
+			}
+		}
+		return undefined;
+	}
+
+	function handleBubbleDelete() {
+		if (menuTargetBubble) {
+			const bbls = $bubbles;
+			const idx = bbls.indexOf(menuTargetBubble);
+			if (idx >= 0) {
+				bbls.splice(idx, 1);
+				bubbles.set(bbls); // force update
+			}
+		}
+	}
+
+	function handleConvertToBox() {
+		if (menuTargetBubble && menuTargetBubble.shape.type === BblShapeType.poly) {
+			const shp = menuTargetBubble.shape;
+			shp.type = BblShapeType.box;
+			shp.vs = boundsv(shp.vs);
+			bubbles.set($bubbles); // force update
+		}
+	}
+
+	function handleConvertToPoly() {
+		if (menuTargetBubble && menuTargetBubble.shape.type === BblShapeType.box) {
+			const shp = menuTargetBubble.shape;
+			shp.type = BblShapeType.poly;
+			const v1 = vertex(shp.vs[0].x, shp.vs[0].y);
+			const v2 = vertex(shp.vs[1].x, shp.vs[0].y);
+			const v3 = vertex(shp.vs[1].x, shp.vs[1].y);
+			const v4 = vertex(shp.vs[0].x, shp.vs[1].y);
+			shp.vs = [v1, v2, v3, v4];
+			bubbles.set($bubbles); // force update
+		}
+	}
+	
+	const zoomLevels = [
+		{ id: "fit", label: "Fit" },
+		{ id: "width", label: "Width" },
+		{ id: "200%", label: "200%" },
+		{ id: "175%", label: "175%" },
+		{ id: "150%", label: "150%" },
+		{ id: "125%", label: "125%" },
+		{ id: "100%", label: "100%" },
+		{ id: "75%", label: "75%" },
+		{ id: "50%", label: "50%" },
+		{ id: "25%", label: "25%" }
+	];
 </script>
 
 <Header platformName="Comix Sense" bind:isSideNavOpen>
@@ -78,12 +166,9 @@
 		<HeaderNavItem href="{base}/" text="Link 2" />
 		<HeaderNavMenu text={selectedZoom.toUpperCase()}>
 			<TileGroup bind:selected={selectedZoom}>
-				<RadioTile value="fit">Fit</RadioTile>
-				<RadioTile value="width">Width</RadioTile>
-				<RadioTile value="100%">100%</RadioTile>
-				<RadioTile value="75%">75%</RadioTile>
-				<RadioTile value="50%">50%</RadioTile>
-				<RadioTile value="25%">25%</RadioTile>
+				{#each zoomLevels as {id, label}}
+					<RadioTile value={id}>{label}</RadioTile>
+				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
 		<HeaderNavMenu text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
@@ -139,7 +224,7 @@
 		{#await $selectedComic.getImageUrl() then imgurl}
 		<Zoom level={selectedZoom}>
 			<ComicPage img={imgurl} {editable} {selectedShape} let:renderMode on:shape={handleNewBubble}>
-				{#each $bubbles as bubble}
+				{#each $bubbles as bubble (bubble)}
     	            <ComicBubble {bubble} {renderMode} {editable} />
 	            {/each}
 			</ComicPage>
@@ -150,6 +235,40 @@
 	{:else}
 		Select a comic from the left
 	{/if}
+
+	<ContextMenu on:open={setupMenu}>
+		{#if menuTargetBubble}
+			{#if menuTargetBubble.shape.type === BblShapeType.poly}
+			<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
+			{:else if menuTargetBubble.shape.type === BblShapeType.box}
+			<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
+			{/if}
+			<ContextMenuOption labelText="Scan Text" />
+			<ContextMenuDivider />
+			<ContextMenuOption kind="danger" labelText="Delete" on:click={handleBubbleDelete} />
+		{:else}
+			{#if editable}
+				<ContextMenuOption labelText="Scan Page" />
+				<ContextMenuOption labelText="Scan Bubbles" />
+				<ContextMenuDivider />
+			{/if}
+			<ContextMenuOption labelText="Language">
+				<ContextMenuRadioGroup bind:selectedId={selectedLanguage}>
+					<ContextMenuOption id="org" labelText="ORG" />
+					{#each languages as lang}
+						<ContextMenuOption id={lang} labelText={lang.toUpperCase()} />
+					{/each}
+				</ContextMenuRadioGroup>
+			</ContextMenuOption>
+			<ContextMenuOption labelText="Zoom">
+				<ContextMenuRadioGroup bind:selectedId={selectedZoom}>
+					{#each zoomLevels as {id, label}}
+						<ContextMenuOption {id} labelText={label} />
+					{/each}
+				</ContextMenuRadioGroup>
+			</ContextMenuOption>
+		{/if}
+	</ContextMenu>
 </Content>
 
 <style>

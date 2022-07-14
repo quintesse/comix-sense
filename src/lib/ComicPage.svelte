@@ -17,7 +17,7 @@
     }
 </script>
 
-<svg bind:this={svg}>
+<svg bind:this={svg} tabindex="-1">
     <defs>
         <filter id="blurry" x="0%" y="0%" height="100%" width="100%">
             <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>

@@ -7,10 +7,12 @@
     export let svg: SVGGraphicsElement;
     $: if (svg) {
         svg.addEventListener("click", handleClick);
+        svg.addEventListener("blur", () => lostFocus = true);
     };
 
     const dispatch = createEventDispatcher();
 
+    let lostFocus: boolean = false;
     let isFirstClick: boolean = true;
     let vs: Vertex[] = [vertex(0, 0), vertex(0, 0)];
     $: shapevs = shapeVertices(vs);
@@ -19,7 +21,9 @@
 
     function handleClick(evt: MouseEvent) {
         if (isFirstClick) {
-            if (evt.target?.tagName === "image") {
+            if (lostFocus) {
+                lostFocus = false;
+            } else if (evt.target?.tagName.toLowerCase() === "image") {
                 svg.addEventListener("mousemove", handleMove);
                 document.addEventListener("keydown", handleKeyDown);
                 vs = [];
