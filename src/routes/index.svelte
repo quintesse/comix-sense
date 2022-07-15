@@ -162,16 +162,16 @@ ContextMenuRadioGroup,
 		<SkipToContent />
 	</svelte:fragment>
 	<HeaderNav>
-		<HeaderNavItem href="{base}/" text="Link 1" />
-		<HeaderNavItem href="{base}/" text="Link 2" />
-		<HeaderNavMenu text={selectedZoom.toUpperCase()}>
+		<HeaderNavItem text="Link 1" />
+		<HeaderNavItem text="Link 2" />
+		<HeaderNavMenu href="{base}/" text={selectedZoom.toUpperCase()}>
 			<TileGroup bind:selected={selectedZoom}>
 				{#each zoomLevels as {id, label}}
 					<RadioTile value={id}>{label}</RadioTile>
 				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
-		<HeaderNavMenu text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
+		<HeaderNavMenu href="{base}/" text={selectedLanguage ? selectedLanguage.toUpperCase() : "ORG"}>
 			<TileGroup bind:selected={selectedLanguage}>
 				<RadioTile value="org">ORG</RadioTile>
 				{#each languages as lang}
@@ -179,14 +179,14 @@ ContextMenuRadioGroup,
 				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
-		<HeaderNavMenu text={"EDIT: " + selectedEdit.toUpperCase()}>
+		<HeaderNavMenu href="{base}/" text={"EDIT: " + selectedEdit.toUpperCase()}>
 			<TileGroup bind:selected={selectedEdit}>
 				<RadioTile value="yes">Yes</RadioTile>
 				<RadioTile value="no">No</RadioTile>
 			</TileGroup>
 		</HeaderNavMenu>
 		{#if editable}
-		<HeaderNavMenu text={selectedShape.toUpperCase()}>
+		<HeaderNavMenu href="{base}/" text={selectedShape.toUpperCase()}>
 			<TileGroup bind:selected={selectedShape}>
 				<RadioTile value="box">Box</RadioTile>
 				<RadioTile value="poly">Poly</RadioTile>
