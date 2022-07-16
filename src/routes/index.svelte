@@ -1,21 +1,5 @@
 <script lang="ts">
-	import 'carbon-components-svelte/css/white.css';
-	import {
-		Header, HeaderNav, HeaderNavItem, HeaderNavMenu,
-		SideNav,
-		SkipToContent, Content,
-		//
-		FileUploaderDropContainer,
-		//
-		Button,
-		TileGroup,
-		RadioTile,
-		//
-		ContextMenu,
-		ContextMenuDivider,
-		ContextMenuOption,
-ContextMenuRadioGroup,
-	} from 'carbon-components-svelte';
+	import { AppShell, Navbar, Header, ShellSection } from '@svelteuidev/core';
   	import { base } from "$app/paths";
 	import { writable } from 'svelte/store';
 	import { collectionStore } from '$lib/stores/CollectionStore';
@@ -157,6 +141,21 @@ ContextMenuRadioGroup,
 	];
 </script>
 
+<AppShell>
+	<Header slot="header">
+		<ShellSection>First section</ShellSection>
+		<ShellSection grow>Grow section</ShellSection>
+		<ShellSection>Last section</ShellSection>
+	</Header>
+
+	<Navbar>
+		Nav bar
+	</Navbar>
+
+	<slot>This is the main content</slot>
+</AppShell>
+
+<!--
 <Header platformName="Comix Sense" bind:isSideNavOpen>
 	<svelte:fragment slot="skip-to-content">
 		<SkipToContent />
@@ -229,7 +228,7 @@ ContextMenuRadioGroup,
 	            {/each}
 			</ComicPage>
 		</Zoom>
-		<!-- this tracks the imgurl and revokes it when it's no longer needed -->
+		<!- this tracks the imgurl and revokes it when it's no longer needed ->
 		<Resource url={imgurl} />
 		{/await}
 	{:else}
@@ -270,6 +269,7 @@ ContextMenuRadioGroup,
 		{/if}
 	</ContextMenu>
 </Content>
+-->
 
 <style>
 	.tree {

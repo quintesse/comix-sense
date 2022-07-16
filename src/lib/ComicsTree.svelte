@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { TreeView } from 'carbon-components-svelte';
-	import type { TreeNode, TreeNodeId } from 'carbon-components-svelte/types/TreeView/TreeView.svelte';
 	import type { Comic } from './types/Comic';
 	import { baseNameExt } from './types/funcs';
 
@@ -11,7 +9,7 @@
 	export let selectedComic: Comic|null = null;
 	$: activeId = selectedComic ? selectedComic.path : "";
 
-	type TreeChild = TreeNode & { children?: TreeChild[] };
+	type TreeChild = any; /* TreeNode & { children?: TreeChild[] }; */
 
 	function comicsChildren(cs: Comic[], idx: number[] = [0], prefix: string = ""): TreeChild[] {
 		let result: TreeChild[] = [];
@@ -49,9 +47,11 @@
 	}
 </script>
 
+<!--
 <TreeView
 	hideLabel
 	children={comicsChildren(comics)}
 	bind:activeId
 	on:select={forwardSelect}
 />
+-->
