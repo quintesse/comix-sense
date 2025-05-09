@@ -4,10 +4,13 @@
 
     const dragHandleStyle = "cursor: nw-resize; opacity: 0.2; user-select: none;";
 
-    export let shape: BblShape;
-    export let index: number;
-    $: pos = shape.vs[index];
-    export let style: string|undefined;
+    interface Props {
+        shape: BblShape;
+        index: number;
+        style: string|undefined;
+    }
+
+    let { shape = $bindable(), index, style }: Props = $props();
 
     function updateShape(e: Event) {
         const ce: CustomEvent = e as CustomEvent;
@@ -15,9 +18,11 @@
         pos.y = ce.detail.y;
         shape = shape;
     }
+
+    let pos = $derived(shape.vs[index]);
 </script>
 
-<circle cx={pos.x} cy={pos.y} r=6 {style} use:draggable on:drag={updateShape} />
+<circle cx={pos.x} cy={pos.y} r=6 {style} use:draggable ondrag={updateShape} />
 
 <style>
     circle {

@@ -2,11 +2,21 @@
     import ShapeEditor from "./ShapeEditor.svelte";
     import { BblShapeType, type BblShape } from "./types/Comic";
 
-    export let img: string;
-    export let editable: boolean = false;
-	export let selectedShape: BblShapeType = BblShapeType.box;
+    interface Props {
+        img: string;
+        editable?: boolean;
+        selectedShape?: BblShapeType;
+        children?: import('svelte').Snippet<[any]>;
+    }
 
-    let svg: SVGGraphicsElement;
+    let {
+        img,
+        editable = false,
+        selectedShape = BblShapeType.box,
+        children
+    }: Props = $props();
+
+    let svg: SVGGraphicsElement = $state();
 
     function resizeSvg() {
         var bb = svg.getBBox();
@@ -23,13 +33,13 @@
             <feGaussianBlur stdDeviation="5" in="SourceGraphic"></feGaussianBlur>
         </filter>
         <clipPath id="svgclip">
-            <slot renderMode="clippath" />
+            {@render children?.({ renderMode: "clippath", })}
         </clipPath>
     </defs>
-    <image x="0%" y="0%" href={img} on:load={resizeSvg}></image>
+    <image x="0%" y="0%" href={img} onload={resizeSvg}></image>
     <image x="0%" y="0%" href={img} filter="url(#blurry)" style="clip-path: url(#svgclip)"></image>
     <g id="svgcontent">
-        <slot renderMode="normal" />
+        {@render children?.({ renderMode: "normal", })}
     </g>
     {#if editable}
         <ShapeEditor {svg} shape={selectedShape} on:shape />

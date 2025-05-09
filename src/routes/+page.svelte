@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { run } from 'svelte/legacy';
+
 	import 'carbon-components-svelte/css/white.css';
 	import {
 		Header, HeaderNav, HeaderNavItem, HeaderNavMenu,
@@ -28,19 +30,17 @@ ContextMenuRadioGroup,
 	import Resource from '$lib/Resource.svelte';
 	import { dedup } from '$lib/types/funcs';
 
-	let isSideNavOpen = false;
+	let isSideNavOpen = $state(false);
 
-	let selectedZoom: string = "width";
-	let selectedLanguage: string = "org";
-	let selectedShape: BblShapeType = BblShapeType.box;
-	let selectedEdit: string = "no";
-	$: editable = selectedEdit === "yes";
+	let selectedZoom: string = $state("width");
+	let selectedLanguage: string = $state("org");
+	let selectedShape: BblShapeType = $state(BblShapeType.box);
+	let selectedEdit: string = $state("no");
 
-	let store: ComicStore|null = null;
+	let store: ComicStore|null = $state(null);
 	let comics = writable<Comic[]>([]);
 	let selectedComic = writable<Comic|null>(null);
 	let collection = collectionStore(comics, selectedComic);
-	$: languages = dedup($collection.flatMap(c => c.languages));
 	let bubbles = writable<Bubble[]>([]);
 
 	selectedComic.subscribe(c => {
@@ -56,7 +56,6 @@ ContextMenuRadioGroup,
 		}
 	});
 
-	$: selectedLanguage, update();
 	function update() {
 		selectedComic.set($selectedComic);
 	}
@@ -72,7 +71,7 @@ ContextMenuRadioGroup,
 		bubbles.set($bubbles); // force update
 	}
 
-	let menuTargetBubble: Bubble|undefined;
+	let menuTargetBubble: Bubble|undefined = $state();
 
 	function setupMenu(evt: CustomEvent<Element>) {
 		const target = evt.detail;
@@ -155,9 +154,15 @@ ContextMenuRadioGroup,
 		{ id: "50%", label: "50%" },
 		{ id: "25%", label: "25%" }
 	];
+	let editable = $derived(selectedEdit === "yes");
+	let languages = $derived(dedup($collection.flatMap(c => c.languages)));
+	run(() => {
+		selectedLanguage, update();
+	});
 </script>
 
 <Header platformName="Comix Sense" bind:isSideNavOpen>
+	<!-- @migration-task: migrate this slot by hand, `skip-to-content` is an invalid identifier -->
 	<svelte:fragment slot="skip-to-content">
 		<SkipToContent />
 	</svelte:fragment>
@@ -223,11 +228,13 @@ ContextMenuRadioGroup,
 	{#if $selectedComic}
 		{#await $selectedComic.getImageUrl() then imgurl}
 		<Zoom level={selectedZoom}>
-			<ComicPage img={imgurl} {editable} {selectedShape} let:renderMode on:shape={handleNewBubble}>
-				{#each $bubbles as bubble (bubble)}
-    	            <ComicBubble {bubble} {renderMode} {editable} />
-	            {/each}
-			</ComicPage>
+			<ComicPage img={imgurl} {editable} {selectedShape}  on:shape={handleNewBubble}>
+				{#snippet children({ renderMode })}
+                    {#each $bubbles as bubble (bubble)}
+	    	            <ComicBubble {bubble} {renderMode} {editable} />
+		            {/each}
+                {/snippet}
+            </ComicPage>
 		</Zoom>
 		<!-- this tracks the imgurl and revokes it when it's no longer needed -->
 		<Resource url={imgurl} />

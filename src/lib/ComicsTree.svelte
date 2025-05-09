@@ -7,9 +7,13 @@
 
 	const dispatch = createEventDispatcher();
 
-	export let comics: Comic[] = [];
-	export let selectedComic: Comic|null = null;
-	$: activeId = selectedComic ? selectedComic.path : "";
+	interface Props {
+		comics?: Comic[];
+		selectedComic?: Comic|null;
+	}
+
+	let { comics = [], selectedComic = $bindable(null) }: Props = $props();
+	let activeId = $derived(selectedComic ? selectedComic.path : "");
 
 	type TreeChild = TreeNode & { children?: TreeChild[] };
 
