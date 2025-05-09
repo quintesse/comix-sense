@@ -1,10 +1,16 @@
 <script lang="ts">
-    export let level: string|number = "100%";
+    import { run } from 'svelte/legacy';
 
-    let width: number;
-	let height: number;
-    let wrapper: HTMLElement;
-    $: scaleContents(wrapper, width, height, level);
+    interface Props {
+        level?: string|number;
+        children?: import('svelte').Snippet;
+    }
+
+    let { level = "100%", children }: Props = $props();
+
+    let width: number = $state();
+	let height: number = $state();
+    let wrapper: HTMLElement = $state();
 
     function scaleContents(elem: HTMLElement, w: number, h: number, s: string|number) {
         if (elem) {
@@ -26,10 +32,13 @@
             elem.style.transform = `scale(${s})`;
         }
     }
+    run(() => {
+        scaleContents(wrapper, width, height, level);
+    });
 </script>
 
 <div bind:clientWidth={width} bind:clientHeight={height} class="fillsize" style="overflow: auto">
     <div bind:this={wrapper} style="display: inline-block">
-        <slot/>
+        {@render children?.()}
     </div>
 </div>

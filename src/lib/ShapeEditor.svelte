@@ -1,23 +1,21 @@
 <script lang="ts">
+    import { run } from 'svelte/legacy';
     import { onDestroy } from 'svelte';
     import { BblShapeType, bounds, boundsv, distance, points, vertex, type BblShape, type Vertex } from './types/Comic';
 	import { createEventDispatcher } from 'svelte';
 
-    export let shape: BblShapeType = BblShapeType.box;
-    export let svg: SVGGraphicsElement;
-    $: if (svg) {
-        svg.addEventListener("click", handleClick);
-        svg.addEventListener("blur", () => lostFocus = true);
-    };
+    interface Props {
+        shape?: BblShapeType;
+        svg: SVGGraphicsElement;
+    }
+
+    let { shape = BblShapeType.box, svg }: Props = $props();;
 
     const dispatch = createEventDispatcher();
 
-    let lostFocus: boolean = false;
-    let isFirstClick: boolean = true;
-    let vs: Vertex[] = [vertex(0, 0), vertex(0, 0)];
-    $: shapevs = shapeVertices(vs);
-    $: pts = points(shapevs);
-    $: valid = isValidShape(shapevs);
+    let lostFocus: boolean = $state(false);
+    let isFirstClick: boolean = $state(true);
+    let vs: Vertex[] = $state([vertex(0, 0), vertex(0, 0)]);
 
     function handleClick(evt: MouseEvent) {
         if (isFirstClick) {
@@ -106,6 +104,17 @@
             document.removeEventListener("keydown", handleKeyDown);
         };
 	});
+
+    run(() => {
+        if (svg) {
+            svg.addEventListener("click", handleClick);
+            svg.addEventListener("blur", () => lostFocus = true);
+        }
+    });
+
+    let shapevs = $derived(shapeVertices(vs));
+    let pts = $derived(points(shapevs));
+    let valid = $derived(isValidShape(shapevs));
 </script>
 
 {#if !isFirstClick}

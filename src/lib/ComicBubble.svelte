@@ -3,12 +3,13 @@
     import { bounds, points, type Bubble, BblShapeType } from "./types/Comic";
     import type { StrStrMap } from "./types/funcs";
 
-    export let bubble: Bubble;
-    $: cursor = bubble.shape.type === BblShapeType.box ? "nw-resize" : "move";
-    $: shapeStyle = styleString(bubble.style);
-    $: bb = bounds(bubble.shape.vs);
-    export let editable: boolean = false;
-    export let renderMode: string = "normal";
+    interface Props {
+        bubble: Bubble;
+        editable?: boolean;
+        renderMode?: string;
+    }
+
+    let { bubble = $bindable(), editable = false, renderMode = "normal" }: Props = $props();
 
     function styleString(style: StrStrMap|undefined): string {
         return Object.entries(style || {}).map(e => e[0] + ":" + e[1] + ";").join("");
@@ -17,6 +18,10 @@
     function shapeOnly(): boolean {
         return renderMode === "clippath";
     }
+
+    let cursor = $derived(bubble.shape.type === BblShapeType.box ? "nw-resize" : "move");
+    let shapeStyle = $derived(styleString(bubble.style));
+    let bb = $derived(bounds(bubble.shape.vs));
 </script>
 
 {#if bubble.shape.type === BblShapeType.box}
