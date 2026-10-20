@@ -7,10 +7,16 @@
 	interface Props {
 		comics?: Comic[];
 		selectedComic?: Comic | null;
+		expandedIds?: string[];
 		onselect?: (comic: Comic) => void;
 	}
 
-	let { comics = [], selectedComic = $bindable(null), onselect }: Props = $props();
+	let {
+		comics = [],
+		selectedComic = $bindable(null),
+		expandedIds = $bindable([]),
+		onselect
+	}: Props = $props();
 	let activeId = $derived(selectedComic ? selectedComic.path : '');
 
 	type TreeChild = TreeNode;
@@ -55,5 +61,6 @@
 	labelText="Comics"
 	nodes={comicsChildren(comics)}
 	bind:activeId
+	bind:expandedIds
 	on:select={forwardSelect}
 />

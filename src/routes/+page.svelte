@@ -22,6 +22,8 @@
 	} from 'carbon-components-svelte';
 	import { resolve } from '$app/paths';
 	import { writable } from 'svelte/store';
+	import { onMount } from 'svelte';
+	import { readSidebarSession, saveSidebarSession } from '#lib/stores/SidebarSession.js';
 	import { collectionStore } from '#lib/stores/CollectionStore.js';
 	import {
 		BblShapeType,
@@ -53,6 +55,60 @@
 	let imageUrl = $state<string>();
 	let loadError = $state('');
 	let directoryError = $state('');
+	let savedDirectory = $state.raw<FileSystemDirectoryHandle>();
+	let expandedIds = $state<string[]>([]);
+	let restoringDirectory = $state(true);
+	let persistenceError = $state('');
+
+	onMount(() => {
+		void (async () => {
+			try {
+				const session = await readSidebarSession();
+				if (session) {
+					savedDirectory = session.directory;
+					expandedIds = session.expandedIds;
+					if ((await session.directory.queryPermission({ mode: 'read' })) === 'granted')
+						await openDirectory(session.directory);
+				}
+			} catch (error) {
+				directoryError = 'Could not restore the previous directory: ' + String(error);
+			} finally {
+				restoringDirectory = false;
+			}
+		})();
+	});
+
+	$effect(() => {
+		if (store && savedDirectory && !restoringDirectory) {
+			void saveSidebarSession({ directory: savedDirectory, expandedIds: [...expandedIds] }).catch(
+				() => {
+					persistenceError = 'Could not save the sidebar for the next startup.';
+				}
+			);
+		}
+	});
+
+	async function openDirectory(directory: FileSystemDirectoryHandle) {
+		const nextStore = new DirectoryComicStore(directory);
+		const nextComics = await nextStore.list();
+		selectedComic.set(null);
+		comics.set(nextComics);
+		store = nextStore;
+	}
+
+	async function reopenDirectory() {
+		directoryError = '';
+		try {
+			if (
+				savedDirectory &&
+				(await savedDirectory.requestPermission({ mode: 'read' })) === 'granted'
+			)
+				await openDirectory(savedDirectory);
+			else directoryError = 'Directory access was not granted. Reopen it or select a directory.';
+		} catch (error) {
+			directoryError = 'Could not reopen the directory: ' + String(error);
+		}
+	}
 
 	$effect(() => {
 		const comic = $selectedComic;
@@ -107,9 +163,9 @@
 					'Opening a directory requires a browser with File System Access support, such as Chrome or Edge.'
 				);
 			const comicsFolder = await window.showDirectoryPicker();
-			const nextStore = new DirectoryComicStore(comicsFolder);
-			comics.set(await nextStore.list());
-			store = nextStore;
+			await openDirectory(comicsFolder);
+			expandedIds = [];
+			savedDirectory = comicsFolder;
 		} catch (error) {
 			if (!(error instanceof DOMException && error.name === 'AbortError'))
 				directoryError = String(error);
@@ -227,6 +283,7 @@
 			<ComicsTree
 				comics={$comics}
 				selectedComic={$selectedComic}
+				bind:expandedIds
 				onselect={(comic) => selectedComic.set(comic)}
 			/>
 		</div>
@@ -238,12 +295,18 @@
 				console.log('files', e.detail);
 			}}
 		/>
+	{:else if restoringDirectory}
+		<p>Restoring directory...</p>
 	{:else}
 		<div>
+			{#if savedDirectory}
+				<Button on:click={reopenDirectory}>Reopen {savedDirectory.name}</Button>
+			{/if}
 			<Button on:click={selectDirectory}>Select directory...</Button>
-			{#if directoryError}<p role="alert">{directoryError}</p>{/if}
 		</div>
 	{/if}
+	{#if directoryError}<p role="alert">{directoryError}</p>{/if}
+	{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
 </SideNav>
 
 <Content style="padding: 0" class="fullsize">
