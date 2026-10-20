@@ -521,7 +521,7 @@ test('discard unfinished drawing when leaving a page or disabling editing', asyn
 	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
 });
 
-test('2P defaults to a gapless spread, fits mixed page sizes and remembers the left page', async ({
+test('2P defaults to a separated spread, fits mixed page sizes and remembers the left page', async ({
 	page
 }) => {
 	await mockDirectory(page, { pageCount: 5, mixedSizes: true });
@@ -530,6 +530,8 @@ test('2P defaults to a gapless spread, fits mixed page sizes and remembers the l
 	const images = page.getByRole('img', { name: 'Comic page' });
 	await expect(images).toHaveCount(2);
 	const viewport = page.locator('main .viewport');
+	await expect(page.locator('.page-separator')).toHaveCount(1);
+	await expect(page.locator('.page-separator')).toHaveCSS('background-color', 'rgb(179, 179, 179)');
 	await page.addStyleTag({
 		content: '.viewport::-webkit-scrollbar { width: 17px; height: 17px; }'
 	});
@@ -542,7 +544,7 @@ test('2P defaults to a gapless spread, fits mixed page sizes and remembers the l
 			.poll(async () => {
 				const left = (await images.nth(0).boundingBox())!;
 				const right = (await images.nth(1).boundingBox())!;
-				return Math.abs(left.x + left.width - right.x);
+				return Math.abs(right.x - left.x - left.width - (2 * left.width) / 800);
 			})
 			.toBeLessThan(0.1);
 		await expect
@@ -562,7 +564,7 @@ test('2P defaults to a gapless spread, fits mixed page sizes and remembers the l
 			.poll(() =>
 				viewport.evaluate((el) =>
 					Math.abs(
-						Array.from(el.querySelectorAll('svg')).reduce(
+						Array.from(el.querySelectorAll('svg, .page-separator')).reduce(
 							(width, image) => width + image.getBoundingClientRect().width,
 							0
 						) - el.clientWidth
@@ -575,7 +577,7 @@ test('2P defaults to a gapless spread, fits mixed page sizes and remembers the l
 				viewport.evaluate(
 					(el) =>
 						el.scrollWidth <= el.clientWidth &&
-						el.scrollHeight > el.clientHeight === (el.clientWidth * 1200) / 1400 > el.clientHeight
+						el.scrollHeight > el.clientHeight === (el.clientWidth * 1200) / 1402 > el.clientHeight
 				)
 			)
 			.toBe(true);
@@ -588,6 +590,7 @@ test('2P defaults to a gapless spread, fits mixed page sizes and remembers the l
 	await page.getByRole('treeitem', { name: '02', exact: true }).click();
 	await selectMenu(page, '2P', '1P');
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/02.png');
+	await expect(page.locator('.page-separator')).toHaveCount(0);
 	await page.reload();
 	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
 });
@@ -651,14 +654,16 @@ test('edit both pages in 2P, target the right context menu and retain overlappin
 	// Pointer events round screen coordinates at fractional spread scales.
 	await expect
 		.poll(async () =>
-			Number(await rightPage.locator('foreignObject').first().getAttribute('width'))
+			Math.abs(Number(await rightPage.locator('foreignObject').first().getAttribute('width')) - 300)
 		)
-		.toBeCloseTo(300, 0);
+		.toBeLessThan(800 / box.width);
 	await expect
 		.poll(async () =>
-			Number(await rightPage.locator('foreignObject').first().getAttribute('height'))
+			Math.abs(
+				Number(await rightPage.locator('foreignObject').first().getAttribute('height')) - 200
+			)
 		)
-		.toBeCloseTo(200, 0);
+		.toBeLessThan(1000 / box.height);
 
 	await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.3);
 	await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.45);
@@ -812,6 +817,7 @@ for (const mode of ['1P', '2P']) {
 			currentZoom = zoom.toUpperCase();
 			await page.evaluate(() => document.documentElement.requestFullscreen());
 			await expect(page.getByRole('banner')).toBeHidden();
+			await expect(page.locator('.page-separator')).toHaveCount(mode === '2P' ? 1 : 0);
 			await expect
 				.poll(() =>
 					page.locator('.viewport').evaluate((el) => {

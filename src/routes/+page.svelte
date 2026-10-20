@@ -75,7 +75,9 @@
 	let pageLoadError = $state('');
 	let loadingPages = $state(false);
 	let spreadSize = $derived({
-		width: displayedPages.reduce((width, page) => width + page.image.width, 0),
+		width:
+			displayedPages.reduce((width, page) => width + page.image.width, 0) +
+			2 * Math.max(0, displayedPages.length - 1),
 		height: Math.max(0, ...displayedPages.map((page) => page.image.height))
 	});
 
@@ -567,6 +569,13 @@
 						{editable}
 						{selectedShape}
 					/>
+					{#if i < displayedPages.length - 1}
+						<div
+							class="page-separator"
+							style:height="{spreadSize.height}px"
+							aria-hidden="true"
+						></div>
+					{/if}
 				{/each}
 			</Zoom>
 		{:else if loadingPages}
@@ -618,6 +627,10 @@
 </div>
 
 <style>
+	.page-separator {
+		flex: 0 0 2px;
+		background: #b3b3b3;
+	}
 	.reader-shell.fullscreen > :global(.bx--header),
 	.reader-shell.fullscreen > :global(.bx--side-nav),
 	.reader-shell.fullscreen > :global(.bx--side-nav__overlay) {
