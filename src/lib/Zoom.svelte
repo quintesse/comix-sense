@@ -2,8 +2,9 @@
 	import type { Snippet } from 'svelte';
 
 	let { level = '100%', children }: { level?: string | number; children?: Snippet } = $props();
-	let width = $state(0);
-	let height = $state(0);
+	let viewportSize = $state<DOMRectReadOnly>();
+	let width = $derived(viewportSize?.width ?? 0);
+	let height = $derived(viewportSize?.height ?? 0);
 	let contentWidth = $state(0);
 	let contentHeight = $state(0);
 	let scale = $derived.by(() => {
@@ -15,8 +16,13 @@
 	});
 </script>
 
-<div class="viewport" bind:clientWidth={width} bind:clientHeight={height}>
-	<div style:width="{contentWidth * scale}px" style:height="{contentHeight * scale}px">
+<div class="viewport" class:fit-width={level === 'width'} bind:contentRect={viewportSize}>
+	<div
+		class="scaled-content"
+		style:max-width={level === 'width' ? '100%' : undefined}
+		style:width="{contentWidth * scale}px"
+		style:height="{contentHeight * scale}px"
+	>
 		<div
 			class="content"
 			bind:clientWidth={contentWidth}
@@ -34,9 +40,15 @@
 		height: 100%;
 		overflow: auto;
 	}
+	.scaled-content {
+		/* Transforms shrink the drawing, but not its original overflow bounds. */
+		overflow: clip;
+	}
+	.fit-width {
+		overflow-x: hidden;
+	}
 	.content {
-		display: inline-block;
+		width: max-content;
 		transform-origin: 0 0;
-		vertical-align: top;
 	}
 </style>
