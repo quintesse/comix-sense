@@ -23,7 +23,13 @@
 	import { resolve } from '$app/paths';
 	import { writable } from 'svelte/store';
 	import { onMount } from 'svelte';
-	import { readSidebarSession, saveSidebarSession } from '#lib/stores/SidebarSession.js';
+	import {
+		readSidebarSession,
+		saveSidebarSession,
+		readReadingHistory,
+		saveReadingHistory,
+		type ReadingPosition
+	} from '#lib/stores/SidebarSession.js';
 	import { collectionStore } from '#lib/stores/CollectionStore.js';
 	import {
 		BblShapeType,
@@ -59,10 +65,14 @@
 	let expandedIds = $state<string[]>([]);
 	let restoringDirectory = $state(true);
 	let persistenceError = $state('');
+	let readingHistory: ReadingPosition[] = [];
+	let readingPosition = $state.raw<ReadingPosition>();
+	let savingReadingHistory = Promise.resolve();
 
 	onMount(() => {
 		void (async () => {
 			try {
+				readingHistory = (await readReadingHistory()) ?? [];
 				const session = await readSidebarSession();
 				if (session) {
 					savedDirectory = session.directory;
@@ -91,9 +101,44 @@
 	async function openDirectory(directory: FileSystemDirectoryHandle) {
 		const nextStore = new DirectoryComicStore(directory);
 		const nextComics = await nextStore.list();
-		selectedComic.set(null);
+		let position: ReadingPosition | undefined;
+		for (const previous of readingHistory) {
+			if (await directory.isSameEntry(previous.directory)) {
+				position = previous;
+				break;
+			}
+		}
+		if (!position) {
+			position = { directory, albumPages: {} };
+			readingHistory.push(position);
+		}
+		readingPosition = position;
 		comics.set(nextComics);
 		store = nextStore;
+		// Keep unavailable positions: permission renewal or a later reopen may restore them.
+		selectedComic.set(
+			nextComics.find((comic) => comic.kind === 'page' && comic.path === position.lastPage) ?? null
+		);
+	}
+
+	function selectComic(comic: Comic) {
+		selectedComic.set(comic);
+		if (!readingPosition) return;
+		const albumPath = comic.path.slice(0, comic.path.lastIndexOf('/') + 1);
+		const position = {
+			...readingPosition,
+			lastPage: comic.path,
+			albumPages: { ...readingPosition.albumPages, [albumPath]: comic.path }
+		};
+		readingHistory = readingHistory.map((entry) => (entry === readingPosition ? position : entry));
+		readingPosition = position;
+		const snapshot = readingHistory;
+		savingReadingHistory = savingReadingHistory
+			.then(() => saveReadingHistory(snapshot))
+			.then(() => {})
+			.catch(() => {
+				persistenceError = 'Could not save reading positions for the next startup.';
+			});
 	}
 
 	async function reopenDirectory() {
@@ -284,7 +329,8 @@
 				comics={$comics}
 				selectedComic={$selectedComic}
 				bind:expandedIds
-				onselect={(comic) => selectedComic.set(comic)}
+				albumPages={readingPosition?.albumPages}
+				onselect={selectComic}
 			/>
 		</div>
 		<FileUploaderDropContainer

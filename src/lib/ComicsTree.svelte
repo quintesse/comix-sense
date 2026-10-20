@@ -11,6 +11,7 @@
 		comics?: Comic[];
 		selectedComic?: Comic | null;
 		expandedIds?: string[];
+		albumPages?: Record<string, string>;
 		onselect?: (comic: Comic) => void;
 	}
 
@@ -18,6 +19,7 @@
 		comics = [],
 		selectedComic = $bindable(null),
 		expandedIds = $bindable([]),
+		albumPages = {},
 		onselect
 	}: Props = $props();
 	let activeId = $derived(selectedComic ? selectedComic.path : '');
@@ -52,11 +54,19 @@
 	}
 
 	function forwardSelect(event: CustomEvent<TreeNode>) {
-		const comic = comics.find((c) => c.kind === 'page' && c.path === event.detail.id);
+		const item = comics.find((c) => c.path === event.detail.id);
+		const comic =
+			item?.kind === 'album'
+				? (comics.find((c) => c.kind === 'page' && c.path === albumPages[item.path]) ??
+					comics.find((c) => c.kind === 'page' && c.path.startsWith(item.path)))
+				: item?.kind === 'page'
+					? item
+					: undefined;
 		if (comic && selectedComic !== comic) {
 			selectedComic = comic;
 			onselect?.(selectedComic);
 		}
+		activeId = selectedComic?.path ?? '';
 	}
 </script>
 
