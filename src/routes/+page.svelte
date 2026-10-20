@@ -22,7 +22,9 @@
 	} from 'carbon-components-svelte';
 	import { resolve } from '$app/paths';
 	import { writable } from 'svelte/store';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import { PageImages, type PageImage } from '#lib/PageImages.js';
+	import { isFullscreen } from '#lib/fullscreen.js';
 	import {
 		readSidebarSession,
 		saveSidebarSession,
@@ -31,24 +33,89 @@
 		type ReadingPosition
 	} from '#lib/stores/SidebarSession.js';
 	import { preferredLanguage } from '#lib/stores/ReaderPreferences.js';
-	import {
-		BblShapeType,
-		boundsv,
-		vertex,
-		type BblShape,
-		type Bubble,
-		type Comic
-	} from '#lib/types/Comic.js';
+	import { BblShapeType, boundsv, vertex, type Bubble, type Comic } from '#lib/types/Comic.js';
 	import { DirectoryComicStore, type ComicStore } from '#lib/types/ComicStore.js';
 	import ComicsTree from '#lib/ComicsTree.svelte';
-	import ComicPage from '#lib/ComicPage.svelte';
-	import ComicBubble from '#lib/ComicBubble.svelte';
+	import ReaderPage from '#lib/ReaderPage.svelte';
 	import Zoom from '#lib/Zoom.svelte';
 	import { dedup } from '#lib/types/funcs.js';
 
 	let isSideNavOpen = $state(false);
+	let fullscreen = $state(false);
+	let readerUi: HTMLDivElement;
+
+	function updateFullscreen() {
+		fullscreen = isFullscreen();
+		if (
+			fullscreen &&
+			document.activeElement instanceof HTMLElement &&
+			readerUi?.contains(document.activeElement)
+		) {
+			document.activeElement.blur();
+		}
+	}
+
+	onMount(() => {
+		updateFullscreen();
+		window.addEventListener('resize', updateFullscreen);
+		document.addEventListener('fullscreenchange', updateFullscreen);
+		return () => {
+			window.removeEventListener('resize', updateFullscreen);
+			document.removeEventListener('fullscreenchange', updateFullscreen);
+		};
+	});
 
 	let selectedZoom: string = $state('fit');
+	let pageMode = $state('2P');
+	let pageViews = $state<ReaderPage[]>([]);
+	const pageImages = new PageImages();
+	let displayedPages = $state.raw<
+		{ comic: Comic; image: PageImage; bubbles: Bubble[]; language: string }[]
+	>([]);
+	let pageLoadError = $state('');
+	let loadingPages = $state(false);
+	let spreadSize = $derived({
+		width: displayedPages.reduce((width, page) => width + page.image.width, 0),
+		height: Math.max(0, ...displayedPages.map((page) => page.image.height))
+	});
+
+	onDestroy(() => pageImages.retain([]));
+
+	$effect(() => {
+		const requested = visiblePages;
+		const language = selectedLanguage;
+		let cancelled = false;
+		loadingPages = requested.length > 0;
+		pageLoadError = '';
+		pageImages.retain([...requested, ...untrack(() => displayedPages).map((page) => page.comic)]);
+		void Promise.all(
+			requested.map(async (comic) => {
+				const [image, bubbles] = await Promise.all([
+					pageImages.load(comic),
+					comic.getBubbles(language)
+				]);
+				return { comic, image, bubbles, language };
+			})
+		)
+			.then(async (pages) => {
+				if (cancelled) return;
+				displayedPages = pages;
+				loadingPages = false;
+				// Let the outgoing SVGs leave the DOM before revoking their image URLs.
+				await tick();
+				if (!cancelled) pageImages.retain(requested);
+			})
+			.catch((error) => {
+				if (!cancelled) {
+					pageLoadError = String(error);
+					loadingPages = false;
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	let browserLanguages = $state<readonly string[]>([]);
 	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
@@ -56,9 +123,6 @@
 	let store: ComicStore | null = $state(null);
 	let comics = writable<Comic[]>([]);
 	let selectedComic = writable<Comic | null>(null);
-	let bubbles = $state<Bubble[]>([]);
-	let imageUrl = $state<string>();
-	let loadError = $state('');
 	let directoryError = $state('');
 	let savedDirectory = $state.raw<FileSystemDirectoryHandle>();
 	let expandedIds = $state<string[]>([]);
@@ -71,6 +135,8 @@
 	onMount(() => {
 		browserLanguages = navigator.languages;
 		try {
+			const mode = localStorage.getItem('comix-sense.page-mode');
+			if (mode === '1P' || mode === '2P') pageMode = mode;
 			const zoom = localStorage.getItem('comix-sense.zoom');
 			if (zoomLevels.some(({ id }) => id === zoom)) selectedZoom = zoom!;
 		} catch {
@@ -151,12 +217,13 @@
 			});
 	}
 
-	function navigatePage(direction: -1 | 1) {
+	function navigatePage(direction: -1 | 1, singlePage = false) {
 		if (!$selectedComic) return;
 		const index = albumPages.indexOf($selectedComic);
 		if (index < 0) return;
-		const next = albumPages[index + direction];
-		if (next) selectComic(next);
+		const step = pageMode === '2P' && !singlePage ? 2 : 1;
+		const next = albumPages[Math.max(0, index + direction * step)];
+		if (next && next !== $selectedComic) selectComic(next);
 	}
 
 	function isNavigationControl(target: EventTarget | null) {
@@ -174,13 +241,12 @@
 			event.altKey ||
 			event.ctrlKey ||
 			event.metaKey ||
-			event.shiftKey ||
 			isNavigationControl(event.target)
 		)
 			return;
 		if ($selectedComic && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
 			event.preventDefault();
-			navigatePage(event.key === 'ArrowLeft' ? -1 : 1);
+			navigatePage(event.key === 'ArrowLeft' ? -1 : 1, event.shiftKey);
 		}
 	}
 
@@ -195,8 +261,47 @@
 		const pane = event.target instanceof Element ? event.target.closest('main') : null;
 		if (!pane) return;
 		const bounds = pane.getBoundingClientRect();
-		navigatePage(event.clientX < bounds.left + bounds.width / 2 ? -1 : 1);
+		const x = event.clientX - bounds.left;
+		if (x < bounds.width * 0.25) navigatePage(-1, event.shiftKey);
+		else if (x > bounds.width * 0.75) navigatePage(1, event.shiftKey);
 	}
+
+	let lastWheelAt = -Infinity;
+	let lastWheelTurnAt = -Infinity;
+	let lastWheelDirection = 0;
+
+	function handleNavigationWheel(event: WheelEvent) {
+		if (
+			selectedZoom !== 'fit' ||
+			editable ||
+			event.defaultPrevented ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.altKey ||
+			!event.deltaY ||
+			Math.abs(event.deltaX) > Math.abs(event.deltaY) ||
+			isNavigationControl(event.target) ||
+			!(event.target instanceof Element) ||
+			!event.target.closest('main .viewport')
+		)
+			return;
+		event.preventDefault();
+		const now = performance.now();
+		const direction = event.deltaY < 0 ? -1 : 1;
+		// Group short bursts, but let sustained scrolling turn again every 100ms.
+		// A pause or direction reversal starts a fresh gesture immediately.
+		const sameGesture = direction === lastWheelDirection && now - lastWheelAt < 250;
+		lastWheelAt = now;
+		lastWheelDirection = direction;
+		if (loadingPages || (sameGesture && now - lastWheelTurnAt < 100)) return;
+		lastWheelTurnAt = now;
+		navigatePage(direction, event.shiftKey);
+	}
+
+	onMount(() => {
+		window.addEventListener('wheel', handleNavigationWheel, { passive: false });
+		return () => window.removeEventListener('wheel', handleNavigationWheel);
+	});
 
 	function selectZoom(zoom: string) {
 		selectedZoom = zoom;
@@ -232,51 +337,6 @@
 		}
 	}
 
-	$effect(() => {
-		const comic = $selectedComic;
-		const language = selectedLanguage;
-		let cancelled = false;
-		bubbles = [];
-		loadError = '';
-		if (comic) {
-			comic
-				.getBubbles(language)
-				.then((loaded) => {
-					if (cancelled) return;
-					bubbles = loaded;
-					comic.setBubbles(language, bubbles);
-				})
-				.catch((error) => {
-					if (!cancelled) loadError = String(error);
-				});
-		}
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	$effect(() => {
-		const comic = $selectedComic;
-		let cancelled = false;
-		let resource: string | undefined;
-		imageUrl = undefined;
-		if (comic) {
-			comic
-				.getImageUrl()
-				.then((url) => {
-					if (cancelled) URL.revokeObjectURL(url);
-					else imageUrl = resource = url;
-				})
-				.catch((error) => {
-					if (!cancelled) loadError = String(error);
-				});
-		}
-		return () => {
-			cancelled = true;
-			if (resource) URL.revokeObjectURL(resource);
-		};
-	});
-
 	async function selectDirectory() {
 		directoryError = '';
 		try {
@@ -294,22 +354,34 @@
 		}
 	}
 
-	function handleNewBubble(shape: BblShape) {
-		bubbles.push({ text: '', shape });
-	}
-
 	let menuTargetBubble: Bubble | undefined = $state();
+	let menuTargetBubbles: Bubble[] = [];
 
 	function setupMenu(evt: CustomEvent<Element>) {
-		const target = evt.detail;
-		const element = target instanceof Element ? target.closest('foreignObject') : null;
-		const index = element?.getAttribute('data-bubble-index');
-		menuTargetBubble = editable && index != null ? bubbles[Number(index)] : undefined;
+		menuTargetBubble = undefined;
+		if (!editable) return;
+		for (const view of pageViews) {
+			const target = view?.getBubble(evt.detail);
+			if (target) {
+				menuTargetBubble = target.bubble;
+				menuTargetBubbles = target.bubbles;
+				break;
+			}
+		}
+	}
+
+	function selectPageMode(mode: string) {
+		pageMode = mode;
+		try {
+			localStorage.setItem('comix-sense.page-mode', mode);
+		} catch {
+			persistenceError = 'Could not save page layout for the next startup.';
+		}
 	}
 
 	function handleBubbleDelete() {
 		if (menuTargetBubble) {
-			const bbls = bubbles;
+			const bbls = menuTargetBubbles;
 			const idx = bbls.indexOf(menuTargetBubble);
 			if (idx >= 0) {
 				bbls.splice(idx, 1);
@@ -349,7 +421,7 @@
 		{ id: '50%', label: '50%' },
 		{ id: '25%', label: '25%' }
 	];
-	let editable = $derived(selectedEdit === 'yes');
+	let editable = $derived(selectedEdit === 'yes' && !fullscreen);
 	let albumPath = $derived(
 		$selectedComic?.path.slice(0, $selectedComic.path.lastIndexOf('/') + 1) ?? ''
 	);
@@ -358,6 +430,14 @@
 			(comic) =>
 				comic.kind === 'page' && comic.path.slice(0, comic.path.lastIndexOf('/') + 1) === albumPath
 		)
+	);
+	let visiblePages = $derived(
+		$selectedComic
+			? albumPages.slice(
+					albumPages.indexOf($selectedComic),
+					albumPages.indexOf($selectedComic) + (pageMode === '2P' ? 2 : 1)
+				)
+			: []
 	);
 	let languages = $derived(
 		dedup(
@@ -375,143 +455,166 @@
 
 <svelte:window onkeydown={handleNavigationKey} onclick={handleNavigationClick} />
 
-<Header platformName="Comix Sense" bind:isSideNavOpen>
-	<!-- Carbon still exposes this named slot; Svelte 5 supports consuming it. -->
-	<svelte:fragment slot="skipToContent">
-		<SkipToContent />
-	</svelte:fragment>
-	<HeaderNav>
-		<HeaderNavItem text="Link 1" />
-		<HeaderNavItem text="Link 2" />
+<div bind:this={readerUi} class="reader-shell" class:fullscreen>
+	<Header platformName="Comix Sense" bind:isSideNavOpen>
+		<!-- Carbon still exposes this named slot; Svelte 5 supports consuming it. -->
+		<svelte:fragment slot="skipToContent">
+			<SkipToContent />
+		</svelte:fragment>
+		<HeaderNav>
+			<HeaderNavItem text="Link 1" />
+			<HeaderNavItem text="Link 2" />
 
-		<HeaderNavMenu href={resolve('/')} text={selectedZoom.toUpperCase()}>
-			<TileGroup selected={selectedZoom} on:select={(event) => selectZoom(event.detail)}>
-				{#each zoomLevels as { id, label }}
-					<RadioTile value={id}>{label}</RadioTile>
-				{/each}
-			</TileGroup>
-		</HeaderNavMenu>
-
-		<HeaderNavMenu
-			href={resolve('/')}
-			text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}
-		>
-			<TileGroup selected={selectedLanguage} on:select={(event) => selectLanguage(event.detail)}>
-				<RadioTile value="org">ORG</RadioTile>
-				{#each languages as lang}
-					<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
-				{/each}
-			</TileGroup>
-		</HeaderNavMenu>
-
-		<HeaderNavMenu href={resolve('/')} text={'EDIT: ' + selectedEdit.toUpperCase()}>
-			<TileGroup bind:selected={selectedEdit}>
-				<RadioTile value="yes">Yes</RadioTile>
-				<RadioTile value="no">No</RadioTile>
-			</TileGroup>
-		</HeaderNavMenu>
-		{#if editable}
-			<HeaderNavMenu href={resolve('/')} text={selectedShape.toUpperCase()}>
-				<TileGroup bind:selected={selectedShape}>
-					<RadioTile value="box">Box</RadioTile>
-					<RadioTile value="poly">Poly</RadioTile>
+			<HeaderNavMenu href={resolve('/')} text={pageMode}>
+				<TileGroup selected={pageMode} on:select={(event) => selectPageMode(event.detail)}>
+					<RadioTile value="1P">1P</RadioTile>
+					<RadioTile value="2P">2P</RadioTile>
 				</TileGroup>
 			</HeaderNavMenu>
-		{/if}
-	</HeaderNav>
-</Header>
 
-<SideNav bind:isOpen={isSideNavOpen}>
-	{#if store}
-		<div class="tree">
-			<ComicsTree
-				comics={$comics}
-				selectedComic={$selectedComic}
-				bind:expandedIds
-				albumPages={readingPosition?.albumPages}
-				onselect={selectComic}
-			/>
-		</div>
-		<FileUploaderDropContainer
-			multiple
-			labelText="Drag and drop files here or click to upload"
-			validateFiles={(files) => files}
-			on:change={(e) => {
-				console.log('files', e.detail);
-			}}
-		/>
-	{:else if restoringDirectory}
-		<p>Restoring directory...</p>
-	{:else}
-		<div>
-			{#if savedDirectory}
-				<Button on:click={reopenDirectory}>Reopen {savedDirectory.name}</Button>
-			{/if}
-			<Button on:click={selectDirectory}>Select directory...</Button>
-		</div>
-	{/if}
-	{#if directoryError}<p role="alert">{directoryError}</p>{/if}
-	{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
-</SideNav>
-
-<Content style="padding: 0" class="fullsize">
-	{#if loadError}<p role="alert">{loadError}</p>{/if}
-	{#if $selectedComic && imageUrl}
-		<Zoom level={selectedZoom}>
-			<ComicPage img={imageUrl} {editable} {selectedShape} onshape={handleNewBubble}>
-				{#snippet children({ renderMode })}
-					{#each bubbles as bubble, i (bubble)}
-						<ComicBubble bind:bubble={bubbles[i]} bubbleIndex={i} {renderMode} {editable} />
-					{/each}
-				{/snippet}
-			</ComicPage>
-		</Zoom>
-	{:else if $selectedComic}
-		Loading page...
-	{:else}
-		Select a comic from the left
-	{/if}
-
-	<ContextMenu on:open={setupMenu}>
-		{#if menuTargetBubble}
-			{#if menuTargetBubble.shape.type === BblShapeType.poly}
-				<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
-			{:else if menuTargetBubble.shape.type === BblShapeType.box}
-				<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
-			{/if}
-			<ContextMenuOption labelText="Scan Text" />
-			<ContextMenuDivider />
-			<ContextMenuOption kind="danger" labelText="Delete" on:click={handleBubbleDelete} />
-		{:else}
-			{#if editable}
-				<ContextMenuOption labelText="Scan Page" />
-				<ContextMenuOption labelText="Scan Bubbles" />
-				<ContextMenuDivider />
-			{/if}
-			<ContextMenuOption labelText="Language">
-				<ContextMenuRadioGroup selectedId={selectedLanguage}>
-					<ContextMenuOption id="org" labelText="ORG" on:click={() => selectLanguage('org')} />
-					{#each languages as lang}
-						<ContextMenuOption
-							id={lang}
-							labelText={lang.toUpperCase()}
-							on:click={() => selectLanguage(lang)}
-						/>
-					{/each}
-				</ContextMenuRadioGroup>
-			</ContextMenuOption>
-			<ContextMenuOption labelText="Zoom">
-				<ContextMenuRadioGroup selectedId={selectedZoom}>
+			<HeaderNavMenu href={resolve('/')} text={selectedZoom.toUpperCase()}>
+				<TileGroup selected={selectedZoom} on:select={(event) => selectZoom(event.detail)}>
 					{#each zoomLevels as { id, label }}
-						<ContextMenuOption {id} labelText={label} on:click={() => selectZoom(id)} />
+						<RadioTile value={id}>{label}</RadioTile>
 					{/each}
-				</ContextMenuRadioGroup>
-			</ContextMenuOption>
+				</TileGroup>
+			</HeaderNavMenu>
+
+			<HeaderNavMenu
+				href={resolve('/')}
+				text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}
+			>
+				<TileGroup selected={selectedLanguage} on:select={(event) => selectLanguage(event.detail)}>
+					<RadioTile value="org">ORG</RadioTile>
+					{#each languages as lang}
+						<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
+					{/each}
+				</TileGroup>
+			</HeaderNavMenu>
+
+			<HeaderNavMenu href={resolve('/')} text={'EDIT: ' + selectedEdit.toUpperCase()}>
+				<TileGroup bind:selected={selectedEdit}>
+					<RadioTile value="yes">Yes</RadioTile>
+					<RadioTile value="no">No</RadioTile>
+				</TileGroup>
+			</HeaderNavMenu>
+			{#if editable}
+				<HeaderNavMenu href={resolve('/')} text={selectedShape.toUpperCase()}>
+					<TileGroup bind:selected={selectedShape}>
+						<RadioTile value="box">Box</RadioTile>
+						<RadioTile value="poly">Poly</RadioTile>
+					</TileGroup>
+				</HeaderNavMenu>
+			{/if}
+		</HeaderNav>
+	</Header>
+
+	<SideNav bind:isOpen={isSideNavOpen}>
+		{#if store}
+			<div class="tree">
+				<ComicsTree
+					comics={$comics}
+					selectedComic={$selectedComic}
+					bind:expandedIds
+					albumPages={readingPosition?.albumPages}
+					onselect={selectComic}
+				/>
+			</div>
+			<FileUploaderDropContainer
+				multiple
+				labelText="Drag and drop files here or click to upload"
+				validateFiles={(files) => files}
+				on:change={(e) => {
+					console.log('files', e.detail);
+				}}
+			/>
+		{:else if restoringDirectory}
+			<p>Restoring directory...</p>
+		{:else}
+			<div>
+				{#if savedDirectory}
+					<Button on:click={reopenDirectory}>Reopen {savedDirectory.name}</Button>
+				{/if}
+				<Button on:click={selectDirectory}>Select directory...</Button>
+			</div>
 		{/if}
-	</ContextMenu>
-</Content>
+		{#if directoryError}<p role="alert">{directoryError}</p>{/if}
+		{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
+	</SideNav>
+
+	<Content
+		style={fullscreen ? 'padding: 0; margin: 0; min-height: 0' : 'padding: 0'}
+		class="fullsize"
+	>
+		{#if pageLoadError && !fullscreen}<p role="alert">{pageLoadError}</p>{/if}
+		{#if displayedPages.length}
+			<Zoom level={selectedZoom} contentSize={spreadSize} centered={fullscreen}>
+				{#each displayedPages as page, i (page.comic)}
+					<ReaderPage
+						bind:this={pageViews[i]}
+						comic={page.comic}
+						image={page.image}
+						loadedBubbles={page.bubbles}
+						language={page.language}
+						{editable}
+						{selectedShape}
+					/>
+				{/each}
+			</Zoom>
+		{:else if loadingPages}
+			Loading page...
+		{:else}
+			Select a comic from the left
+		{/if}
+
+		{#if !fullscreen}
+			<ContextMenu on:open={setupMenu}>
+				{#if menuTargetBubble}
+					{#if menuTargetBubble.shape.type === BblShapeType.poly}
+						<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
+					{:else if menuTargetBubble.shape.type === BblShapeType.box}
+						<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
+					{/if}
+					<ContextMenuOption labelText="Scan Text" />
+					<ContextMenuDivider />
+					<ContextMenuOption kind="danger" labelText="Delete" on:click={handleBubbleDelete} />
+				{:else}
+					{#if editable}
+						<ContextMenuOption labelText="Scan Page" />
+						<ContextMenuOption labelText="Scan Bubbles" />
+						<ContextMenuDivider />
+					{/if}
+					<ContextMenuOption labelText="Language">
+						<ContextMenuRadioGroup selectedId={selectedLanguage}>
+							<ContextMenuOption id="org" labelText="ORG" on:click={() => selectLanguage('org')} />
+							{#each languages as lang}
+								<ContextMenuOption
+									id={lang}
+									labelText={lang.toUpperCase()}
+									on:click={() => selectLanguage(lang)}
+								/>
+							{/each}
+						</ContextMenuRadioGroup>
+					</ContextMenuOption>
+					<ContextMenuOption labelText="Zoom">
+						<ContextMenuRadioGroup selectedId={selectedZoom}>
+							{#each zoomLevels as { id, label }}
+								<ContextMenuOption {id} labelText={label} on:click={() => selectZoom(id)} />
+							{/each}
+						</ContextMenuRadioGroup>
+					</ContextMenuOption>
+				{/if}
+			</ContextMenu>
+		{/if}
+	</Content>
+</div>
 
 <style>
+	.reader-shell.fullscreen > :global(.bx--header),
+	.reader-shell.fullscreen > :global(.bx--side-nav),
+	.reader-shell.fullscreen > :global(.bx--side-nav__overlay) {
+		display: none;
+	}
 	.tree {
 		overflow: auto;
 		height: 100%;
