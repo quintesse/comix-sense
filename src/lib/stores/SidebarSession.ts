@@ -3,6 +3,12 @@ export interface SidebarSession {
 	expandedIds: string[];
 }
 
+export interface ReadingPosition {
+	directory: FileSystemDirectoryHandle;
+	lastPage?: string;
+	albumPages: Record<string, string>;
+}
+
 // Directory handles must be stored in IndexedDB to retain their browser permissions.
 async function sessionStore<T>(
 	mode: IDBTransactionMode,
@@ -33,4 +39,12 @@ export function readSidebarSession(): Promise<SidebarSession | undefined> {
 
 export function saveSidebarSession(session: SidebarSession): Promise<IDBValidKey> {
 	return sessionStore('readwrite', (store) => store.put(session, 'session'));
+}
+
+export function readReadingHistory(): Promise<ReadingPosition[] | undefined> {
+	return sessionStore('readonly', (store) => store.get('readingHistory'));
+}
+
+export function saveReadingHistory(history: ReadingPosition[]): Promise<IDBValidKey> {
+	return sessionStore('readwrite', (store) => store.put(history, 'readingHistory'));
 }

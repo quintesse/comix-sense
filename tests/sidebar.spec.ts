@@ -22,6 +22,10 @@ async function setupDirectory(page: Page, nested = false) {
 					);
 					await writer.write(image);
 					await writer.close();
+					const second = await album.getFileHandle('02.png', { create: true });
+					const secondWriter = await second.createWritable();
+					await secondWriter.write(image);
+					await secondWriter.close();
 				}
 				if (nested) await directory.getDirectoryHandle('empty', { create: true });
 				return directory;
@@ -126,4 +130,100 @@ test('reopen the saved directory when browser permission must be renewed', async
 		'true'
 	);
 	await expect(page.getByRole('treeitem', { name: '01', exact: true })).toBeVisible();
+});
+
+async function savedHistory(page: Page) {
+	return page.evaluate(async () => {
+		return await new Promise<{ lastPage?: string; albumPages: Record<string, string> }[]>(
+			(resolve, reject) => {
+				const open = indexedDB.open('comix-sense', 1);
+				open.onerror = () => reject(open.error);
+				open.onsuccess = () => {
+					const db = open.result;
+					const request = db.transaction('sidebar').objectStore('sidebar').get('readingHistory');
+					request.onsuccess = () => {
+						resolve(request.result ?? []);
+						db.close();
+					};
+				};
+			}
+		);
+	});
+}
+
+test('restore the last page on startup and after delayed permission renewal', async ({ page }) => {
+	await setupDirectory(page);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.press('ArrowRight');
+	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+	await page.evaluate(() => localStorage.setItem('requirePermission', 'true'));
+	await page.reload();
+	await expect(page.getByRole('button', { name: 'Reopen comics', exact: true })).toBeVisible();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await page.getByRole('button', { name: 'Reopen comics', exact: true }).click();
+	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+});
+
+test('album clicks open the first page or its browser-saved reading position', async ({ page }) => {
+	await setupDirectory(page);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	const other = page.getByRole('treeitem', { name: 'other', exact: true });
+	await album.getByText('album', { exact: true }).click();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/01.png');
+	await album.press('ArrowRight');
+	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await other.click();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('other/01.png');
+	expect((await savedHistory(page))[0]?.albumPages).toEqual({
+		'album/': 'album/02.png',
+		'other/': 'other/01.png'
+	});
+	await page.reload();
+	await album.getByText('album', { exact: true }).click();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+});
+
+test('missing saved pages are silently retained and restored when available again', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.press('ArrowRight');
+	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await page.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		const comics = await root.getDirectoryHandle('comics');
+		const album = await comics.getDirectoryHandle('album');
+		const file = await (await album.getFileHandle('02.png')).getFile();
+		const backup = await album.getFileHandle('backup.png', { create: true });
+		const writer = await backup.createWritable();
+		await writer.write(file);
+		await writer.close();
+		await album.removeEntry('02.png');
+	});
+	await page.reload();
+	await expect(album).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' })).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect((await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await page.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		const comics = await root.getDirectoryHandle('comics');
+		const album = await comics.getDirectoryHandle('album');
+		const file = await (await album.getFileHandle('backup.png')).getFile();
+		const restored = await album.getFileHandle('02.png', { create: true });
+		const writer = await restored.createWritable();
+		await writer.write(file);
+		await writer.close();
+	});
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
 });
