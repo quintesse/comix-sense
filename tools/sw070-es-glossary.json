@@ -1,0 +1,70 @@
+{
+	"source_language": "nl (confirmed from page images)",
+	"target_language": "es",
+	"names": ["Suske", "Wiske", "Lambik", "Sidonia", "Jerom", "Schalulleke", "Lamer de Rodeldal"],
+	"terms": {
+		"De spokenjagers": "Los cazafantasmas",
+		"barones": "baronesa",
+		"MUNHEER JEROM": "SEÑOR JEROM",
+		"Jerommeke": "Jeromito",
+		"broembroem": "brum-brum",
+		"spoken van de laster": "fantasmas de la calumnia",
+		"galsebroeders": "hermanos de la horca",
+		"kist": "cofre"
+	},
+	"review": "Dutch original verified from page images; English used as supporting OCR context. These 48 image-verified non-lettering regions have empty Spanish text; bubble objects and geometry remain intact.",
+	"reviewed_nonlettering_regions": {
+		"32": {
+			"page": 0,
+			"bubbles": [3, 5, 6, 9, 10, 11, 12]
+		},
+		"33": {
+			"page": 0,
+			"bubbles": [4, 5, 6, 9, 16, 17, 18]
+		},
+		"34": {
+			"page": 0,
+			"bubbles": [2, 4, 6, 13]
+		},
+		"35": {
+			"page": 0,
+			"bubbles": [4, 11, 12, 13, 18, 19]
+		},
+		"36": {
+			"page": 0,
+			"bubbles": [2, 9, 10, 13, 14]
+		},
+		"37": {
+			"page": 0,
+			"bubbles": [4, 5, 6, 9, 10, 13, 14]
+		},
+		"38": {
+			"page": 0,
+			"bubbles": [9, 10, 11]
+		},
+		"39": {
+			"page": 0,
+			"bubbles": [3]
+		},
+		"40": {
+			"page": 0,
+			"bubbles": [7, 12, 16]
+		},
+		"52": {
+			"page": 0,
+			"bubbles": [11]
+		},
+		"53": {
+			"page": 0,
+			"bubbles": [5]
+		},
+		"54": {
+			"page": 0,
+			"bubbles": [5, 9]
+		},
+		"26": {
+			"page": 0,
+			"bubbles": [2]
+		}
+	}
+}
