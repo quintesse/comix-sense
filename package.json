@@ -34,5 +34,8 @@
 	},
 	"imports": {
 		"#lib/*": "./src/lib/*"
+	},
+	"dependencies": {
+		"@fortawesome/free-solid-svg-icons": "^7.3.1"
 	}
 }

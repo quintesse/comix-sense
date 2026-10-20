@@ -1,17 +1,21 @@
 import type { ComicStore } from './ComicStore';
 import type { StrStrMap } from './funcs';
 
+export type ComicKind = 'page' | 'album' | 'collection';
+
 export class Comic {
 	path: string;
 	languages: string[];
+	readonly kind: ComicKind;
 	private store: ComicStore;
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
 
-	constructor(path: string, languages: string[], store: ComicStore) {
+	constructor(path: string, languages: string[], store: ComicStore, kind: ComicKind = 'page') {
 		this.path = path;
 		this.languages = languages;
 		this.store = store;
+		this.kind = kind;
 	}
 
 	getImageUrl(): Promise<string> {
