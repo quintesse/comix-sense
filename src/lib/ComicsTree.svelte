@@ -136,7 +136,7 @@
 		labelText="Comics"
 		nodes={folders.map((folder) => ({
 			id: folder.id,
-			text: folder.directory.name,
+			text: folder.directory.name + '/',
 			icon: HardDriveIcon,
 			nodes: comicsChildren(folder)
 		}))}
