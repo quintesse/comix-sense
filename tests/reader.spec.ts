@@ -141,6 +141,59 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
+test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
+	await mockDirectory(page, { shuffled: true });
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	await page.locator('main').click({ position: { x: 10, y: 400 } });
+	await page.keyboard.press('ArrowLeft');
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await page.keyboard.press('ArrowLeft');
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(3);
+});
+
+test('click either half of the main pane, including blank space and bubbles, to navigate', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	const pane = page.locator('main');
+	const bounds = await pane.boundingBox();
+	if (!bounds) throw new Error('Missing main pane');
+	const right = { x: bounds.width - 10, y: 400 };
+	await pane.click({ position: { x: 10, y: 400 } });
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await pane.click({ position: right });
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await pane.click({ position: right });
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await page.locator('foreignObject').click();
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await page.getByRole('img', { name: 'Comic page' }).click({ position: { x: 700, y: 400 } });
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+});
+
+test('navigation leaves editor clicks and text cursor keys available', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	const text = page.getByRole('textbox');
+	await text.fill('Edited text');
+	await text.press('ArrowRight');
+	await text.press('ArrowLeft');
+	await expect(text).toHaveText('Edited text');
+	await clickPage(page, 600, 400);
+	await expect(page.locator('.drawing-target')).toHaveCount(1);
+	await expect(text).toHaveText('Edited text');
+});
+
 test('remember zoom across reloads before any album is opened', async ({ page }) => {
 	await page.goto('./');
 	await expect(page.getByRole('button', { name: 'Select directory...' })).toBeVisible();

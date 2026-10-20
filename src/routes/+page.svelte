@@ -151,6 +151,53 @@
 			});
 	}
 
+	function navigatePage(direction: -1 | 1) {
+		if (!$selectedComic) return;
+		const index = albumPages.indexOf($selectedComic);
+		if (index < 0) return;
+		const next = albumPages[index + direction];
+		if (next) selectComic(next);
+	}
+
+	function isNavigationControl(target: EventTarget | null) {
+		return (
+			target instanceof Element &&
+			!!target.closest(
+				'input, textarea, select, button, a, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="tree"], [role="menu"], [role="menubar"]'
+			)
+		);
+	}
+
+	function handleNavigationKey(event: KeyboardEvent) {
+		if (
+			event.defaultPrevented ||
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.shiftKey ||
+			isNavigationControl(event.target)
+		)
+			return;
+		if ($selectedComic && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+			event.preventDefault();
+			navigatePage(event.key === 'ArrowLeft' ? -1 : 1);
+		}
+	}
+
+	function handleNavigationClick(event: MouseEvent) {
+		if (
+			editable ||
+			event.defaultPrevented ||
+			event.button !== 0 ||
+			isNavigationControl(event.target)
+		)
+			return;
+		const pane = event.target instanceof Element ? event.target.closest('main') : null;
+		if (!pane) return;
+		const bounds = pane.getBoundingClientRect();
+		navigatePage(event.clientX < bounds.left + bounds.width / 2 ? -1 : 1);
+	}
+
 	function selectZoom(zoom: string) {
 		selectedZoom = zoom;
 		try {
@@ -306,6 +353,12 @@
 	let albumPath = $derived(
 		$selectedComic?.path.slice(0, $selectedComic.path.lastIndexOf('/') + 1) ?? ''
 	);
+	let albumPages = $derived(
+		$comics.filter(
+			(comic) =>
+				comic.kind === 'page' && comic.path.slice(0, comic.path.lastIndexOf('/') + 1) === albumPath
+		)
+	);
 	let languages = $derived(
 		dedup(
 			$comics
@@ -319,6 +372,8 @@
 		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
 	);
 </script>
+
+<svelte:window onkeydown={handleNavigationKey} onclick={handleNavigationClick} />
 
 <Header platformName="Comix Sense" bind:isSideNavOpen>
 	<!-- Carbon still exposes this named slot; Svelte 5 supports consuming it. -->
