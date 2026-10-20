@@ -1,27 +1,12 @@
 <script lang="ts">
-    import { run } from 'svelte/legacy';
+	interface Props {
+		url: string;
+	}
 
-    import { onDestroy } from "svelte";
+	let { url }: Props = $props();
 
-    let oldUrl: string|null = $state(null);
-
-    interface Props {
-        url: string;
-    }
-
-    let { url }: Props = $props();
-
-    run(() => {
-        //console.log("Resource set url", url);
-        if (oldUrl && oldUrl != url) {
-            //console.log("Resource revoke old!=new", oldUrl, url);
-            URL.revokeObjectURL(oldUrl);
-        }
-        oldUrl = url;
-    });
-
-    onDestroy(() => {
-        //console.log("Resource revoke onDestroy", url);
-        URL.revokeObjectURL(url);
-    });
+	$effect(() => {
+		const resource = url;
+		return () => URL.revokeObjectURL(resource);
+	});
 </script>

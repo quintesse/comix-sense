@@ -24,3 +24,10 @@ vite.config.ts.timestamp-*
 
 # IDEs
 .idea
+
+# Local comparison snapshots and browser test output
+/.test-tmp
+/test-results
+/playwright-report
+
+/comics

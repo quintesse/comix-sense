@@ -1,76 +1,67 @@
+import { svgPoint } from './funcs';
 
 export type DragDetail = {
-    x: number;
-    y: number;
-    deltaX: number;
-    deltaY: number;
-    originalEvent: MouseEvent;
+	x: number;
+	y: number;
+	deltaX: number;
+	deltaY: number;
+	originalEvent: MouseEvent;
 };
 
-export function draggable(node: Element) {
-    let dragging = false;
-    let startX = 0, startY = 0;
+export function draggable(node: SVGGraphicsElement) {
+	let dragging = false;
+	let start = { x: 0, y: 0 };
 
-    const onMouseDown = (event: Event) => {
-        dragging = true;
-        const mevt: MouseEvent = event as MouseEvent;
-        startX = mevt.offsetX;
-        startY = mevt.offsetY;
-        const e = new CustomEvent<DragDetail>("dragstart", {
-            detail: {
-                x: mevt.offsetX,
-                y: mevt.offsetY,
-                deltaX: 0,
-                deltaY: 0,
-                originalEvent: mevt
-            }
-        });
-        //console.log("dragstart", e);
-        document.addEventListener("mouseup", onMouseUp, true);
-        document.addEventListener("mousemove", onMouseMove, true);
-        node.dispatchEvent(e);
-	};
+	function emit(type: string, event: MouseEvent) {
+		const point = node.ownerSVGElement
+			? svgPoint(node.ownerSVGElement, event)
+			: { x: event.clientX, y: event.clientY };
+		node.dispatchEvent(
+			new CustomEvent<DragDetail>(type, {
+				detail: {
+					...point,
+					deltaX: point.x - start.x,
+					deltaY: point.y - start.y,
+					originalEvent: event
+				}
+			})
+		);
+	}
 
-    const onMouseMove = (event: MouseEvent) => {
-        if (dragging) {
-            const e = new CustomEvent<DragDetail>("drag", {
-                detail: {
-                    x: event.offsetX,
-                    y: event.offsetY,
-                    deltaX: event.offsetX - startX,
-                    deltaY: event.offsetY - startY,
-                    originalEvent: event
-                }
-            });
-            //console.log("drag", e);
-            node.dispatchEvent(e);
-        }
-	};
+	function move(event: MouseEvent) {
+		if (dragging) emit('drag', event);
+	}
 
-    const onMouseUp = (event: MouseEvent) => {
-        dragging = true;
-        const e = new CustomEvent<DragDetail>("dragend", {
-            detail: {
-                x: event.offsetX,
-                y: event.offsetY,
-                deltaX: event.offsetX - startX,
-                deltaY: event.offsetY - startY,
-                originalEvent: event
-            }
-        });
-        //console.log("dragend", e);
-        node.dispatchEvent(e);
-        document.removeEventListener("mousemove", onMouseMove, true);
-        document.removeEventListener("mouseup", onMouseUp, true);
-    };
+	function stop(event?: MouseEvent) {
+		if (dragging && event) emit('dragend', event);
+		dragging = false;
+		document.removeEventListener('mousemove', move, true);
+		document.removeEventListener('mouseup', stop, true);
+		window.removeEventListener('blur', cancel);
+	}
 
-    node.addEventListener("mousedown", onMouseDown, true)
+	function cancel() {
+		stop();
+	}
 
+	function startDrag(event: MouseEvent) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		start = node.ownerSVGElement
+			? svgPoint(node.ownerSVGElement, event)
+			: { x: event.clientX, y: event.clientY };
+		dragging = true;
+		document.addEventListener('mousemove', move, true);
+		document.addEventListener('mouseup', stop, true);
+		window.addEventListener('blur', cancel);
+		emit('dragstart', event);
+	}
+
+	node.addEventListener('mousedown', startDrag);
 	return {
 		destroy() {
-			node.removeEventListener("mousedown", onMouseDown, true);
-			document.removeEventListener("mousemove", onMouseMove, true);
-			document.removeEventListener("mouseup", onMouseUp, true);
+			stop();
+			node.removeEventListener('mousedown', startDrag);
 		}
 	};
 }

@@ -1,20 +1,27 @@
-<!-- @migration-task Error while migrating Svelte code: This migration would change the name of a slot making the component unusable -->
 <script lang="ts">
-	let hovering: boolean = false;
+	import type { Snippet } from 'svelte';
+	let {
+		children,
+		hovering,
+		idle
+	}: {
+		children?: Snippet<[{ hovering: boolean }]>;
+		hovering?: Snippet;
+		idle?: Snippet;
+	} = $props();
+	let isHovering = $state(false);
 
 	function enter() {
-		hovering = true;
-		console.log("enter");
+		isHovering = true;
 	}
 
 	function leave() {
-		hovering = false;
-		console.log("leave");
+		isHovering = false;
 	}
 </script>
 
-<div on:dragenter={enter} on:dragleave={leave}>
-	<slot {hovering}></slot>
-	<div style="display: {hovering ? 'block' : 'none'}"><slot name="hovering"></slot></div>
-	<div style="display: {hovering ? 'none' : 'block'}"><slot name="idle"></slot></div>
+<div role="presentation" ondragenter={enter} ondragleave={leave}>
+	{@render children?.({ hovering: isHovering })}
+	<div style:display={isHovering ? 'block' : 'none'}>{@render hovering?.()}</div>
+	<div style:display={isHovering ? 'none' : 'block'}>{@render idle?.()}</div>
 </div>
