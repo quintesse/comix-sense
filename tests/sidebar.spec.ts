@@ -64,6 +64,9 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 	const response = await page.goto('./');
 	expect(response?.status()).toBe(200);
 	await page.getByRole('button', { name: 'Add folder' }).click();
+	// Clicking starts an async picker. Wait before a test changes pickerParent
+	// or opens another root, otherwise both calls can select the second root.
+	await expect(page.getByRole('treeitem', { name: 'comics/', exact: true })).toHaveCount(1);
 }
 
 test('distinguish albums from collections while keeping pages selectable', async ({ page }) => {
