@@ -84,7 +84,10 @@
 		height: Math.max(0, ...displayedPages.map((page) => page.image.height))
 	});
 
-	onDestroy(() => pageImages.retain([]));
+	onDestroy(() => {
+		pageImages.retain([]);
+		for (const folder of folders) folder.store.dispose();
+	});
 
 	$effect(() => {
 		const requested = visiblePages;
@@ -114,6 +117,7 @@
 				if (!cancelled) {
 					pageLoadError = String(error);
 					loadingPages = false;
+					pageImages.retain(displayedPages.map((page) => page.comic));
 				}
 			});
 		return () => {
@@ -151,6 +155,8 @@
 		if (!folder) return;
 		disconnectOpen = false;
 		disconnectFolder = undefined;
+		archiveSelection++;
+		folder.store.dispose();
 		folders = folders.filter((entry) => entry.id !== folder.id);
 		savedDirectories = savedDirectories.filter((entry) => entry.id !== folder.id);
 		expandedIds = expandedIds.filter((id) => id !== folder.id && !id.startsWith(folder.id + '/'));
@@ -183,6 +189,7 @@
 		} catch {
 			// Reading remains available when browser storage is disabled.
 		}
+		const restorationSelection = archiveSelection;
 		void (async () => {
 			try {
 				readingHistory = (await readReadingHistory()) ?? [];
@@ -207,7 +214,7 @@
 					}
 					const active =
 						folders.find((folder) => folder.id === session.activeDirectoryId) ?? folders[0];
-					if (active) activateFolder(active);
+					if (active && restorationSelection === archiveSelection) activateFolder(active);
 				}
 			} catch (error) {
 				directoryError = 'Could not restore the previous directory: ' + String(error);
@@ -245,7 +252,24 @@
 			readingHistory.push(position);
 		}
 		position.directory = directory;
-		const folder: ComicFolder = { ...saved, comics: nextComics, albumPages: position.albumPages };
+		const folder: ComicFolder = {
+			...saved,
+			comics: nextComics,
+			store: nextStore,
+			albumPages: position.albumPages
+		};
+		// Restore lazy archive identities only after permission and directory enumeration.
+		const archived = nextComics.find(
+			(c) => c.kind === 'archive' && position!.lastPage?.startsWith(c.path + '/')
+		);
+		if (archived) {
+			try {
+				const pages = await nextStore.archive(archived.path).list();
+				nextComics.splice(nextComics.indexOf(archived) + 1, 0, ...pages);
+			} catch (error) {
+				directoryError = 'Could not restore archive: ' + String(error);
+			}
+		}
 		folders = [...folders, folder];
 		if (expand) expandedIds = [...expandedIds, folder.id];
 		if (!restoringDirectory) activateFolder(folder);
@@ -263,12 +287,51 @@
 		);
 	}
 
+	let archiveSelection = 0;
+	async function openArchive(archive: Comic, select = true) {
+		let folder = folders.find((f) => f.comics.includes(archive));
+		if (!folder) return;
+		const request = select ? ++archiveSelection : archiveSelection;
+		if (select) {
+			directoryError = '';
+			for (const root of folders)
+				root.store.cancelArchives(root.id === folder.id ? archive.path : undefined);
+		}
+		const publish = () => {
+			folders = folders.map((f) =>
+				f.id === folder!.id ? { ...f, comics: [...folder!.comics] } : f
+			);
+			if (activeDirectoryId === folder!.id) comics.set(folder!.comics);
+		};
+		const indexed = folder.comics.some((c) => c.album === archive.path);
+		if (!indexed) archive.archiveState = 'loading';
+		publish();
+		try {
+			const pages = await folder.store.archive(archive.path).list();
+			folder = folders.find((f) => f.id === folder!.id);
+			if (!folder) return;
+			if (!folder.comics.includes(pages[0]))
+				folder.comics.splice(folder.comics.indexOf(archive) + 1, 0, ...pages);
+			archive.archiveState = undefined;
+			publish();
+			if (select && request === archiveSelection)
+				selectComic(pages.find((p) => p.path === folder!.albumPages[archive.path]) ?? pages[0]);
+		} catch (error) {
+			if (!folders.some((f) => f.id === folder!.id)) return;
+			archive.archiveState = 'error';
+			publish();
+			directoryError = 'Could not open ' + archive.fileName + ': ' + String(error);
+		}
+	}
 	function selectComic(comic: Comic) {
+		archiveSelection++;
+		for (const root of folders)
+			root.store.cancelArchives(root.comics.includes(comic) ? comic.album : undefined);
 		const folder = folders.find((folder) => folder.comics.includes(comic));
 		if (folder) activateFolder(folder, comic);
 		else selectedComic.set(comic);
 		if (!readingPosition) return;
-		const albumPath = comic.path.slice(0, comic.path.lastIndexOf('/') + 1);
+		const albumPath = comic.albumPath;
 		const position = {
 			...readingPosition,
 			lastPage: comic.path,
@@ -532,14 +595,9 @@
 		{ id: '25%', label: '25%' }
 	];
 	let editable = $derived(selectedEdit === 'yes' && !fullscreen);
-	let albumPath = $derived(
-		$selectedComic?.path.slice(0, $selectedComic.path.lastIndexOf('/') + 1) ?? ''
-	);
+	let albumPath = $derived($selectedComic?.albumPath ?? '');
 	let albumPages = $derived(
-		$comics.filter(
-			(comic) =>
-				comic.kind === 'page' && comic.path.slice(0, comic.path.lastIndexOf('/') + 1) === albumPath
-		)
+		$comics.filter((comic) => comic.kind === 'page' && comic.albumPath === albumPath)
 	);
 	let visiblePages = $derived(
 		$selectedComic
@@ -552,9 +610,7 @@
 	let languages = $derived(
 		dedup(
 			$comics
-				.filter(
-					(c) => c.kind === 'page' && c.path.slice(0, c.path.lastIndexOf('/') + 1) === albumPath
-				)
+				.filter((c) => c.kind === 'page' && c.albumPath === albumPath)
 				.flatMap((c) => c.languages)
 		)
 	);
@@ -626,6 +682,7 @@
 					<div class="tree-scroll">
 						{#if !noSources}
 							<ComicsTree
+								onarchive={openArchive}
 								{folders}
 								selectedComic={$selectedComic}
 								bind:expandedIds

@@ -1,15 +1,19 @@
+import { ArchiveComicStore } from '../archives/ArchiveComicStore';
+import type { ArchivePriority } from '../archives/ArchiveReader';
 import { Comic, type Bubble } from './Comic';
 import {
 	baseNameExt,
 	resolveFile,
 	sharedFilenamePrefix,
 	supportedImageTypes,
+	withoutAlbumPrefix,
 	withoutParentPrefix
 } from './funcs';
 
 export interface ComicStore {
 	list(): Promise<Comic[]>;
-	getImageUrl(c: Comic): Promise<string>;
+	getImageUrl(c: Comic, priority?: ArchivePriority): Promise<string>;
+	protectImage?(c: Comic): () => void;
 	getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
 }
 
@@ -18,15 +22,43 @@ export interface UpdatableComicStore extends ComicStore {
 }
 
 export class DirectoryComicStore implements ComicStore {
+	private archives = new Map<string, ArchiveComicStore>();
+	private disposed = false;
 	constructor(private readonly dir: FileSystemDirectoryHandle) {}
 
+	archive(path: string): ArchiveComicStore {
+		if (this.disposed) throw new Error('Directory disconnected');
+		let store = this.archives.get(path);
+		if (!store) {
+			store = new ArchiveComicStore(
+				path,
+				async () => (await resolveFile(this.dir, path)).getFile(),
+				path.split('/').at(-2) ?? this.dir.name
+			);
+			this.archives.set(path, store);
+		}
+		return store;
+	}
+	cancelArchives(except?: string) {
+		for (const [path, store] of this.archives) if (path !== except) store.cancel();
+	}
+	dispose() {
+		this.disposed = true;
+		for (const store of this.archives.values()) store.dispose();
+		this.archives.clear();
+	}
 	async list(): Promise<Comic[]> {
 		const comics: Comic[] = [];
 		await this.listDirectory(this.dir, '', comics);
 		return comics;
 	}
 
-	private async listDirectory(dir: FileSystemDirectoryHandle, prefix: string, comics: Comic[]) {
+	private async listDirectory(
+		dir: FileSystemDirectoryHandle,
+		prefix: string,
+		comics: Comic[],
+		collection = ''
+	) {
 		const pages: Comic[] = [];
 		const entries = [];
 		for await (const entry of dir.values()) entries.push(entry);
@@ -37,7 +69,7 @@ export class DirectoryComicStore implements ComicStore {
 			const path = prefix + entry.name;
 			if (entry.kind === 'directory') {
 				const children: Comic[] = [];
-				await this.listDirectory(entry, path + '/', children);
+				await this.listDirectory(entry, path + '/', children, dir.name);
 				// Groups (including mixed folders) are collections; page-only folders are albums.
 				const kind =
 					children.length > 0 && children.every((child) => child.kind === 'page')
@@ -64,6 +96,7 @@ export class DirectoryComicStore implements ComicStore {
 					return [];
 				});
 				const page = new Comic(path, languages, this);
+				page.displayName = withoutAlbumPrefix(page.displayName, collection, dir.name);
 				pages.push(page);
 				comics.push(page);
 			}
