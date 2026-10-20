@@ -729,10 +729,10 @@ test('a superseded slow spread cannot replace newer navigation and releases its 
 	await page.getByRole('treeitem', { name: '03', exact: true }).click();
 	await expect.poll(() => page.evaluate(() => window.__imageWaiting)).toBe(true);
 	await page.getByRole('treeitem', { name: '05', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Page 5');
+	await expect(page.locator('foreignObject')).toHaveText(['Page 5']);
 	await page.evaluate(() => window.__releaseImage());
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(4);
-	await expect(page.locator('foreignObject')).toHaveText('Page 5');
+	await expect(page.locator('foreignObject')).toHaveText(['Page 5']);
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/05.png');
 });
 
@@ -857,6 +857,10 @@ for (const mode of ['1P', '2P']) {
 	}) => {
 		await mockDirectory(page, { pageCount: 6 });
 		await openComic(page, mode);
+		// Keep burst timing independent of image loading and CI scheduling.
+		const time = new Date('2026-10-20T12:00:00Z');
+		await page.clock.install({ time });
+		await page.clock.pauseAt(time);
 		const paths = () =>
 			page
 				.locator('[data-page-path]')
@@ -888,6 +892,8 @@ for (const mode of ['1P', '2P']) {
 			.toEqual(mode === '1P' ? ['album/02.png'] : ['album/02.png', 'album/03.png']);
 		await page.evaluate(() => document.documentElement.requestFullscreen());
 		await expect(page.getByRole('banner')).toBeHidden();
+		// Wait for the fullscreen viewport to settle before sending native input.
+		await page.locator('.viewport').hover();
 		await page.mouse.wheel(0, -120);
 		await expect.poll(paths).toEqual(start);
 		await page.evaluate(() => document.exitFullscreen());
