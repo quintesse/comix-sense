@@ -103,6 +103,172 @@ async function expectSavedFolders(page: Page, folders: string[]) {
 		.toEqual(folders);
 }
 
+test('album page pane follows navigation, scrolls selection into view and navigates on click', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 720 });
+	// setViewportSize also resizes the emulated screen; this is a normal window.
+	await page.addInitScript(() => Object.defineProperty(window, 'fullScreen', { value: false }));
+	await setupDirectory(page);
+	const pane = page.getByRole('region', { name: 'Album pages' });
+	await expect(pane).toContainText('Select an album');
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.press('ArrowRight');
+	await album.click();
+	const first = pane.getByRole('button', { name: '01', exact: true });
+	const second = pane.getByRole('button', { name: '02', exact: true });
+	await expect(pane.getByRole('button')).toHaveCount(2);
+	await expect(first).toHaveAttribute('aria-current', 'page');
+	await expect
+		.poll(() => first.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+		.toBe(800);
+
+	const treeBounds = await page.locator('.tree').boundingBox();
+	const paneBounds = await pane.boundingBox();
+	expect(treeBounds).not.toBeNull();
+	expect(paneBounds).not.toBeNull();
+	expect(Math.abs(treeBounds!.height - paneBounds!.height)).toBeLessThan(2);
+	expect(paneBounds!.y).toBeCloseTo(treeBounds!.y + treeBounds!.height + 6, 0);
+
+	await page.keyboard.press('Shift+PageDown');
+	await expect(second).toHaveAttribute('aria-current', 'page');
+	await expect(first).not.toHaveAttribute('aria-current');
+	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveAttribute(
+		'aria-current',
+		'true'
+	);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/02.png'
+	);
+	await expect.poll(() => pane.locator('ul').evaluate((list) => list.scrollTop)).toBeGreaterThan(0);
+	const secondBounds = await second.boundingBox();
+	expect(secondBounds!.y + secondBounds!.height).toBeLessThanOrEqual(
+		paneBounds!.y + paneBounds!.height + 1
+	);
+
+	await first.click();
+	await expect(first).toHaveAttribute('aria-current', 'page');
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/01.png'
+	);
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/01.png');
+	await first.press('ArrowDown');
+	await expect(second).toBeFocused();
+	await expect(first).toHaveAttribute('aria-current', 'page');
+	await second.press('Enter');
+	await expect(second).toBeFocused();
+	await expect(second).toHaveAttribute('aria-current', 'page');
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/02.png'
+	);
+	await second.press('ArrowUp');
+	await expect(first).toBeFocused();
+	await expect(second).toHaveAttribute('aria-current', 'page');
+	await first.press('Enter');
+	await expect(first).toHaveAttribute('aria-current', 'page');
+	await first.press('End');
+	await expect(second).toBeFocused();
+	await second.press('Home');
+	await expect(first).toBeFocused();
+	await page.reload();
+	await expect(pane.getByRole('button', { name: '01', exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
+test('sidebar dividers resize the panes and reader with pointer and keyboard controls', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
+	const horizontal = page.getByRole('separator', { name: 'Resize sidebar panes', exact: true });
+	const vertical = page.getByRole('separator', { name: 'Resize sidebar', exact: true });
+	const tree = page.locator('.tree');
+	const pages = page.getByRole('region', { name: 'Album pages' });
+	const beforeTree = (await tree.boundingBox())!;
+	const beforePages = (await pages.boundingBox())!;
+	const split = (await horizontal.boundingBox())!;
+	await page.mouse.move(split.x + split.width / 2, split.y + split.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(split.x + split.width / 2, split.y + split.height / 2 + 100, { steps: 5 });
+	await page.mouse.up();
+	expect((await tree.boundingBox())!.height).toBeCloseTo(beforeTree.height + 100, 0);
+	expect((await pages.boundingBox())!.height).toBeCloseTo(beforePages.height - 100, 0);
+	await horizontal.press('Home');
+	await expect(horizontal).toHaveAttribute('aria-valuenow', '15');
+	await horizontal.press('End');
+	await expect(horizontal).toHaveAttribute('aria-valuenow', '85');
+	await horizontal.press('ArrowUp');
+	await expect(horizontal).toHaveAttribute('aria-valuenow', '83');
+	await horizontal.dblclick();
+	await expect(horizontal).toHaveAttribute('aria-valuenow', '50');
+
+	const beforeMain = (await page.locator('main').boundingBox())!;
+	const edge = (await vertical.boundingBox())!;
+	await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(edge.x + edge.width / 2 + 100, edge.y + edge.height / 2, { steps: 5 });
+	await page.mouse.up();
+	await expect(vertical).toHaveAttribute('aria-valuenow', '356');
+	await expect.poll(async () => (await tree.boundingBox())!.width).toBe(356);
+	await expect
+		.poll(async () => (await page.locator('main').boundingBox())!.x)
+		.toBe(beforeMain.x + 100);
+	await expect
+		.poll(async () => (await page.locator('main').boundingBox())!.width)
+		.toBe(beforeMain.width - 100);
+	await vertical.press('ArrowLeft');
+	await expect(vertical).toHaveAttribute('aria-valuenow', '340');
+	await vertical.press('Home');
+	await expect(vertical).toHaveAttribute('aria-valuenow', '200');
+	await vertical.press('End');
+	await expect(vertical).toHaveAttribute('aria-valuenow', '480');
+	await vertical.dblclick();
+	await expect(vertical).toHaveAttribute('aria-valuenow', '256');
+	await pages.getByRole('button', { name: '02', exact: true }).click();
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/02.png'
+	);
+});
+
+test('page pane switches albums and excludes pages in nested albums', async ({ page }) => {
+	await setupDirectory(page, true);
+	const pane = page.getByRole('region', { name: 'Album pages' });
+	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
+	await pane.getByRole('button', { name: '02', exact: true }).click();
+	const oldPreview = await pane.locator('img').first().getAttribute('src');
+	const series = page.getByRole('treeitem', { name: 'series/', exact: true });
+	await series.press('ArrowRight');
+	await series.getByRole('treeitem', { name: '01', exact: true }).click();
+	await expect(pane.getByRole('button')).toHaveCount(2);
+	await expect(pane.locator('button').first()).toHaveAttribute('data-page', 'series/01.png');
+	await page.getByRole('treeitem', { name: 'volume', exact: true }).click();
+	await expect(pane.getByRole('button')).toHaveCount(2);
+	await expect(pane.locator('button').first()).toHaveAttribute('data-page', 'series/volume/01.png');
+	if (oldPreview) {
+		expect(
+			await page.evaluate(async (url) => {
+				try {
+					await fetch(url);
+					return false;
+				} catch {
+					return true;
+				}
+			}, oldPreview)
+		).toBe(true);
+	}
+	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
+	await expect(pane.getByRole('button', { name: '02', exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
 test('Enter selects without toggling expansion or moving focus out of the tree', async ({
 	page
 }) => {

@@ -9,6 +9,17 @@ declare global {
 	}
 }
 
+async function readerImageCount(page: Page) {
+	return page.evaluate(() => {
+		const previews = new Set(
+			Array.from(document.querySelectorAll<HTMLImageElement>('[aria-label="Album pages"] img')).map(
+				(img) => img.src
+			)
+		);
+		return window.__imageUrls.created.filter((url) => !previews.has(url)).length;
+	});
+}
+
 // Exercise the app through its real directory-picker boundary without OS dialogs.
 // File contents and asynchronous enumeration match the browser File System Access API.
 async function mockDirectory(
@@ -181,7 +192,7 @@ test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	await page.keyboard.press('ArrowLeft');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(3);
+	await expect.poll(() => readerImageCount(page)).toBe(3);
 });
 
 for (const mode of ['1P', '2P']) {
@@ -541,7 +552,7 @@ test('retain session edits across pages and release images only when leaving a p
 	await page.getByRole('textbox').fill('Retained edit');
 	await selectMenu(page, 'EN', 'ORG');
 	await expect(page.locator('foreignObject')).toHaveCount(0);
-	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(1);
+	await expect.poll(() => readerImageCount(page)).toBe(1);
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(0);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.getByRole('textbox')).toHaveText('Retained edit');
@@ -550,7 +561,7 @@ test('retain session edits across pages and release images only when leaving a p
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(1);
 	await page.getByRole('treeitem', { name: '01', exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Retained edit');
-	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(3);
+	await expect.poll(() => readerImageCount(page)).toBe(3);
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(2);
 });
 
@@ -728,7 +739,7 @@ test('edit both pages in 2P, target the right context menu and retain overlappin
 	// Navigation starts outside editable text; the retained right page becomes the left page.
 	await page.getByRole('treeitem', { name: '02', exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Right edit', 'Page 3']);
-	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(3);
+	await expect.poll(() => readerImageCount(page)).toBe(3);
 	await page.getByRole('textbox').first().click({ button: 'right' });
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Page 3');

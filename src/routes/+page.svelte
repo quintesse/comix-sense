@@ -9,8 +9,6 @@
 		SkipToContent,
 		Content,
 		//
-		FileUploaderDropContainer,
-		//
 		Button,
 		TileGroup,
 		RadioTile,
@@ -36,6 +34,8 @@
 	import { BblShapeType, boundsv, vertex, type Bubble, type Comic } from '#lib/types/Comic.js';
 	import { DirectoryComicStore, type ComicStore } from '#lib/types/ComicStore.js';
 	import ComicsTree from '#lib/ComicsTree.svelte';
+	import AlbumPages from '#lib/AlbumPages.svelte';
+	import SidebarPanes from '#lib/SidebarPanes.svelte';
 	import ReaderPage from '#lib/ReaderPage.svelte';
 	import Zoom from '#lib/Zoom.svelte';
 	import { dedup } from '#lib/types/funcs.js';
@@ -541,25 +541,28 @@
 		</HeaderNav>
 	</Header>
 
-	<SideNav bind:isOpen={isSideNavOpen}>
+	<SideNav bind:isOpen={isSideNavOpen} resizable resizeHandleLabel="Resize sidebar">
 		{#if store}
-			<div class="tree">
-				<ComicsTree
-					comics={$comics}
-					selectedComic={$selectedComic}
-					bind:expandedIds
-					albumPages={readingPosition?.albumPages}
-					onselect={selectComic}
-				/>
-			</div>
-			<FileUploaderDropContainer
-				multiple
-				labelText="Drag and drop files here or click to upload"
-				validateFiles={(files) => files}
-				on:change={(e) => {
-					console.log('files', e.detail);
-				}}
-			/>
+			<SidebarPanes>
+				{#snippet tree()}
+					<div class="tree">
+						<ComicsTree
+							comics={$comics}
+							selectedComic={$selectedComic}
+							bind:expandedIds
+							albumPages={readingPosition?.albumPages}
+							onselect={selectComic}
+						/>
+					</div>
+				{/snippet}
+				{#snippet pages()}
+					<AlbumPages
+						pages={$selectedComic ? albumPages : []}
+						selectedComic={$selectedComic}
+						onselect={selectComic}
+					/>
+				{/snippet}
+			</SidebarPanes>
 		{:else if restoringDirectory}
 			<p>Restoring directory...</p>
 		{:else}
@@ -660,6 +663,6 @@
 	}
 	.tree {
 		overflow: auto;
-		height: 100%;
+		overscroll-behavior: contain;
 	}
 </style>
