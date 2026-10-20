@@ -1,22 +1,28 @@
 {
-	"name": "my-app",
+	"name": "comix-sense",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"engines": {
+		"node": "^22.12.0 || >=24.0.0"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync",
+		"test": "playwright test",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
 		"lint": "prettier --check ."
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@types/wicg-file-system-access": "^2023.10.7",
 		"carbon-components-svelte": "^0.113.1",
 		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^4.1.1",
@@ -24,8 +30,5 @@
 		"svelte-check": "^4.7.7",
 		"typescript": "^5.9.3",
 		"vite": "^8.3.4"
-	},
-	"engines": {
-		"node": "^22.12.0 || >=24.0.0"
 	}
 }

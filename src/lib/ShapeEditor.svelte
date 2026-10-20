@@ -1,140 +1,110 @@
 <script lang="ts">
-    import { run } from 'svelte/legacy';
-    import { onDestroy } from 'svelte';
-    import { BblShapeType, bounds, boundsv, distance, points, vertex, type BblShape, type Vertex } from './types/Comic';
-	import { createEventDispatcher } from 'svelte';
+	import {
+		BblShapeType,
+		bounds,
+		boundsv,
+		distance,
+		points,
+		vertex,
+		type BblShape,
+		type Vertex
+	} from './types/Comic';
+	import { svgPoint } from './types/funcs';
 
-    interface Props {
-        shape?: BblShapeType;
-        svg: SVGGraphicsElement;
-    }
+	let {
+		shape = BblShapeType.box,
+		svg,
+		onshape
+	}: {
+		shape?: BblShapeType;
+		svg: SVGSVGElement;
+		onshape?: (shape: BblShape) => void;
+	} = $props();
 
-    let { shape = BblShapeType.box, svg }: Props = $props();;
+	let vs = $state<Vertex[]>([]);
+	let drawing = $derived(vs.length > 0);
+	let preview = $derived(
+		shape === BblShapeType.box && drawing
+			? [vs[0], vertex(vs[0].x, vs[1].y), vs[1], vertex(vs[1].x, vs[0].y)]
+			: vs
+	);
+	let valid = $derived(
+		drawing &&
+			(shape === BblShapeType.box
+				? bounds(vs).w >= 10 && bounds(vs).h >= 10
+				: vs.length >= 4 && distance(vs[0], vs[vs.length - 1]) < 10)
+	);
 
-    const dispatch = createEventDispatcher();
+	function handleClick(event: MouseEvent) {
+		if (event.button !== 0) return;
+		const point = svgPoint(svg, event);
+		if (!drawing) {
+			if (!(event.target instanceof SVGImageElement)) return;
+			vs = [point, point];
+		} else {
+			vs[vs.length - 1] = point;
+			if (shape === BblShapeType.box || (vs.length >= 4 && distance(vs[0], point) < 10)) {
+				if (valid) {
+					const vertices = shape === BblShapeType.box ? boundsv(vs) : vs.slice(0, -1);
+					onshape?.({ type: shape, vs: vertices.map((v) => vertex(v.x, v.y)) });
+				}
+				vs = [];
+			} else {
+				vs.push(point);
+			}
+		}
+	}
 
-    let lostFocus: boolean = $state(false);
-    let isFirstClick: boolean = $state(true);
-    let vs: Vertex[] = $state([vertex(0, 0), vertex(0, 0)]);
-
-    function handleClick(evt: MouseEvent) {
-        if (isFirstClick) {
-            if (lostFocus) {
-                lostFocus = false;
-            } else if (evt.target?.tagName.toLowerCase() === "image") {
-                svg.addEventListener("mousemove", handleMove);
-                document.addEventListener("keydown", handleKeyDown);
-                vs = [];
-                vs[0] = vertex(evt.offsetX, evt.offsetY);
-                vs[1] = vertex(evt.offsetX, evt.offsetY);
-                isFirstClick = false;
-            }
-        } else if (isLastClick(evt)) {
-            svg.removeEventListener("mousemove", handleMove);
-            document.removeEventListener("keydown", handleKeyDown);
-            vs[vs.length - 1] = vertex(evt.offsetX, evt.offsetY);
-            isFirstClick = true;
-            dispatch('shape', bblShape());
-        } else {
-            vs[vs.length - 1] = vertex(evt.offsetX, evt.offsetY);
-            vs[vs.length] = vertex(evt.offsetX, evt.offsetY);
-        }
-    }
-
-    function handleMove(evt: MouseEvent) {
-        vs[vs.length - 1] = vertex(evt.offsetX, evt.offsetY);
-    }
-
-    function handleKeyDown(evt: KeyboardEvent) {
-        if (evt.key === "Escape") {
-            isFirstClick = true;
-        } else if (evt.key === "Backspace") {
-            if (vs.length > 2) {
-                vs[vs.length - 2] = vs.pop() as Vertex;
-            } else {
-                isFirstClick = true;
-            }
-        }
-    }
-
-    function isLastClick(evt: MouseEvent): boolean {
-        if (shape === BblShapeType.box) {
-            return vs.length == 2;
-        } else {
-            const vlast = vertex(evt.offsetX, evt.offsetY);
-            return vs.length > 2 && distance(vs[0], vlast) < 10;
-        }
-    }
-
-    function isValidShape(vs: Vertex[]): boolean {
-        if (shape === BblShapeType.box) {
-            if (vs.length == 2) {
-                const bb = bounds(vs);
-                return bb.w >= 10 && bb.h >= 10;
-            }
-        } else {
-            return vs.length > 2 && distance(vs[0], vs[vs.length - 1]) < 10;
-        }
-        return false;
-    }
-
-    function shapeVertices(vs: Vertex[]) {
-        if (shape === BblShapeType.box) {
-            return [vertex(vs[0].x, vs[0].y), vertex(vs[0].x, vs[1].y), vertex(vs[1].x, vs[1].y), vertex(vs[1].x, vs[0].y)];
-        } else {
-            return vs;
-        }
-    }
-
-    function bblShape(): BblShape {
-        let result = {
-            type: shape,
-            vs: vs
-        };
-        if (shape === BblShapeType.box) {
-            result.vs = boundsv(vs);
-        }
-        return result;
-    }
-
-	onDestroy(() => {
-		if (svg) {
-            svg.removeEventListener("click", handleClick);
-            svg.removeEventListener("mousemove", handleMove);
-            document.removeEventListener("keydown", handleKeyDown);
-        };
+	$effect(() => {
+		// Reset an unfinished shape when changing tool or page.
+		shape;
+		const target = svg;
+		vs = [];
+		target.addEventListener('click', handleClick);
+		return () => target.removeEventListener('click', handleClick);
 	});
 
-    run(() => {
-        if (svg) {
-            svg.addEventListener("click", handleClick);
-            svg.addEventListener("blur", () => lostFocus = true);
-        }
-    });
-
-    let shapevs = $derived(shapeVertices(vs));
-    let pts = $derived(points(shapevs));
-    let valid = $derived(isValidShape(shapevs));
+	$effect(() => {
+		if (!drawing) return;
+		function move(event: MouseEvent) {
+			vs[vs.length - 1] = svgPoint(svg, event);
+		}
+		function keydown(event: KeyboardEvent) {
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				vs = [];
+			} else if (event.key === 'Backspace') {
+				event.preventDefault();
+				if (vs.length > 2) vs.splice(vs.length - 2, 1);
+				else vs = [];
+			}
+		}
+		svg.addEventListener('mousemove', move);
+		document.addEventListener('keydown', keydown);
+		return () => {
+			svg.removeEventListener('mousemove', move);
+			document.removeEventListener('keydown', keydown);
+		};
+	});
 </script>
 
-{#if !isFirstClick}
-    <rect x="0%" y="0%" width="100%" height="100%" />
-    <polygon points={pts} class:valid={valid} />
+{#if drawing}
+	<rect x="0" y="0" width="100%" height="100%" class="drawing-target" />
+	<polygon points={points(preview)} class:valid />
 {/if}
 
 <style>
-    rect {
-        opacity: 0;
-    }
-
-    polygon {
-        fill: white;
-        opacity: 0.8;
-        stroke: black;
-        stroke-width:3;
-    }
-
-    polygon.valid {
-        stroke: green;
-    }
+	.drawing-target {
+		opacity: 0;
+	}
+	polygon {
+		fill: white;
+		opacity: 0.8;
+		stroke: black;
+		stroke-width: 3;
+		pointer-events: none;
+	}
+	polygon.valid {
+		stroke: green;
+	}
 </style>

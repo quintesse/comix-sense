@@ -1,80 +1,69 @@
-import { Comic, type Bubble } from "./Comic";
-import { baseNameExt, resolveFile, supportedImageTypes } from "./funcs";
+import { Comic, type Bubble } from './Comic';
+import { baseNameExt, resolveFile, supportedImageTypes } from './funcs';
 
 export interface ComicStore {
-    list(): Promise<Comic[]>;
-    getImageUrl(c: Comic): Promise<string>;
-    getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
+	list(): Promise<Comic[]>;
+	getImageUrl(c: Comic): Promise<string>;
+	getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
 }
 
 export interface UpdatableComicStore extends ComicStore {
-    update(c: Comic): boolean;
+	update(c: Comic): boolean;
 }
 
 export class DirectoryComicStore implements ComicStore {
-    private readonly dir: FileSystemDirectoryHandle;
+	constructor(private readonly dir: FileSystemDirectoryHandle) {}
 
-    constructor(dir: FileSystemDirectoryHandle) {
-        this.dir = dir;
-    }
+	async list(): Promise<Comic[]> {
+		const comics: Comic[] = [];
+		await this.listDirectory(this.dir, '', comics);
+		return comics;
+	}
 
-    async list(): Promise<Comic[]> {
-        let comics: Comic[] = [];
-        await this._list(this.dir, comics);
-        return comics;
-    }
+	private async listDirectory(dir: FileSystemDirectoryHandle, prefix: string, comics: Comic[]) {
+		const entries = [];
+		for await (const entry of dir.values()) entries.push(entry);
+		entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+		const files = entries.filter((entry): entry is FileSystemFileHandle => entry.kind === 'file');
 
-    private async _list(d: FileSystemDirectoryHandle, comics: Comic[]) {
-        let cbase = "";
-        let c: Comic = { path: "", languages: [] };
-        for await (const [name, entry] of d) {
-            // Get the entry's full path
-            let path = (await this.dir.resolve(entry))?.join("/");
-            if (path) {
-                let [base, ext] = baseNameExt(path);
-                if (entry.kind === 'file' && !supportedImageTypes.includes(ext) && ext !== "bbl") {
-                    // Skip files that are not images or .bbl files
-                    continue;
-                }
-                let lang = null;
-                if (ext === "bbl") {
-                    [base, lang] = baseNameExt(base);
-                }
-                if (cbase !== base) {
-                    cbase = base;
-                    c = new Comic("", [], this);
-                    comics.push(c);
-                }
-                if (lang != null) {
-                    c.languages?.push(lang);
-                }
-                if (ext !== "bbl") {
-                    c.path = (entry.kind === 'directory') ? path + "/" : path;
-                }
-            }
-            if (entry.kind === 'directory') {
-                // Recurse into any directories we find
-                await this._list(entry, comics);
-            }
-        }
-    }
+		for (const entry of entries) {
+			const path = prefix + entry.name;
+			if (entry.kind === 'directory') {
+				comics.push(new Comic(path + '/', [], this));
+				await this.listDirectory(entry, path + '/', comics);
+			} else {
+				const [base, ext] = baseNameExt(entry.name);
+				if (!supportedImageTypes.includes(ext.toLowerCase())) continue;
+				const languages = files.flatMap((file) => {
+					if (file.name === base + '.bbl') return [''];
+					if (file.name.startsWith(base + '.') && file.name.endsWith('.bbl')) {
+						return [file.name.slice(base.length + 1, -4)];
+					}
+					return [];
+				});
+				comics.push(new Comic(path, languages, this));
+			}
+		}
+	}
 
-    async getImageUrl(c: Comic): Promise<string> {
-        const imgFile = await resolveFile(this.dir, c.path).then(hdl => hdl.getFile());
-        const url = URL.createObjectURL(imgFile);
-        return url;
-    }
+	async getImageUrl(comic: Comic): Promise<string> {
+		const handle = await resolveFile(this.dir, comic.path);
+		return URL.createObjectURL(await handle.getFile());
+	}
 
-    async getBubbles(c: Comic, language?: string): Promise<Bubble[]> {
-        const lang = language ? language : c.languages[0];
-        const bblPath = baseNameExt(c.path)[0] + (lang !== "" ? "." + lang : "") + ".bbl";
-        try {
-            const jsonText = await resolveFile(this.dir, bblPath).then(hdl => hdl.getFile()).then(file => file.text());
-            const json = JSON.parse(jsonText);
-            console.log("BBL", json);
-            return json.pages[0].bubbles;
-        } catch (e) {
-            throw "BBL not found or could not be read: " + language;
-        }
-    }
+	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
+		const lang = language ?? comic.languages[0];
+		if (lang === undefined) return [];
+		const path = baseNameExt(comic.path)[0] + (lang ? '.' + lang : '') + '.bbl';
+		try {
+			const handle = await resolveFile(this.dir, path);
+			const json = JSON.parse(await (await handle.getFile()).text());
+			if (!Array.isArray(json.pages?.[0]?.bubbles)) throw new Error('Invalid bubble data');
+			return json.pages[0].bubbles;
+		} catch (error) {
+			// A language may exist on another page in this collection.
+			if (error instanceof DOMException && error.name === 'NotFoundError') return [];
+			throw new Error('Could not read bubbles: ' + path, { cause: error });
+		}
+	}
 }
