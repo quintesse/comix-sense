@@ -1,14 +1,15 @@
 <script lang="ts">
 	import type { Comic } from './types/Comic';
-	import { baseNameExt } from './types/funcs';
 
 	let {
 		pages,
 		selectedComic,
+		noSources = false,
 		onselect
 	}: {
 		pages: Comic[];
 		selectedComic: Comic | null;
+		noSources?: boolean;
 		onselect: (comic: Comic) => void;
 	} = $props();
 	let list: HTMLUListElement;
@@ -89,7 +90,7 @@
 	}
 </script>
 
-<section aria-label="Album pages">
+<section aria-label="Album pages" class:empty-pane={pages.length === 0}>
 	<h2>Pages</h2>
 	<ul bind:this={list} use:keyboard>
 		{#each pages as comic (comic)}
@@ -97,15 +98,18 @@
 				<button
 					type="button"
 					data-page={comic.path}
+					title={comic.fileName}
 					aria-current={selectedComic === comic ? 'page' : undefined}
 					onclick={() => onselect(comic)}
 				>
 					<img use:thumbnail={comic} alt="" />
-					<span>{baseNameExt(comic.path.split('/').at(-1)!)[0]}</span>
+					<span>{comic.displayName}</span>
 				</button>
 			</li>
 		{:else}
-			<li class="empty">Select an album to see its pages.</li>
+			<li class="empty">
+				{noSources ? 'Add a comics source' : 'Select an album to see its pages.'}
+			</li>
 		{/each}
 	</ul>
 </section>
@@ -115,6 +119,15 @@
 		display: flex;
 		flex-direction: column;
 		min-height: 0;
+	}
+	section.empty-pane {
+		background: #f4f4f4;
+		color: #6f6f6f;
+	}
+	section.empty-pane ul {
+		flex: 1;
+		display: grid;
+		place-items: center;
 	}
 	h2 {
 		flex: none;

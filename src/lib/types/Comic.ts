@@ -1,12 +1,13 @@
 import type { ComicStore } from './ComicStore';
-import type { StrStrMap } from './funcs';
+import { baseNameExt, type StrStrMap } from './funcs';
 
-export type ComicKind = 'page' | 'album' | 'collection';
+export type ComicKind = 'page' | 'album' | 'collection' | 'archive';
 
 export class Comic {
 	path: string;
 	languages: string[];
 	readonly kind: ComicKind;
+	displayName: string;
 	private store: ComicStore;
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
@@ -16,6 +17,12 @@ export class Comic {
 		this.languages = languages;
 		this.store = store;
 		this.kind = kind;
+		const name = path.replace(/\/$/, '').split('/').at(-1)!;
+		this.displayName = kind === 'page' ? baseNameExt(name)[0] : name;
+	}
+
+	get fileName(): string {
+		return this.path.replace(/\/$/, '').split('/').at(-1)!;
 	}
 
 	getImageUrl(): Promise<string> {
