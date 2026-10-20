@@ -238,12 +238,20 @@
 	function handleNavigationKey(event: KeyboardEvent) {
 		if (
 			event.defaultPrevented ||
+			event.isComposing ||
 			event.altKey ||
 			event.ctrlKey ||
 			event.metaKey ||
 			isNavigationControl(event.target)
 		)
 			return;
+		const key = event.key.toLowerCase();
+		const mode = key === '1' || key === 's' ? '1P' : key === '2' || key === 'd' ? '2P' : undefined;
+		if (mode) {
+			event.preventDefault();
+			if (pageMode !== mode) selectPageMode(mode);
+			return;
+		}
 		if ($selectedComic && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
 			event.preventDefault();
 			navigatePage(event.key === 'ArrowLeft' ? -1 : 1, event.shiftKey);
