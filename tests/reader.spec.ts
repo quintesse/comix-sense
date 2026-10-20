@@ -309,6 +309,56 @@ test('fit and percentage zoom update after image load and resize in page coordin
 	await expect.poll(async () => (await image.boundingBox())?.height).toBeCloseTo(852, 0);
 });
 
+test('fit avoids scrollbars and width only scrolls vertically, including after zoom and resize', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page);
+	const viewport = page.locator('main .viewport');
+	// Force space-consuming scrollbars even on systems using overlay scrollbars.
+	await page.addStyleTag({
+		content: '.viewport::-webkit-scrollbar { width: 17px; height: 17px; }'
+	});
+	const overflow = () =>
+		viewport.evaluate((element) => ({
+			x: element.scrollWidth > element.clientWidth,
+			y: element.scrollHeight > element.clientHeight
+		}));
+
+	for (const size of [
+		{ width: 1440, height: 900 },
+		{ width: 1100, height: 1100 },
+		{ width: 1440, height: 1100 }
+	]) {
+		await page.setViewportSize(size);
+		await expect.poll(overflow).toEqual({ x: false, y: false });
+		await selectMenu(page, 'FIT', 'Width');
+		await expect.poll(overflow).toEqual({ x: false, y: true });
+		await page.setViewportSize({ ...size, width: size.width + 37 });
+		await expect.poll(overflow).toEqual({ x: false, y: true });
+		await expect
+			.poll(() =>
+				viewport.evaluate((element) => {
+					const image = element.querySelector('svg')!;
+					return Math.abs(image.getBoundingClientRect().width - element.clientWidth);
+				})
+			)
+			.toBeLessThan(1);
+		await selectMenu(page, 'WIDTH', '200%');
+		await expect.poll(overflow).toEqual({ x: true, y: true });
+		await selectMenu(page, '200%', 'Fit');
+		await expect.poll(overflow).toEqual({ x: false, y: false });
+		await expect
+			.poll(() =>
+				page.evaluate(() => ({
+					x: document.documentElement.scrollWidth > window.innerWidth,
+					y: document.documentElement.scrollHeight > window.innerHeight
+				}))
+			)
+			.toEqual({ x: false, y: false });
+	}
+});
+
 test('directory enumeration order does not lose pages or languages', async ({ page }) => {
 	await mockDirectory(page, { shuffled: true });
 	await openComic(page);
