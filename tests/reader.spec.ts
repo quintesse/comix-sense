@@ -11,9 +11,15 @@ declare global {
 // File contents and asynchronous enumeration match the browser File System Access API.
 async function mockDirectory(
 	page: Page,
-	options: { shuffled?: boolean; delayed?: boolean; cancel?: boolean } = {}
+	options: {
+		shuffled?: boolean;
+		delayed?: boolean;
+		cancel?: boolean;
+		browserLanguages?: string[];
+	} = {}
 ) {
-	await page.addInitScript(({ shuffled, delayed, cancel }) => {
+	await page.addInitScript(({ shuffled, delayed, cancel, browserLanguages }) => {
+		Object.defineProperty(navigator, 'languages', { value: browserLanguages ?? ['zz'] });
 		window.__filesRead = [];
 		window.__imageUrls = { created: [], revoked: [] };
 		const createUrl = URL.createObjectURL.bind(URL);
@@ -135,6 +141,47 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
+test('remember zoom across reloads before any album is opened', async ({ page }) => {
+	await page.goto('./');
+	await expect(page.getByRole('button', { name: 'Select directory...' })).toBeVisible();
+	await selectMenu(page, 'FIT', '75%');
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: '75%', exact: true })).toBeVisible();
+	await selectMenu(page, '75%', 'Fit');
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: 'FIT', exact: true })).toBeVisible();
+});
+
+test('context menu choices update the reader and save zoom', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page);
+	const image = page.getByRole('img', { name: 'Comic page' });
+	await image.click({ button: 'right', position: { x: 10, y: 10 } });
+	await page.getByRole('menuitem', { name: 'Zoom', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: '75%', exact: true }).click();
+	await expect(page.getByRole('menuitem', { name: '75%', exact: true })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await image.click({ button: 'right', position: { x: 10, y: 10 } });
+	await page.getByRole('menuitem', { name: 'Language', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'NL', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hallo');
+	await expect
+		.poll(() => page.evaluate(() => localStorage.getItem('comix-sense.zoom')))
+		.toBe('75%');
+});
+
+for (const { preferences, expected } of [
+	{ preferences: ['fr-FR', 'nl-NL', 'en-US'], expected: 'NL' },
+	{ preferences: ['en-GB', 'nl'], expected: 'EN' },
+	{ preferences: ['fr-FR', 'de-DE'], expected: 'ORG' }
+]) {
+	test(`select browser language from ${preferences.join(', ')}`, async ({ page }) => {
+		await mockDirectory(page, { browserLanguages: preferences });
+		await openComic(page);
+		await expect(page.getByRole('menuitem', { name: expected, exact: true })).toBeVisible();
+	});
+}
+
 test('edit text, resize a bubble and retain edits when switching languages', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
@@ -185,7 +232,7 @@ async function clickPage(page: Page, x: number, y: number) {
 test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
-	await selectMenu(page, 'WIDTH', '100%');
+	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await clickPage(page, 400, 300);
@@ -219,7 +266,7 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 test('cancel drawing with Escape and Backspace and reject a tiny box', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
-	await selectMenu(page, 'WIDTH', '100%');
+	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await clickPage(page, 400, 300);
 	await page.keyboard.press('Escape');
@@ -241,6 +288,8 @@ test('fit and percentage zoom update after image load and resize in page coordin
 	await mockDirectory(page);
 	await openComic(page);
 	const image = page.getByRole('img', { name: 'Comic page' });
+	await expect.poll(async () => (await image.boundingBox())?.height).toBeCloseTo(1052, 0);
+	await selectMenu(page, 'FIT', 'Width');
 	await expect.poll(async () => (await image.boundingBox())?.width).toBeCloseTo(1184, 0);
 	await selectMenu(page, 'WIDTH', '50%');
 	await expect.poll(async () => (await image.boundingBox())?.width).toBeCloseTo(400, 0);
@@ -314,7 +363,7 @@ test('retain session edits across pages and release images only when leaving a p
 test('discard unfinished drawing when leaving a page or disabling editing', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
-	await selectMenu(page, 'WIDTH', '100%');
+	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await clickPage(page, 400, 300);
 	await expect(page.locator('.drawing-target')).toHaveCount(1);
