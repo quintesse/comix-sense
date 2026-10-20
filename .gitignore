@@ -31,3 +31,7 @@ vite.config.ts.timestamp-*
 /playwright-report
 
 /comics
+
+# Python helper caches
+__pycache__/
+*.pyc
