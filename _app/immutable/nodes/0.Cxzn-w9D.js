@@ -1,1 +1,0 @@
-import{Nt as e,W as t,X as n,Y as r,mt as i}from"../chunks/BAge9A7N.js";var a=Object.defineProperty,o=((e,t)=>{let n={};for(var r in e)a(n,r,{get:e[r],enumerable:!0});return t||a(n,Symbol.toStringTag,{value:`Module`}),n})({prerender:()=>!0});function s(a,o){var s=n(),c=i(s);t(c,()=>o.children??e),r(a,s)}export{s as component,o as universal};
