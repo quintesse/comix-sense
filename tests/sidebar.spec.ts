@@ -77,7 +77,7 @@ test('distinguish albums from collections while keeping pages selectable', async
 	const comicPage = volume.getByRole('treeitem', { name: '01', exact: true });
 	await expect(comicPage.locator('[data-comic-icon="page"]')).toBeVisible();
 	await comicPage.click();
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await expect(page.locator('[data-comic-icon="album"]')).toHaveCount(2);
 	expect(errors).toEqual([]);
 });
@@ -118,7 +118,7 @@ test('restore the directory and multiple expanded folders on startup', async ({ 
 		);
 	}
 	await page.getByRole('treeitem', { name: '01', exact: true }).first().click();
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowLeft');
 	await expectSavedFolders(page, ['other/']);
 	await page.reload();
@@ -236,14 +236,14 @@ test('restore the last page on startup and after delayed permission renewal', as
 	await album.getByRole('treeitem', { name: '02', exact: true }).click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await page.reload();
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
 	await page.evaluate(() => localStorage.setItem('requirePermission', 'true'));
 	await page.reload();
 	await expect(page.getByRole('button', { name: 'Reopen comics', exact: true })).toBeVisible();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await page.getByRole('button', { name: 'Reopen comics', exact: true }).click();
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
 });
 
@@ -264,7 +264,7 @@ test('album clicks open the first page or its browser-saved reading position', a
 	await page.reload();
 	await album.getByText('album', { exact: true }).click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 });
 
 test('missing saved pages are silently retained and restored when available again', async ({
@@ -302,6 +302,6 @@ test('missing saved pages are silently retained and restored when available agai
 		await writer.close();
 	});
 	await page.reload();
-	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
 });

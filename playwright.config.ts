@@ -11,6 +11,7 @@ export default defineConfig({
 		channel:
 			process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined),
 		viewport: { width: 1440, height: 1100 },
+		screen: { width: 1920, height: 1200 },
 		trace: 'retain-on-failure'
 	},
 	webServer: process.env.TEST_BASE_URL
