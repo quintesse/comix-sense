@@ -3,6 +3,9 @@
 	import type { TreeNode } from 'carbon-components-svelte/src/TreeView/TreeView.svelte';
 	import type { Comic } from './types/Comic';
 	import { baseNameExt } from './types/funcs';
+	import AlbumIcon from './icons/AlbumIcon.svelte';
+	import CollectionIcon from './icons/CollectionIcon.svelte';
+	import PageIcon from './icons/PageIcon.svelte';
 
 	interface Props {
 		comics?: Comic[];
@@ -29,15 +32,18 @@
 				break;
 			}
 			let nm = c.path.substring(prefix.length);
-			if (!c.path.endsWith('/')) {
+			if (c.kind === 'page') {
 				[nm] = baseNameExt(nm);
+			} else if (c.kind === 'album') {
+				nm = nm.replace(/\/$/, '');
 			}
 			let tc: TreeChild = {
 				id: c.path,
-				text: nm
+				text: nm,
+				icon: c.kind === 'album' ? AlbumIcon : c.kind === 'collection' ? CollectionIcon : PageIcon
 			};
 			idx[0] = idx[0] + 1;
-			if (c.path.endsWith('/')) {
+			if (c.kind !== 'page') {
 				tc.nodes = comicsChildren(cs, idx, c.path);
 			}
 			result.push(tc);
@@ -46,12 +52,10 @@
 	}
 
 	function forwardSelect(event: CustomEvent<TreeNode>) {
-		if (!String(event.detail.id).endsWith('/')) {
-			let comic = comics.filter((c) => c.path === event.detail.id);
-			if (comic.length == 1 && selectedComic !== comic[0]) {
-				selectedComic = comic[0];
-				onselect?.(selectedComic);
-			}
+		const comic = comics.find((c) => c.kind === 'page' && c.path === event.detail.id);
+		if (comic && selectedComic !== comic) {
+			selectedComic = comic;
+			onselect?.(selectedComic);
 		}
 	}
 </script>

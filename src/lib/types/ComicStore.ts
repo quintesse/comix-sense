@@ -29,8 +29,15 @@ export class DirectoryComicStore implements ComicStore {
 		for (const entry of entries) {
 			const path = prefix + entry.name;
 			if (entry.kind === 'directory') {
-				comics.push(new Comic(path + '/', [], this));
-				await this.listDirectory(entry, path + '/', comics);
+				const children: Comic[] = [];
+				await this.listDirectory(entry, path + '/', children);
+				// Groups (including mixed folders) are collections; page-only folders are albums.
+				const kind =
+					children.length > 0 && children.every((child) => child.kind === 'page')
+						? 'album'
+						: 'collection';
+				comics.push(new Comic(path + '/', [], this, kind));
+				for (const child of children) comics.push(child);
 			} else {
 				const [base, ext] = baseNameExt(entry.name);
 				if (!supportedImageTypes.includes(ext.toLowerCase())) continue;

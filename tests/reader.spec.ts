@@ -109,8 +109,8 @@ async function mockDirectory(
 async function openComic(page: Page) {
 	await page.goto('./');
 	await page.getByRole('button', { name: 'Select directory...' }).click();
-	await page.getByRole('treeitem', { name: 'album/' }).click();
-	await page.getByRole('treeitem', { name: 'album/' }).press('ArrowRight');
+	await page.getByRole('treeitem', { name: 'album' }).click();
+	await page.getByRole('treeitem', { name: 'album' }).press('ArrowRight');
 	await page.getByRole('treeitem', { name: '01', exact: true }).click();
 	await expect(page.locator('svg image').first()).toBeVisible();
 }
