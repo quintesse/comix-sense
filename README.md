@@ -35,7 +35,7 @@ Edits to language overlays are retained while switching pages in the current ses
 
 ## Developing
 
-Use Node.js 22.12 or newer in the 22.x series, or Node.js 24 or newer:
+Use Node.js 22.17 or newer in the 22.x series, or Node.js 24 or newer:
 
 ```bash
 npm ci
