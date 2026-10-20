@@ -162,8 +162,8 @@
 </script>
 
 <Header platformName="Comix Sense" bind:isSideNavOpen>
-	<!-- @migration-task: migrate this slot by hand, `skip-to-content` is an invalid identifier -->
-	<svelte:fragment slot="skip-to-content">
+	<!-- Carbon still exposes this named slot; Svelte 5 supports consuming it. -->
+	<svelte:fragment slot="skipToContent">
 		<SkipToContent />
 	</svelte:fragment>
 	<HeaderNav>

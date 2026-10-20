@@ -2,6 +2,8 @@
 
 ## Developing
 
+Use Node.js 22.12 or newer in the 22.x series, or Node.js 24 or newer:
+
 Once you've created a project and installed dependencies with `npm install`, start a development server:
 
 ```bash
