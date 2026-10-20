@@ -959,3 +959,64 @@ test('sustained wheel scrolling advances at a bounded rate without requiring a p
 	await wheel(-120);
 	await expect.poll(left).toBe('album/03.png');
 });
+
+test('1/s and 2/d switch page layout, retain the left page and work in fullscreen', async ({
+	page
+}) => {
+	await mockDirectory(page, { pageCount: 5 });
+	await openComic(page, '2P');
+	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.locator('main').click({ position: { x: 600, y: 400 } });
+	for (const [key, mode] of [
+		['1', '1P'],
+		['2', '2P'],
+		['s', '1P'],
+		['d', '2P']
+	]) {
+		await page.keyboard.press(key);
+		await expect(page.getByRole('menuitem', { name: mode, exact: true })).toBeVisible();
+		await expect(page.locator('[data-page-path]')).toHaveCount(mode === '1P' ? 1 : 2);
+		await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+			'data-page-path',
+			'album/02.png'
+		);
+	}
+	await page.evaluate(() => document.documentElement.requestFullscreen());
+	await expect(page.getByRole('banner')).toBeHidden();
+	await page.keyboard.press('s');
+	await expect(page.locator('[data-page-path]')).toHaveCount(1);
+	await page.keyboard.press('d');
+	await expect(page.locator('[data-page-path]')).toHaveCount(2);
+	await page.keyboard.press('1');
+	await expect(page.locator('[data-page-path]')).toHaveCount(1);
+	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/02.png');
+	await page.evaluate(() => document.exitFullscreen());
+	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
+});
+
+test('page layout shortcuts leave text editing, modified keys and composition alone', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page, '2P');
+	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	const text = page.getByRole('textbox').first();
+	await text.fill('');
+	await text.pressSequentially('12sd');
+	await expect(text).toHaveText('12sd');
+	await expect(page.getByRole('menuitem', { name: '2P', exact: true })).toBeVisible();
+	for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'isComposing']) {
+		const prevented = await page.evaluate(
+			(modifier) =>
+				!window.dispatchEvent(
+					new KeyboardEvent('keydown', { key: 's', cancelable: true, [modifier]: true })
+				),
+			modifier
+		);
+		expect(prevented).toBe(false);
+		await expect(page.getByRole('menuitem', { name: '2P', exact: true })).toBeVisible();
+	}
+});
