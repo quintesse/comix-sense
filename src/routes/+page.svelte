@@ -10,6 +10,7 @@
 		Content,
 		//
 		Button,
+		Modal,
 		TileGroup,
 		RadioTile,
 		//
@@ -28,11 +29,13 @@
 		saveSidebarSession,
 		readReadingHistory,
 		saveReadingHistory,
-		type ReadingPosition
+		type ReadingPosition,
+		type SidebarDirectory
 	} from '#lib/stores/SidebarSession.js';
 	import { preferredLanguage } from '#lib/stores/ReaderPreferences.js';
 	import { BblShapeType, boundsv, vertex, type Bubble, type Comic } from '#lib/types/Comic.js';
-	import { DirectoryComicStore, type ComicStore } from '#lib/types/ComicStore.js';
+	import { DirectoryComicStore } from '#lib/types/ComicStore.js';
+	import type { ComicFolder } from '#lib/types/ComicFolder.js';
 	import ComicsTree from '#lib/ComicsTree.svelte';
 	import AlbumPages from '#lib/AlbumPages.svelte';
 	import SidebarPanes from '#lib/SidebarPanes.svelte';
@@ -122,17 +125,53 @@
 	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
 
-	let store: ComicStore | null = $state(null);
+	let folders = $state.raw<ComicFolder[]>([]);
+	let savedDirectories = $state.raw<SidebarDirectory[]>([]);
+	let activeDirectoryId = $state<string>();
 	let comics = writable<Comic[]>([]);
 	let selectedComic = writable<Comic | null>(null);
 	let directoryError = $state('');
-	let savedDirectory = $state.raw<FileSystemDirectoryHandle>();
 	let expandedIds = $state<string[]>([]);
 	let restoringDirectory = $state(true);
+	let noSources = $derived(!restoringDirectory && savedDirectories.length === 0);
 	let persistenceError = $state('');
 	let readingHistory: ReadingPosition[] = [];
 	let readingPosition = $state.raw<ReadingPosition>();
 	let savingReadingHistory = Promise.resolve();
+	let disconnectFolder = $state.raw<ComicFolder>();
+	let disconnectOpen = $state(false);
+
+	function requestDisconnect(folder: ComicFolder) {
+		disconnectFolder = folder;
+		disconnectOpen = true;
+	}
+
+	async function confirmDisconnect() {
+		const folder = disconnectFolder;
+		if (!folder) return;
+		disconnectOpen = false;
+		disconnectFolder = undefined;
+		folders = folders.filter((entry) => entry.id !== folder.id);
+		savedDirectories = savedDirectories.filter((entry) => entry.id !== folder.id);
+		expandedIds = expandedIds.filter((id) => id !== folder.id && !id.startsWith(folder.id + '/'));
+		if (activeDirectoryId === folder.id) {
+			selectedComic.set(null);
+			comics.set([]);
+			activeDirectoryId = undefined;
+			readingPosition = undefined;
+			menuTargetBubble = undefined;
+			menuTargetBubbles = [];
+		}
+		if (displayedPages.some((page) => folder.comics.includes(page.comic))) {
+			displayedPages = [];
+			pageLoadError = '';
+		}
+		await tick();
+		(
+			readerUi.querySelector<HTMLElement>('.tree [role="treeitem"]') ??
+			readerUi.querySelector<HTMLButtonElement>('.add-folder')
+		)?.focus();
+	}
 
 	onMount(() => {
 		browserLanguages = navigator.languages;
@@ -149,10 +188,26 @@
 				readingHistory = (await readReadingHistory()) ?? [];
 				const session = await readSidebarSession();
 				if (session) {
-					savedDirectory = session.directory;
-					expandedIds = session.expandedIds;
-					if ((await session.directory.queryPermission({ mode: 'read' })) === 'granted')
-						await openDirectory(session.directory);
+					savedDirectories =
+						session.directories ??
+						(session.directory ? [{ id: crypto.randomUUID(), directory: session.directory }] : []);
+					expandedIds = session.directories
+						? session.expandedIds
+						: savedDirectories.flatMap(({ id }) => [
+								id,
+								...session.expandedIds.map((childId) => `${id}/${childId}`)
+							]);
+					for (const saved of savedDirectories) {
+						try {
+							if ((await saved.directory.queryPermission({ mode: 'read' })) === 'granted')
+								await openDirectory(saved);
+						} catch (error) {
+							directoryError = 'Could not restore ' + saved.directory.name + ': ' + String(error);
+						}
+					}
+					const active =
+						folders.find((folder) => folder.id === session.activeDirectoryId) ?? folders[0];
+					if (active) activateFolder(active);
 				}
 			} catch (error) {
 				directoryError = 'Could not restore the previous directory: ' + String(error);
@@ -163,16 +218,19 @@
 	});
 
 	$effect(() => {
-		if (store && savedDirectory && !restoringDirectory) {
-			void saveSidebarSession({ directory: savedDirectory, expandedIds: [...expandedIds] }).catch(
-				() => {
-					persistenceError = 'Could not save the sidebar for the next startup.';
-				}
-			);
+		if (!restoringDirectory) {
+			void saveSidebarSession({
+				directories: savedDirectories,
+				activeDirectoryId,
+				expandedIds: [...expandedIds]
+			}).catch(() => {
+				persistenceError = 'Could not save the sidebar for the next startup.';
+			});
 		}
 	});
 
-	async function openDirectory(directory: FileSystemDirectoryHandle) {
+	async function openDirectory(saved: SidebarDirectory, expand = false) {
+		const { directory } = saved;
 		const nextStore = new DirectoryComicStore(directory);
 		const nextComics = await nextStore.list();
 		let position: ReadingPosition | undefined;
@@ -186,17 +244,29 @@
 			position = { directory, albumPages: {} };
 			readingHistory.push(position);
 		}
+		position.directory = directory;
+		const folder: ComicFolder = { ...saved, comics: nextComics, albumPages: position.albumPages };
+		folders = [...folders, folder];
+		if (expand) expandedIds = [...expandedIds, folder.id];
+		if (!restoringDirectory) activateFolder(folder);
+	}
+
+	function activateFolder(folder: ComicFolder, comic?: Comic) {
+		const position = readingHistory.find((entry) => entry.directory === folder.directory)!;
+		activeDirectoryId = folder.id;
 		readingPosition = position;
-		comics.set(nextComics);
-		store = nextStore;
-		// Keep unavailable positions: permission renewal or a later reopen may restore them.
+		comics.set(folder.comics);
 		selectedComic.set(
-			nextComics.find((comic) => comic.kind === 'page' && comic.path === position.lastPage) ?? null
+			comic ??
+				folder.comics.find((comic) => comic.kind === 'page' && comic.path === position.lastPage) ??
+				null
 		);
 	}
 
 	function selectComic(comic: Comic) {
-		selectedComic.set(comic);
+		const folder = folders.find((folder) => folder.comics.includes(comic));
+		if (folder) activateFolder(folder, comic);
+		else selectedComic.set(comic);
 		if (!readingPosition) return;
 		const albumPath = comic.path.slice(0, comic.path.lastIndexOf('/') + 1);
 		const position = {
@@ -206,6 +276,9 @@
 		};
 		readingHistory = readingHistory.map((entry) => (entry === readingPosition ? position : entry));
 		readingPosition = position;
+		folders = folders.map((folder) =>
+			folder.id === activeDirectoryId ? { ...folder, albumPages: position.albumPages } : folder
+		);
 		persistReadingHistory();
 	}
 
@@ -239,6 +312,7 @@
 
 	function handleNavigationKey(event: KeyboardEvent) {
 		if (
+			disconnectOpen ||
 			event.defaultPrevented ||
 			event.isComposing ||
 			event.altKey ||
@@ -262,6 +336,7 @@
 
 	function handlePageNavigationKey(event: KeyboardEvent) {
 		if (
+			disconnectOpen ||
 			(event.key !== 'PageUp' && event.key !== 'PageDown') ||
 			event.defaultPrevented ||
 			event.isComposing ||
@@ -355,14 +430,11 @@
 		persistReadingHistory();
 	}
 
-	async function reopenDirectory() {
+	async function reopenDirectory(saved: SidebarDirectory) {
 		directoryError = '';
 		try {
-			if (
-				savedDirectory &&
-				(await savedDirectory.requestPermission({ mode: 'read' })) === 'granted'
-			)
-				await openDirectory(savedDirectory);
+			if ((await saved.directory.requestPermission({ mode: 'read' })) === 'granted')
+				await openDirectory(saved);
 			else directoryError = 'Directory access was not granted. Reopen it or select a directory.';
 		} catch (error) {
 			directoryError = 'Could not reopen the directory: ' + String(error);
@@ -377,9 +449,15 @@
 					'Opening a directory requires a browser with File System Access support, such as Chrome or Edge.'
 				);
 			const comicsFolder = await window.showDirectoryPicker();
-			await openDirectory(comicsFolder);
-			expandedIds = [];
-			savedDirectory = comicsFolder;
+			for (const saved of savedDirectories) {
+				if (await comicsFolder.isSameEntry(saved.directory)) {
+					if (!folders.some((folder) => folder.id === saved.id)) await openDirectory(saved);
+					return;
+				}
+			}
+			const saved = { id: crypto.randomUUID(), directory: comicsFolder };
+			await openDirectory(saved, true);
+			savedDirectories = [...savedDirectories, saved];
 		} catch (error) {
 			if (!(error instanceof DOMException && error.name === 'AbortError'))
 				directoryError = String(error);
@@ -542,44 +620,74 @@
 	</Header>
 
 	<SideNav bind:isOpen={isSideNavOpen} resizable resizeHandleLabel="Resize sidebar">
-		{#if store}
-			<SidebarPanes>
-				{#snippet tree()}
-					<div class="tree">
-						<ComicsTree
-							comics={$comics}
-							selectedComic={$selectedComic}
-							bind:expandedIds
-							albumPages={readingPosition?.albumPages}
-							onselect={selectComic}
-						/>
+		<SidebarPanes>
+			{#snippet tree()}
+				<div class="tree" class:no-sources={noSources}>
+					<div class="tree-scroll">
+						{#if !noSources}
+							<ComicsTree
+								{folders}
+								selectedComic={$selectedComic}
+								bind:expandedIds
+								onselect={selectComic}
+								ondisconnect={requestDisconnect}
+							/>
+						{/if}
+						{#if restoringDirectory}
+							<p>Restoring directory...</p>
+						{:else}
+							{#each savedDirectories.filter((saved) => !folders.some((folder) => folder.id === saved.id)) as saved}
+								<Button on:click={() => reopenDirectory(saved)}
+									>Reopen {saved.directory.name}</Button
+								>
+							{/each}
+							{#if noSources}<p class="source-empty">Add a comics source</p>{/if}
+						{/if}
 					</div>
-				{/snippet}
-				{#snippet pages()}
-					<AlbumPages
-						pages={$selectedComic ? albumPages : []}
-						selectedComic={$selectedComic}
-						onselect={selectComic}
-					/>
-				{/snippet}
-			</SidebarPanes>
-		{:else if restoringDirectory}
-			<p>Restoring directory...</p>
-		{:else}
-			<div>
-				{#if savedDirectory}
-					<Button on:click={reopenDirectory}>Reopen {savedDirectory.name}</Button>
-				{/if}
-				<Button on:click={selectDirectory}>Select directory...</Button>
-			</div>
-		{/if}
+					{#if noSources}
+						<span class="add-folder-tip" id="add-folder-tip" role="tooltip"
+							>Click me to add comics</span
+						>
+					{/if}
+					<button
+						class="add-folder"
+						aria-label="Add folder"
+						aria-describedby={noSources ? 'add-folder-tip' : undefined}
+						title="Add folder"
+						onclick={selectDirectory}
+						disabled={restoringDirectory}>+</button
+					>
+				</div>
+			{/snippet}
+			{#snippet pages()}
+				<AlbumPages
+					{noSources}
+					pages={$selectedComic ? albumPages : []}
+					selectedComic={$selectedComic}
+					onselect={selectComic}
+				/>
+			{/snippet}
+		</SidebarPanes>
 		{#if directoryError}<p role="alert">{directoryError}</p>{/if}
 		{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
 	</SideNav>
 
+	<Modal
+		bind:open={disconnectOpen}
+		modalHeading="Remove folder?"
+		primaryButtonText="Yes"
+		secondaryButtonText="No"
+		size="xs"
+		shouldSubmitOnEnter={false}
+		on:submit={confirmDisconnect}
+		on:click:button--secondary={() => (disconnectOpen = false)}
+	>
+		<p>Do you really want to remove “{disconnectFolder?.directory.name}” from your folders?</p>
+	</Modal>
+
 	<Content
 		style={fullscreen ? 'padding: 0; margin: 0; min-height: 0' : 'padding: 0'}
-		class="fullsize"
+		class={displayedPages.length === 0 ? 'fullsize empty-reader' : 'fullsize'}
 	>
 		{#if pageLoadError && !fullscreen}<p role="alert">{pageLoadError}</p>{/if}
 		{#if displayedPages.length}
@@ -605,8 +713,10 @@
 			</Zoom>
 		{:else if loadingPages}
 			Loading page...
+		{:else if noSources}
+			<div class="reader-empty source-empty">Add a comics source</div>
 		{:else}
-			Select a comic from the left
+			<div class="reader-empty source-empty">Select a comic from the left</div>
 		{/if}
 
 		{#if !fullscreen}
@@ -652,6 +762,36 @@
 </div>
 
 <style>
+	.reader-shell :global(.bx--side-nav__resize-handle::after) {
+		background-color: #c6c6c6;
+		transition: none;
+	}
+	.reader-shell :global(.bx--side-nav__resize-handle:hover::after),
+	.reader-shell :global(.bx--side-nav__resize-handle:focus-visible::after),
+	.reader-shell :global(.bx--side-nav--resizing .bx--side-nav__resize-handle::after) {
+		background-color: #0f62fe;
+	}
+	.tree.no-sources,
+	:global(main.empty-reader) {
+		background: #f4f4f4;
+	}
+	.tree.no-sources .tree-scroll {
+		display: grid;
+		place-items: center;
+	}
+	.source-empty {
+		margin: 0;
+		padding: 1rem;
+		color: #6f6f6f;
+		font-size: 0.875rem;
+		text-align: center;
+	}
+	.reader-empty {
+		display: grid;
+		place-items: center;
+		width: 100%;
+		height: 100%;
+	}
 	.page-separator {
 		flex: 0 0 2px;
 		background: #b3b3b3;
@@ -662,7 +802,64 @@
 		display: none;
 	}
 	.tree {
+		position: relative;
+		min-height: 0;
+		background: #fff;
+	}
+	.tree-scroll {
+		height: 100%;
+		padding-bottom: 4rem;
 		overflow: auto;
 		overscroll-behavior: contain;
+	}
+	.add-folder-tip {
+		position: absolute;
+		right: 4.5rem;
+		bottom: 1.375rem;
+		padding: 0.375rem 0.75rem;
+		border-radius: 0.25rem;
+		background: #262626;
+		color: white;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		white-space: nowrap;
+		box-shadow: 0 2px 6px #0003;
+		pointer-events: none;
+	}
+	.add-folder-tip::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		right: -0.375rem;
+		transform: translateY(-50%);
+		border-top: 0.375rem solid transparent;
+		border-bottom: 0.375rem solid transparent;
+		border-left: 0.375rem solid #262626;
+	}
+	.add-folder {
+		position: absolute;
+		right: 1rem;
+		bottom: 1rem;
+		width: 2.75rem;
+		height: 2.75rem;
+		border: 0;
+		border-radius: 50%;
+		background: #0f62fe;
+		color: white;
+		font-size: 1.75rem;
+		line-height: 1;
+		box-shadow: 0 2px 6px #0003;
+		cursor: pointer;
+	}
+	.add-folder:hover {
+		background: #0353e9;
+	}
+	.add-folder:focus-visible {
+		outline: 2px solid #0f62fe;
+		outline-offset: 3px;
+	}
+	.add-folder:disabled {
+		background: #c6c6c6;
+		cursor: default;
 	}
 </style>

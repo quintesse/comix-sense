@@ -1,5 +1,5 @@
 import { Comic, type Bubble } from './Comic';
-import { baseNameExt, resolveFile, supportedImageTypes } from './funcs';
+import { baseNameExt, resolveFile, sharedFilenamePrefix, supportedImageTypes } from './funcs';
 
 export interface ComicStore {
 	list(): Promise<Comic[]>;
@@ -21,6 +21,8 @@ export class DirectoryComicStore implements ComicStore {
 	}
 
 	private async listDirectory(dir: FileSystemDirectoryHandle, prefix: string, comics: Comic[]) {
+		const pages: Comic[] = [];
+		const albums: Comic[] = [];
 		const entries = [];
 		for await (const entry of dir.values()) entries.push(entry);
 		entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -36,10 +38,18 @@ export class DirectoryComicStore implements ComicStore {
 					children.length > 0 && children.every((child) => child.kind === 'page')
 						? 'album'
 						: 'collection';
-				comics.push(new Comic(path + '/', [], this, kind));
+				const folder = new Comic(path + '/', [], this, kind);
+				if (kind === 'album') albums.push(folder);
+				comics.push(folder);
 				for (const child of children) comics.push(child);
 			} else {
 				const [base, ext] = baseNameExt(entry.name);
+				if (['cbr', 'cbz', 'zip'].includes(ext.toLowerCase())) {
+					const archive = new Comic(path, [], this, 'archive');
+					albums.push(archive);
+					comics.push(archive);
+					continue;
+				}
 				if (!supportedImageTypes.includes(ext.toLowerCase())) continue;
 				const languages = files.flatMap((file) => {
 					if (file.name === base + '.bbl') return [''];
@@ -48,7 +58,16 @@ export class DirectoryComicStore implements ComicStore {
 					}
 					return [];
 				});
-				comics.push(new Comic(path, languages, this));
+				const page = new Comic(path, languages, this);
+				pages.push(page);
+				comics.push(page);
+			}
+		}
+		for (const siblings of [pages, albums]) {
+			const sharedPrefix = sharedFilenamePrefix(siblings.map((comic) => comic.displayName));
+			if (sharedPrefix) {
+				for (const comic of siblings)
+					comic.displayName = comic.displayName.slice(sharedPrefix.length);
 			}
 		}
 	}

@@ -1,6 +1,14 @@
 export interface SidebarSession {
-	directory: FileSystemDirectoryHandle;
+	// Retain the legacy field when reading sessions saved before multiple roots.
+	directory?: FileSystemDirectoryHandle;
+	directories?: SidebarDirectory[];
+	activeDirectoryId?: string;
 	expandedIds: string[];
+}
+
+export interface SidebarDirectory {
+	id: string;
+	directory: FileSystemDirectoryHandle;
 }
 
 export interface ReadingPosition {

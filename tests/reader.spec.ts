@@ -151,11 +151,11 @@ async function mockDirectory(
 
 async function openComic(page: Page, mode = '1P') {
 	await page.goto('./');
-	await page.getByRole('button', { name: 'Select directory...' }).click();
+	await page.getByRole('button', { name: 'Add folder' }).click();
 	if (mode === '1P') await selectMenu(page, '2P', '1P');
 	await page.getByRole('treeitem', { name: 'album' }).click();
 	await page.getByRole('treeitem', { name: 'album' }).press('ArrowRight');
-	await page.getByRole('treeitem', { name: '01', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(page.locator('svg image').first()).toBeVisible();
 }
 
@@ -175,7 +175,7 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
@@ -199,7 +199,7 @@ for (const mode of ['1P', '2P']) {
 	test(`Page Up/Down navigate app-wide in ${mode} with optional Shift`, async ({ page }) => {
 		await mockDirectory(page, { pageCount: 6 });
 		await openComic(page, mode);
-		const treeItem = page.getByRole('treeitem', { name: '01', exact: true });
+		const treeItem = page.getByRole('treeitem', { name: /^0?1$/, exact: true });
 		const leftPage = page.locator('[data-page-path]').first();
 		const expectPage = async (number: number) => {
 			await expect(leftPage).toHaveAttribute('data-page-path', `album/0${number}.png`);
@@ -263,14 +263,16 @@ test('click the outer quarters to navigate and ignore the middle half of the pan
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	for (const fraction of [0.25, 0.35, 0.49, 0.51, 0.65, 0.75]) {
 		await pane.click({ position: { x: bounds.width * fraction, y: 400 } });
-		await expect(page.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+		await expect(page.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(
+			/--active/
+		);
 	}
 	await pane.click({ position: { x: bounds.width / 2, y: 400 }, modifiers: ['Shift'] });
-	await expect(page.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+	await expect(page.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(/--active/);
 	await page.locator('foreignObject').click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
 	await page.getByRole('img', { name: 'Comic page' }).click({ position: { x: 700, y: 400 } });
-	await expect(page.getByRole('treeitem', { name: '01', exact: true })).toHaveClass(/--active/);
+	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveClass(/--active/);
 	await pane.click({ position: right });
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
@@ -292,7 +294,7 @@ test('navigation leaves editor clicks and text cursor keys available', async ({ 
 
 test('remember zoom across reloads before any album is opened', async ({ page }) => {
 	await page.goto('./');
-	await expect(page.getByRole('button', { name: 'Select directory...' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add folder' })).toBeVisible();
 	await selectMenu(page, 'FIT', '75%');
 	await page.reload();
 	await expect(page.getByRole('menuitem', { name: '75%', exact: true })).toBeVisible();
@@ -517,10 +519,10 @@ test('fit avoids scrollbars and width only scrolls vertically, including after z
 test('directory enumeration order does not lose pages or languages', async ({ page }) => {
 	await mockDirectory(page, { shuffled: true });
 	await openComic(page);
-	await expect(page.getByRole('treeitem', { name: '01', exact: true })).toHaveCount(1);
+	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveCount(1);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
@@ -528,7 +530,7 @@ test('a slow language load cannot overwrite the newer page selection', async ({ 
 	await mockDirectory(page, { delayed: true });
 	await openComic(page);
 	await selectMenu(page, 'ORG', 'EN');
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	await expect.poll(() => page.evaluate(() => window.__filesRead)).toContain('album/01.en.bbl');
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
@@ -537,9 +539,9 @@ test('a slow language load cannot overwrite the newer page selection', async ({ 
 test('cancelling the directory picker leaves the initial view usable', async ({ page }) => {
 	await mockDirectory(page, { cancel: true });
 	await page.goto('./');
-	await page.getByRole('button', { name: 'Select directory...' }).click();
+	await page.getByRole('button', { name: 'Add folder' }).click();
 	await expect(page.getByRole('alert')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Select directory...' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add folder' })).toBeVisible();
 });
 
 test('retain session edits across pages and release images only when leaving a page', async ({
@@ -556,10 +558,10 @@ test('retain session edits across pages and release images only when leaving a p
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(0);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.getByRole('textbox')).toHaveText('Retained edit');
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Second page');
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(1);
-	await page.getByRole('treeitem', { name: '01', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Retained edit');
 	await expect.poll(() => readerImageCount(page)).toBe(3);
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(2);
@@ -572,7 +574,7 @@ test('discard unfinished drawing when leaving a page or disabling editing', asyn
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await clickPage(page, 400, 300);
 	await expect(page.locator('.drawing-target')).toHaveCount(1);
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
 	await clickPage(page, 400, 300);
@@ -648,7 +650,7 @@ test('2P defaults to a separated spread, fits mixed page sizes and remembers the
 	await selectMenu(page, 'FIT', '50%');
 	await expect.poll(async () => (await images.nth(0).boundingBox())?.width).toBeCloseTo(400, 0);
 	await expect.poll(async () => (await images.nth(1).boundingBox())?.width).toBeCloseTo(300, 0);
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await selectMenu(page, '2P', '1P');
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/02.png');
 	await expect(page.locator('.page-separator')).toHaveCount(0);
@@ -737,13 +739,13 @@ test('edit both pages in 2P, target the right context menu and retain overlappin
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Left edit', 'Right edit']);
 	// Navigation starts outside editable text; the retained right page becomes the left page.
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Right edit', 'Page 3']);
 	await expect.poll(() => readerImageCount(page)).toBe(3);
 	await page.getByRole('textbox').first().click({ button: 'right' });
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Page 3');
-	await page.getByRole('treeitem', { name: '01', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText('Left edit');
 	await page.screenshot({ path: test.info().outputPath('two-page-editor.png') });
 });
@@ -792,9 +794,9 @@ test('a superseded slow spread cannot replace newer navigation and releases its 
 	await mockDirectory(page, { pageCount: 5, delayedImage: 'album/04.png' });
 	await openComic(page, '2P');
 	await selectMenu(page, 'ORG', 'EN');
-	await page.getByRole('treeitem', { name: '03', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?3$/, exact: true }).click();
 	await expect.poll(() => page.evaluate(() => window.__imageWaiting)).toBe(true);
-	await page.getByRole('treeitem', { name: '05', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?5$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText(['Page 5']);
 	await page.evaluate(() => window.__releaseImage());
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(4);
@@ -830,7 +832,7 @@ test('fullscreen hides reader UI, fills the window, and restores editing and sid
 	await expect(page.getByRole('tree')).toBeVisible();
 	await expect(page.getByRole('menuitem', { name: 'EDIT: YES', exact: true })).toBeVisible();
 	await expect.poll(() => page.locator('main').boundingBox()).toEqual(before);
-	await page.getByRole('treeitem', { name: '01', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Fullscreen edit', 'Second page']);
 });
 
@@ -972,7 +974,7 @@ test('wheel leaves other zoom modes, editor controls, browser zoom and sidebar a
 }) => {
 	await mockDirectory(page, { pageCount: 6 });
 	await openComic(page, '2P');
-	const active = page.getByRole('treeitem', { name: '01', exact: true });
+	const active = page.getByRole('treeitem', { name: /^0?1$/, exact: true });
 	const wheel = (
 		selector: string,
 		options: Pick<WheelEventInit, 'deltaX' | 'deltaY' | 'ctrlKey'> = {}
@@ -1038,7 +1040,7 @@ test('1/s and 2/d switch page layout, retain the left page and work in fullscree
 }) => {
 	await mockDirectory(page, { pageCount: 5 });
 	await openComic(page, '2P');
-	await page.getByRole('treeitem', { name: '02', exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await page.locator('main').click({ position: { x: 600, y: 400 } });
 	for (const [key, mode] of [
 		['1', '1P'],

@@ -10,6 +10,21 @@ export function svgPoint(svg: SVGSVGElement, event: MouseEvent) {
 
 export const supportedImageTypes = ['bmp', 'gif', 'jpg', 'jpeg', 'png', 'webp'];
 
+/** Find a shared label prefix in linear time. */
+export function sharedFilenamePrefix(names: string[]): string {
+	if (names.length < 2) return '';
+	const first = names[0];
+	let length = first.length;
+	for (let i = 1; i < names.length && length > 0; i++) {
+		let match = 0;
+		while (match < length && first[match] === names[i][match]) match++;
+		length = match;
+	}
+	const prefix = first.slice(0, length);
+	// A single page or a name equal to the prefix must keep its readable label.
+	return prefix && names.every((name) => name.slice(prefix.length).trim().length > 0) ? prefix : '';
+}
+
 /**
  * Given a file name it returns a tuple of the base file name
  * without the extension and the extension. In case no extension

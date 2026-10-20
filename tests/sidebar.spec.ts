@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { sharedFilenamePrefix } from '../src/lib/types/funcs';
 
 async function setupDirectory(page: Page, nested = false, translations = false) {
 	await page.addInitScript(
@@ -8,7 +9,11 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 			Object.defineProperty(window, 'showDirectoryPicker', {
 				value: async () => {
 					const root = await navigator.storage.getDirectory();
-					const directory = await root.getDirectoryHandle('comics', { create: true });
+					const parentName = localStorage.getItem('pickerParent');
+					const parent = parentName
+						? await root.getDirectoryHandle(parentName, { create: true })
+						: root;
+					const directory = await parent.getDirectoryHandle('comics', { create: true });
 					for (const name of nested ? ['album', 'series/volume', 'series'] : ['album', 'other']) {
 						let album = directory;
 						for (const part of name.split('/')) {
@@ -54,7 +59,7 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 	);
 	const response = await page.goto('./');
 	expect(response?.status()).toBe(200);
-	await page.getByRole('button', { name: 'Select directory...' }).click();
+	await page.getByRole('button', { name: 'Add folder' }).click();
 }
 
 test('distinguish albums from collections while keeping pages selectable', async ({ page }) => {
@@ -74,7 +79,7 @@ test('distinguish albums from collections while keeping pages selectable', async
 	const volume = page.getByRole('treeitem', { name: 'volume', exact: true });
 	await expect(volume.locator(':scope > div [data-comic-icon="album"]')).toBeVisible();
 	await volume.press('ArrowRight');
-	const comicPage = volume.getByRole('treeitem', { name: '01', exact: true });
+	const comicPage = volume.getByRole('treeitem', { name: /^0?1$/, exact: true });
 	await expect(comicPage.locator('[data-comic-icon="page"]')).toBeVisible();
 	await comicPage.click();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
@@ -93,7 +98,13 @@ async function expectSavedFolders(page: Page, folders: string[]) {
 						const db = open.result;
 						const request = db.transaction('sidebar').objectStore('sidebar').get('session');
 						request.onsuccess = () => {
-							resolve(request.result?.expandedIds);
+							const session = request.result;
+							const rootId = session?.directories?.[0]?.id;
+							resolve(
+								session?.expandedIds
+									.filter((id: string) => id !== rootId)
+									.map((id: string) => (rootId ? id.slice(rootId.length + 1) : id))
+							);
 							db.close();
 						};
 					};
@@ -115,8 +126,8 @@ test('album page pane follows navigation, scrolls selection into view and naviga
 	const album = page.getByRole('treeitem', { name: 'album', exact: true });
 	await album.press('ArrowRight');
 	await album.click();
-	const first = pane.getByRole('button', { name: '01', exact: true });
-	const second = pane.getByRole('button', { name: '02', exact: true });
+	const first = pane.getByRole('button', { name: /^0?1$/, exact: true });
+	const second = pane.getByRole('button', { name: /^0?2$/, exact: true });
 	await expect(pane.getByRole('button')).toHaveCount(2);
 	await expect(first).toHaveAttribute('aria-current', 'page');
 	await expect
@@ -133,7 +144,7 @@ test('album page pane follows navigation, scrolls selection into view and naviga
 	await page.keyboard.press('Shift+PageDown');
 	await expect(second).toHaveAttribute('aria-current', 'page');
 	await expect(first).not.toHaveAttribute('aria-current');
-	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveAttribute(
+	await expect(album.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveAttribute(
 		'aria-current',
 		'true'
 	);
@@ -174,7 +185,7 @@ test('album page pane follows navigation, scrolls selection into view and naviga
 	await second.press('Home');
 	await expect(first).toBeFocused();
 	await page.reload();
-	await expect(pane.getByRole('button', { name: '01', exact: true })).toHaveAttribute(
+	await expect(pane.getByRole('button', { name: /^0?1$/, exact: true })).toHaveAttribute(
 		'aria-current',
 		'page'
 	);
@@ -229,7 +240,7 @@ test('sidebar dividers resize the panes and reader with pointer and keyboard con
 	await expect(vertical).toHaveAttribute('aria-valuenow', '480');
 	await vertical.dblclick();
 	await expect(vertical).toHaveAttribute('aria-valuenow', '256');
-	await pages.getByRole('button', { name: '02', exact: true }).click();
+	await pages.getByRole('button', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
 		'data-page-path',
 		'album/02.png'
@@ -240,11 +251,11 @@ test('page pane switches albums and excludes pages in nested albums', async ({ p
 	await setupDirectory(page, true);
 	const pane = page.getByRole('region', { name: 'Album pages' });
 	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
-	await pane.getByRole('button', { name: '02', exact: true }).click();
+	await pane.getByRole('button', { name: /^0?2$/, exact: true }).click();
 	const oldPreview = await pane.locator('img').first().getAttribute('src');
 	const series = page.getByRole('treeitem', { name: 'series/', exact: true });
 	await series.press('ArrowRight');
-	await series.getByRole('treeitem', { name: '01', exact: true }).click();
+	await series.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(pane.getByRole('button')).toHaveCount(2);
 	await expect(pane.locator('button').first()).toHaveAttribute('data-page', 'series/01.png');
 	await page.getByRole('treeitem', { name: 'volume', exact: true }).click();
@@ -263,7 +274,7 @@ test('page pane switches albums and excludes pages in nested albums', async ({ p
 		).toBe(true);
 	}
 	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
-	await expect(pane.getByRole('button', { name: '02', exact: true })).toHaveAttribute(
+	await expect(pane.getByRole('button', { name: /^0?2$/, exact: true })).toHaveAttribute(
 		'aria-current',
 		'page'
 	);
@@ -283,7 +294,7 @@ test('Enter selects without toggling expansion or moving focus out of the tree',
 	await page.keyboard.press('Enter');
 	await expect(album).toHaveAttribute('aria-expanded', 'true');
 	await expect(album).toBeFocused();
-	const second = album.getByRole('treeitem', { name: '02', exact: true });
+	const second = album.getByRole('treeitem', { name: /^0?2$/, exact: true });
 	await second.press('Enter');
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await expect(second).toBeFocused();
@@ -301,7 +312,7 @@ test('mouse selections keep focus in the tree', async ({ page }) => {
 	await album.click();
 	await expect(album).toBeFocused();
 	await album.press('ArrowRight');
-	const first = album.getByRole('treeitem', { name: '01', exact: true });
+	const first = album.getByRole('treeitem', { name: /^0?1$/, exact: true });
 	await first.click();
 	await expect(first).toBeFocused();
 	await first.click();
@@ -315,14 +326,14 @@ test('restore the directory and multiple expanded folders on startup', async ({ 
 	}
 	await expectSavedFolders(page, ['album/', 'other/']);
 	await page.reload();
-	await expect(page.getByRole('treeitem', { name: '01', exact: true })).toHaveCount(2);
+	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveCount(2);
 	for (const name of ['album', 'other']) {
 		await expect(page.getByRole('treeitem', { name, exact: true })).toHaveAttribute(
 			'aria-expanded',
 			'true'
 		);
 	}
-	await page.getByRole('treeitem', { name: '01', exact: true }).first().click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).first().click();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowLeft');
 	await expectSavedFolders(page, ['other/']);
@@ -348,7 +359,7 @@ test('reopen the saved directory when browser permission must be renewed', async
 		'aria-expanded',
 		'true'
 	);
-	await expect(page.getByRole('treeitem', { name: '01', exact: true })).toBeVisible();
+	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toBeVisible();
 });
 
 async function savedHistory(page: Page) {
@@ -438,18 +449,18 @@ test('restore the last page on startup and after delayed permission renewal', as
 	await setupDirectory(page);
 	const album = page.getByRole('treeitem', { name: 'album', exact: true });
 	await album.press('ArrowRight');
-	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await album.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
-	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+	await expect(album.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(/--active/);
 	await page.evaluate(() => localStorage.setItem('requirePermission', 'true'));
 	await page.reload();
 	await expect(page.getByRole('button', { name: 'Reopen comics', exact: true })).toBeVisible();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await page.getByRole('button', { name: 'Reopen comics', exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
-	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+	await expect(album.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(/--active/);
 });
 
 test('album clicks open the first page or its browser-saved reading position', async ({ page }) => {
@@ -459,7 +470,7 @@ test('album clicks open the first page or its browser-saved reading position', a
 	await album.getByText('album', { exact: true }).click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/01.png');
 	await album.press('ArrowRight');
-	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await album.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await other.click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('other/01.png');
 	expect((await savedHistory(page))[0]?.albumPages).toEqual({
@@ -478,7 +489,7 @@ test('missing saved pages are silently retained and restored when available agai
 	await setupDirectory(page);
 	const album = page.getByRole('treeitem', { name: 'album', exact: true });
 	await album.press('ArrowRight');
-	await album.getByRole('treeitem', { name: '02', exact: true }).click();
+	await album.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
 	await page.evaluate(async () => {
 		const root = await navigator.storage.getDirectory();
@@ -508,5 +519,341 @@ test('missing saved pages are silently retained and restored when available agai
 	});
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
-	await expect(album.getByRole('treeitem', { name: '02', exact: true })).toHaveClass(/--active/);
+	await expect(album.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(/--active/);
+});
+
+test('add independent folder roots, avoid duplicates and restore all roots and reading positions', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	const roots = page.getByRole('treeitem', { name: 'comics', exact: true });
+	await expect(roots).toHaveCount(1);
+	await expect(roots.first()).not.toHaveAttribute('title');
+	const firstAlbum = roots.first().getByRole('treeitem', { name: 'album', exact: true });
+	await firstAlbum.press('ArrowRight');
+	await firstAlbum.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	const add = page.getByRole('button', { name: 'Add folder', exact: true });
+	const bounds = (await page.locator('.tree').boundingBox())!;
+	const buttonBounds = (await add.boundingBox())!;
+	expect(bounds.x + bounds.width - buttonBounds.x - buttonBounds.width).toBeCloseTo(16, 0);
+	expect(bounds.y + bounds.height - buttonBounds.y - buttonBounds.height).toBeCloseTo(16, 0);
+	await add.click();
+	await expect(roots).toHaveCount(1);
+	await page.evaluate(() => localStorage.setItem('pickerParent', 'second'));
+	await add.click();
+	await expect(roots).toHaveCount(2);
+	const secondAlbum = roots.nth(1).getByRole('treeitem', { name: 'album', exact: true });
+	await secondAlbum.press('ArrowRight');
+	await secondAlbum.getByText('album', { exact: true }).click();
+	await expect(
+		page
+			.getByRole('region', { name: 'Album pages' })
+			.getByRole('button', { name: /^0?1$/, exact: true })
+	).toHaveAttribute('aria-current', 'page');
+	await firstAlbum.getByText('album', { exact: true }).click();
+	await expect(
+		page
+			.getByRole('region', { name: 'Album pages' })
+			.getByRole('button', { name: /^0?2$/, exact: true })
+	).toHaveAttribute('aria-current', 'page');
+	await expect
+		.poll(async () => (await savedHistory(page)).map((entry) => entry.lastPage))
+		.toEqual(['album/02.png', 'album/01.png']);
+	await page.reload();
+	await expect(roots).toHaveCount(2);
+	await expect(firstAlbum).toHaveAttribute('aria-expanded', 'true');
+	await expect(secondAlbum).toHaveAttribute('aria-expanded', 'true');
+	await expect(firstAlbum.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveAttribute(
+		'aria-current',
+		'true'
+	);
+	await secondAlbum.getByText('album', { exact: true }).click();
+	await expect(secondAlbum.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveAttribute(
+		'aria-current',
+		'true'
+	);
+	await expect(
+		firstAlbum.getByRole('treeitem', { name: /^0?2$/, exact: true })
+	).not.toHaveAttribute('aria-current');
+});
+
+test('migrate a single-folder session before renewing directory permission', async ({ page }) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowRight');
+	await expectSavedFolders(page, ['album/']);
+	await page.evaluate(async () => {
+		await new Promise<void>((resolve, reject) => {
+			const open = indexedDB.open('comix-sense', 1);
+			open.onerror = () => reject(open.error);
+			open.onsuccess = () => {
+				const db = open.result;
+				const transaction = db.transaction('sidebar', 'readwrite');
+				const store = transaction.objectStore('sidebar');
+				const request = store.get('session');
+				request.onsuccess = () =>
+					store.put(
+						{
+							directory: request.result.directories[0].directory,
+							expandedIds: ['album/']
+						},
+						'session'
+					);
+				transaction.oncomplete = () => {
+					db.close();
+					resolve();
+				};
+				transaction.onabort = () => {
+					db.close();
+					reject(transaction.error);
+				};
+			};
+		});
+		localStorage.setItem('requirePermission', 'true');
+	});
+	await page.reload();
+	await page.getByRole('button', { name: 'Reopen comics', exact: true }).click();
+	const root = page.getByRole('treeitem', { name: 'comics', exact: true });
+	await expect(root).toHaveAttribute('aria-expanded', 'true');
+	await expect(root.getByRole('treeitem', { name: 'album', exact: true })).toHaveAttribute(
+		'aria-expanded',
+		'true'
+	);
+	await expect(root.getByRole('treeitem', { name: /^0?1$/, exact: true })).toBeVisible();
+});
+
+test('disconnect appears on root hover and focus; Delete asks before clearing a folder', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	const root = page.getByRole('treeitem', { name: 'comics', exact: true });
+	const album = root.getByRole('treeitem', { name: 'album', exact: true });
+	await album.click();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	const disconnect = root.getByRole('button', { name: 'Disconnect comics', exact: true });
+	await page.mouse.move(1000, 500);
+	await expect(disconnect).toHaveCSS('opacity', '0');
+	await root.getByText('comics', { exact: true }).hover();
+	await expect(disconnect).toHaveCSS('opacity', '1');
+	const buttonBounds = (await disconnect.boundingBox())!;
+	const treeBounds = (await page.locator('.tree').boundingBox())!;
+	expect(buttonBounds.x).toBeGreaterThan(treeBounds.x + treeBounds.width - 60);
+	await disconnect.click();
+	const dialog = page.getByRole('dialog', { name: 'Remove folder?' });
+	await expect(dialog).toContainText('comics');
+	await dialog.getByRole('button', { name: 'No', exact: true }).click();
+	await expect(dialog).not.toBeVisible();
+	await expect(root).toHaveAttribute('aria-expanded', 'true');
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.mouse.move(1000, 500);
+	await root.focus();
+	await expect(disconnect).toHaveCSS('opacity', '1');
+	await root.press('Delete');
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).not.toBeVisible();
+	await album.press('Delete');
+	await expect(dialog).not.toBeVisible();
+	await root.press('Delete');
+	await dialog.getByRole('button', { name: 'Yes', exact: true }).click();
+	await expect(root).toHaveCount(0);
+	await expect(page.getByRole('region', { name: 'Album pages' })).toContainText(
+		'Add a comics source'
+	);
+	await expect(page.getByRole('img', { name: 'Comic page' })).toHaveCount(0);
+	await expect(page.locator('main')).toContainText('Add a comics source');
+	await expect(page.getByRole('button', { name: 'Add folder', exact: true })).toBeFocused();
+	await page.reload();
+	await expect(root).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Add folder' })).toBeVisible();
+});
+
+test('disconnecting another root preserves the current album and reader', async ({ page }) => {
+	await setupDirectory(page);
+	await page.evaluate(() => localStorage.setItem('pickerParent', 'second'));
+	await page.getByRole('button', { name: 'Add folder', exact: true }).click();
+	const roots = page.getByRole('treeitem', { name: 'comics', exact: true });
+	await expect(roots).toHaveCount(2);
+	await roots.nth(1).getByRole('treeitem', { name: 'album', exact: true }).click();
+	const pane = page.getByRole('region', { name: 'Album pages' });
+	await pane.getByRole('button', { name: /^0?2$/, exact: true }).click();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await roots.first().getByText('comics', { exact: true }).hover();
+	await roots.first().getByRole('button', { name: 'Disconnect comics', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Yes', exact: true }).click();
+	await expect(roots).toHaveCount(1);
+	await expect(pane.getByRole('button', { name: /^0?2$/, exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.reload();
+	await expect(roots).toHaveCount(1);
+	await expect(pane.getByRole('button', { name: /^0?2$/, exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
+test('show unsupported archives as disabled albums without hiding adjacent pages', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'other', exact: true }).press('ArrowRight');
+	await expectSavedFolders(page, ['other/']);
+	await page.evaluate(async () => {
+		const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('comics');
+		for (const name of ['issue.cbz', 'old.CBR', 'pack.zip', 'notes.txt']) {
+			await directory.getFileHandle(name, { create: true });
+		}
+		const album = await directory.getDirectoryHandle('album');
+		await album.getFileHandle('bonus.ZIP', { create: true });
+		const image = await (await album.getFileHandle('01.png')).getFile();
+		const sibling = await directory.getFileHandle('issue.cbz-extra.png', { create: true });
+		const writer = await sibling.createWritable();
+		await writer.write(image);
+		await writer.close();
+	});
+	await page.reload();
+	await page.getByRole('treeitem', { name: 'other', exact: true }).click();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	const selectedPage = page.locator('[data-page-path]').first();
+	await expect(selectedPage).toHaveAttribute('data-page-path', 'other/01.png');
+	for (const name of ['issue.cbz', 'old.CBR', 'pack.zip']) {
+		const archive = page.getByRole('treeitem', { name, exact: true });
+		await expect(archive).toHaveAttribute('aria-disabled', 'true');
+		await expect(archive.locator('[data-comic-icon="album"]')).toBeVisible();
+		await expect(archive).not.toHaveAttribute('aria-expanded');
+		await archive.click({ force: true });
+		await archive.press('Enter');
+		await expect(selectedPage).toHaveAttribute('data-page-path', 'other/01.png');
+	}
+	await expect(page.getByRole('treeitem', { name: 'notes.txt', exact: true })).toHaveCount(0);
+	const album = page.getByRole('treeitem', { name: 'album/', exact: true });
+	await album.press('ArrowRight');
+	await expect(album.getByRole('treeitem', { name: 'bonus.ZIP', exact: true })).toHaveAttribute(
+		'aria-disabled',
+		'true'
+	);
+	const sibling = page.getByRole('treeitem', { name: 'issue.cbz-extra', exact: true });
+	await sibling.click();
+	await expect(selectedPage).toHaveAttribute('data-page-path', 'issue.cbz-extra.png');
+});
+
+test('shorten shared page prefixes in both panes while retaining filenames and navigation', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowRight');
+	await expectSavedFolders(page, ['album/']);
+	await page.evaluate(async () => {
+		const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('comics');
+		const album = await directory.getDirectoryHandle('album');
+		for (const [oldName, newName] of [
+			['01.png', 'Book - 001.png'],
+			['02.png', 'Book - 002.png']
+		]) {
+			const image = await (await album.getFileHandle(oldName)).getFile();
+			const writer = await (await album.getFileHandle(newName, { create: true })).createWritable();
+			await writer.write(image);
+			await writer.close();
+			await album.removeEntry(oldName);
+		}
+	});
+	await page.reload();
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	const first = album.getByRole('treeitem', { name: '1', exact: true });
+	await expect(first.getByText('1', { exact: true })).toHaveAttribute('title', 'Book - 001.png');
+	await first.click();
+	const pane = page.getByRole('region', { name: 'Album pages' });
+	await expect(pane.getByRole('button', { name: '1', exact: true })).toHaveAttribute(
+		'title',
+		'Book - 001.png'
+	);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/Book - 001.png'
+	);
+	await pane.getByRole('button', { name: '2', exact: true }).click();
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/Book - 002.png'
+	);
+	await expect(album.getByRole('treeitem', { name: '2', exact: true })).toHaveAttribute(
+		'aria-current',
+		'true'
+	);
+	await page.getByRole('treeitem', { name: 'other', exact: true }).click();
+	await expect(pane.getByRole('button', { name: '1', exact: true })).toBeVisible();
+	await expect(pane.getByRole('button', { name: '2', exact: true })).toBeAttached();
+});
+
+test('shared prefixes include shared digits and never produce empty labels', () => {
+	for (const [names, expected] of [
+		[['Book - 001', 'Book - 002'], 'Book - 00'],
+		[['Book001', 'Book002'], 'Book00'],
+		[['001', '002'], '00'],
+		[['Only page'], ''],
+		[['Book', 'Book extra'], ''],
+		[['Book', 'Book'], ''],
+		[['Alpha 01', 'Beta 02'], ''],
+		[[], '']
+	] as [string[], string][]) {
+		expect(sharedFilenamePrefix(names)).toBe(expected);
+	}
+});
+
+test('shorten album names independently within each collection, retaining full names and paths', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowRight');
+	await expectSavedFolders(page, ['album/']);
+	await page.evaluate(async () => {
+		const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('comics');
+		const original = await directory.getDirectoryHandle('album');
+		const image = await (await original.getFileHandle('01.png')).getFile();
+		for (const series of ['Series', 'Another series']) {
+			const collection = await directory.getDirectoryHandle(series, { create: true });
+			for (const number of ['001', '002']) {
+				const album = await collection.getDirectoryHandle(`${series} - ${number}`, {
+					create: true
+				});
+				const writer = await (
+					await album.getFileHandle('01.png', { create: true })
+				).createWritable();
+				await writer.write(image);
+				await writer.close();
+			}
+		}
+		const archives = await directory.getDirectoryHandle('Archives', { create: true });
+		for (const name of ['Book001.cbz', 'Book002.cbz'])
+			await archives.getFileHandle(name, { create: true });
+	});
+	await page.reload();
+	for (const series of ['Series', 'Another series']) {
+		const collection = page.getByRole('treeitem', { name: `${series}/`, exact: true });
+		await collection.press('ArrowRight');
+		for (const number of ['1', '2']) {
+			const album = collection.getByRole('treeitem', { name: number, exact: true });
+			await expect(album.getByText(number, { exact: true })).toHaveAttribute(
+				'title',
+				`${series} - 00${number}`
+			);
+			await album.click();
+			await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+				'data-page-path',
+				`${series}/${series} - 00${number}/01.png`
+			);
+			await expect(
+				page
+					.getByRole('region', { name: 'Album pages' })
+					.getByRole('button', { name: '01', exact: true })
+			).toHaveAttribute('aria-current', 'page');
+		}
+	}
+	const archives = page.getByRole('treeitem', { name: 'Archives/', exact: true });
+	await archives.press('ArrowRight');
+	const archive = archives.getByRole('treeitem', { name: '1.cbz', exact: true });
+	await expect(archive).toHaveAttribute('aria-disabled', 'true');
+	await expect(archive.getByText('1.cbz', { exact: true })).toHaveAttribute('title', 'Book001.cbz');
 });
