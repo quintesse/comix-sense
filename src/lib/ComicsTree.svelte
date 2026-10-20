@@ -24,6 +24,34 @@
 	}: Props = $props();
 	let activeId = $derived(selectedComic ? selectedComic.path : '');
 
+	function treeKeyboard(node: HTMLDivElement) {
+		function selectOnEnter(event: KeyboardEvent) {
+			if (
+				event.key !== 'Enter' ||
+				event.isComposing ||
+				event.altKey ||
+				event.ctrlKey ||
+				event.metaKey
+			)
+				return;
+			const item =
+				event.target instanceof HTMLElement
+					? event.target.closest<HTMLElement>('[role="treeitem"]')
+					: null;
+			if (!item) return;
+			// Capture Enter before Carbon's handler also toggles parent expansion.
+			event.preventDefault();
+			event.stopPropagation();
+			item.click();
+		}
+		node.addEventListener('keydown', selectOnEnter, true);
+		return {
+			destroy() {
+				node.removeEventListener('keydown', selectOnEnter, true);
+			}
+		};
+	}
+
 	type TreeChild = TreeNode;
 
 	function comicsChildren(cs: Comic[], idx: number[] = [0], prefix: string = ''): TreeChild[] {
@@ -70,11 +98,13 @@
 	}
 </script>
 
-<TreeView
-	hideLabel
-	labelText="Comics"
-	nodes={comicsChildren(comics)}
-	bind:activeId
-	bind:expandedIds
-	on:select={forwardSelect}
-/>
+<div use:treeKeyboard>
+	<TreeView
+		hideLabel
+		labelText="Comics"
+		nodes={comicsChildren(comics)}
+		bind:activeId
+		bind:expandedIds
+		on:select={forwardSelect}
+	/>
+</div>

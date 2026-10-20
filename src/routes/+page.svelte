@@ -260,6 +260,28 @@
 		}
 	}
 
+	function handlePageNavigationKey(event: KeyboardEvent) {
+		if (
+			(event.key !== 'PageUp' && event.key !== 'PageDown') ||
+			event.defaultPrevented ||
+			event.isComposing ||
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			!$selectedComic
+		)
+			return;
+		// Capture these app-wide shortcuts before controls such as the tree consume them.
+		event.preventDefault();
+		event.stopPropagation();
+		navigatePage(event.key === 'PageUp' ? -1 : 1, event.shiftKey);
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', handlePageNavigationKey, true);
+		return () => window.removeEventListener('keydown', handlePageNavigationKey, true);
+	});
+
 	function handleNavigationClick(event: MouseEvent) {
 		if (
 			editable ||

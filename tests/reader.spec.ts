@@ -184,6 +184,56 @@ test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.created.length)).toBe(3);
 });
 
+for (const mode of ['1P', '2P']) {
+	test(`Page Up/Down navigate app-wide in ${mode} with optional Shift`, async ({ page }) => {
+		await mockDirectory(page, { pageCount: 6 });
+		await openComic(page, mode);
+		const treeItem = page.getByRole('treeitem', { name: '01', exact: true });
+		const leftPage = page.locator('[data-page-path]').first();
+		const expectPage = async (number: number) => {
+			await expect(leftPage).toHaveAttribute('data-page-path', `album/0${number}.png`);
+		};
+		const step = mode === '2P' ? 2 : 1;
+		await expect(treeItem).toBeFocused();
+		await page.keyboard.press('PageUp');
+		await expectPage(1);
+		await page.keyboard.press('PageDown');
+		await expectPage(1 + step);
+		await expect(treeItem).toBeFocused();
+		await page.keyboard.press('Shift+PageDown');
+		await expectPage(2 + step);
+		await page.keyboard.press('Shift+PageUp');
+		await expectPage(1 + step);
+		await page.keyboard.press('PageUp');
+		await expectPage(1);
+		await expect(treeItem).toBeFocused();
+
+		// Header controls also receive the shortcuts without transferring focus.
+		const headerItem = page.getByRole('menuitem', { name: mode, exact: true });
+		await headerItem.focus();
+		await page.keyboard.press('PageDown');
+		await expectPage(1 + step);
+		await expect(headerItem).toBeFocused();
+		await page.keyboard.press('PageUp');
+		await expectPage(1);
+		await page.keyboard.press('Control+PageDown');
+		await expectPage(1);
+
+		await selectMenu(page, 'ORG', 'EN');
+		await selectMenu(page, 'EDIT: NO', 'Yes');
+		await page.getByRole('textbox').first().focus();
+		await page.keyboard.press('Shift+PageDown');
+		await expectPage(2);
+
+		await page.evaluate(() => document.documentElement.requestFullscreen());
+		await expect(page.getByRole('tree')).toBeHidden();
+		await page.keyboard.press('PageDown');
+		await expectPage(2 + step);
+		await page.keyboard.press('Shift+PageUp');
+		await expectPage(1 + step);
+	});
+}
+
 test('click the outer quarters to navigate and ignore the middle half of the pane', async ({
 	page
 }) => {

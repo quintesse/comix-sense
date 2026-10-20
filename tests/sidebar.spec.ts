@@ -103,6 +103,45 @@ async function expectSavedFolders(page: Page, folders: string[]) {
 		.toEqual(folders);
 }
 
+test('Enter selects without toggling expansion or moving focus out of the tree', async ({
+	page
+}) => {
+	await setupDirectory(page, true);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.press('Enter');
+	await expect(album).toHaveAttribute('aria-expanded', 'false');
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/01.png');
+	await expect(album).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(album).toHaveAttribute('aria-expanded', 'true');
+	await page.keyboard.press('Enter');
+	await expect(album).toHaveAttribute('aria-expanded', 'true');
+	await expect(album).toBeFocused();
+	const second = album.getByRole('treeitem', { name: '02', exact: true });
+	await second.press('Enter');
+	await expect.poll(async () => (await savedHistory(page))[0]?.lastPage).toBe('album/02.png');
+	await expect(second).toBeFocused();
+	const series = page.getByRole('treeitem', { name: 'series/', exact: true });
+	await series.press('Enter');
+	await expect(series).toBeFocused();
+	await expect(series).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('mouse selections keep focus in the tree', async ({ page }) => {
+	await setupDirectory(page);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.click();
+	await expect(album).toBeFocused();
+	await album.click();
+	await expect(album).toBeFocused();
+	await album.press('ArrowRight');
+	const first = album.getByRole('treeitem', { name: '01', exact: true });
+	await first.click();
+	await expect(first).toBeFocused();
+	await first.click();
+	await expect(first).toBeFocused();
+});
+
 test('restore the directory and multiple expanded folders on startup', async ({ page }) => {
 	await setupDirectory(page);
 	for (const name of ['album', 'other']) {
