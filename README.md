@@ -6,6 +6,8 @@ A local comic reader and speech-bubble overlay editor, built with Svelte 5 and S
 
 Open the app in Chrome or Edge, choose **Select directory...**, expand a folder in the sidebar, and select a page. Supported image extensions are BMP, GIF, JPG, JPEG, PNG, and WebP. The browser reads files from the selected directory; no server upload is involved.
 
+Use **Left Arrow** and **Right Arrow** to read the previous and next page in the current album. In reading mode, clicking anywhere in the left or right half of the main pane does the same, including blank space and translation bubbles. Navigation stops at the first and last pages. Arrow keys retain their usual behavior in text fields, menus, and the sidebar tree.
+
 The sidebar uses Font Awesome icons: an open book for albums (folders containing only pages), stacked layers for collections (folders grouping other folders, or empty folders), and a file for pages. A collection can also contain loose pages. Unsupported files do not affect this distinction.
 
 Choose **ORG** to see the original page, or select a language to show its speech-bubble overlays. For `page01.png`, the English overlay is `page01.en.bbl`. Each `.bbl` file is JSON containing `pages[0].bubbles`, for example:
