@@ -1,5 +1,5 @@
-import type { Comic } from '$lib/types/Comic';
-import { dirFileName } from '$lib/types/funcs';
+import type { Comic } from '#lib/types/Comic.js';
+import { dirFileName } from '#lib/types/funcs.js';
 import { derived, type Readable } from 'svelte/store';
 
 /**

@@ -20,9 +20,9 @@
 		ContextMenuOption,
 		ContextMenuRadioGroup
 	} from 'carbon-components-svelte';
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { writable } from 'svelte/store';
-	import { collectionStore } from '$lib/stores/CollectionStore';
+	import { collectionStore } from '#lib/stores/CollectionStore.js';
 	import {
 		BblShapeType,
 		boundsv,
@@ -30,13 +30,13 @@
 		type BblShape,
 		type Bubble,
 		type Comic
-	} from '$lib/types/Comic';
-	import { DirectoryComicStore, type ComicStore } from '$lib/types/ComicStore';
-	import ComicsTree from '$lib/ComicsTree.svelte';
-	import ComicPage from '$lib/ComicPage.svelte';
-	import ComicBubble from '$lib/ComicBubble.svelte';
-	import Zoom from '$lib/Zoom.svelte';
-	import { dedup } from '$lib/types/funcs';
+	} from '#lib/types/Comic.js';
+	import { DirectoryComicStore, type ComicStore } from '#lib/types/ComicStore.js';
+	import ComicsTree from '#lib/ComicsTree.svelte';
+	import ComicPage from '#lib/ComicPage.svelte';
+	import ComicBubble from '#lib/ComicBubble.svelte';
+	import Zoom from '#lib/Zoom.svelte';
+	import { dedup } from '#lib/types/funcs.js';
 
 	let isSideNavOpen = $state(false);
 
@@ -183,14 +183,19 @@
 	<HeaderNav>
 		<HeaderNavItem text="Link 1" />
 		<HeaderNavItem text="Link 2" />
-		<HeaderNavMenu href="{base}/" text={selectedZoom.toUpperCase()}>
+
+		<HeaderNavMenu href={resolve('/')} text={selectedZoom.toUpperCase()}>
 			<TileGroup bind:selected={selectedZoom}>
 				{#each zoomLevels as { id, label }}
 					<RadioTile value={id}>{label}</RadioTile>
 				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
-		<HeaderNavMenu href="{base}/" text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}>
+
+		<HeaderNavMenu
+			href={resolve('/')}
+			text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}
+		>
 			<TileGroup bind:selected={selectedLanguage}>
 				<RadioTile value="org">ORG</RadioTile>
 				{#each languages as lang}
@@ -198,14 +203,15 @@
 				{/each}
 			</TileGroup>
 		</HeaderNavMenu>
-		<HeaderNavMenu href="{base}/" text={'EDIT: ' + selectedEdit.toUpperCase()}>
+
+		<HeaderNavMenu href={resolve('/')} text={'EDIT: ' + selectedEdit.toUpperCase()}>
 			<TileGroup bind:selected={selectedEdit}>
 				<RadioTile value="yes">Yes</RadioTile>
 				<RadioTile value="no">No</RadioTile>
 			</TileGroup>
 		</HeaderNavMenu>
 		{#if editable}
-			<HeaderNavMenu href="{base}/" text={selectedShape.toUpperCase()}>
+			<HeaderNavMenu href={resolve('/')} text={selectedShape.toUpperCase()}>
 				<TileGroup bind:selected={selectedShape}>
 					<RadioTile value="box">Box</RadioTile>
 					<RadioTile value="poly">Poly</RadioTile>
