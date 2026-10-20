@@ -30,7 +30,7 @@
 		saveReadingHistory,
 		type ReadingPosition
 	} from '#lib/stores/SidebarSession.js';
-	import { collectionStore } from '#lib/stores/CollectionStore.js';
+	import { preferredLanguage } from '#lib/stores/ReaderPreferences.js';
 	import {
 		BblShapeType,
 		boundsv,
@@ -48,15 +48,14 @@
 
 	let isSideNavOpen = $state(false);
 
-	let selectedZoom: string = $state('width');
-	let selectedLanguage: string = $state('org');
+	let selectedZoom: string = $state('fit');
+	let browserLanguages = $state<readonly string[]>([]);
 	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
 
 	let store: ComicStore | null = $state(null);
 	let comics = writable<Comic[]>([]);
 	let selectedComic = writable<Comic | null>(null);
-	let collection = collectionStore(comics, selectedComic);
 	let bubbles = $state<Bubble[]>([]);
 	let imageUrl = $state<string>();
 	let loadError = $state('');
@@ -70,6 +69,13 @@
 	let savingReadingHistory = Promise.resolve();
 
 	onMount(() => {
+		browserLanguages = navigator.languages;
+		try {
+			const zoom = localStorage.getItem('comix-sense.zoom');
+			if (zoomLevels.some(({ id }) => id === zoom)) selectedZoom = zoom!;
+		} catch {
+			// Reading remains available when browser storage is disabled.
+		}
 		void (async () => {
 			try {
 				readingHistory = (await readReadingHistory()) ?? [];
@@ -132,13 +138,37 @@
 		};
 		readingHistory = readingHistory.map((entry) => (entry === readingPosition ? position : entry));
 		readingPosition = position;
+		persistReadingHistory();
+	}
+
+	function persistReadingHistory() {
 		const snapshot = readingHistory;
 		savingReadingHistory = savingReadingHistory
 			.then(() => saveReadingHistory(snapshot))
 			.then(() => {})
 			.catch(() => {
-				persistenceError = 'Could not save reading positions for the next startup.';
+				persistenceError = 'Could not save reading preferences for the next startup.';
 			});
+	}
+
+	function selectZoom(zoom: string) {
+		selectedZoom = zoom;
+		try {
+			localStorage.setItem('comix-sense.zoom', zoom);
+		} catch {
+			persistenceError = 'Could not save zoom for the next startup.';
+		}
+	}
+
+	function selectLanguage(language: string) {
+		if (!readingPosition || !$selectedComic) return;
+		const position = {
+			...readingPosition,
+			albumLanguages: { ...readingPosition.albumLanguages, [albumPath]: language }
+		};
+		readingHistory = readingHistory.map((entry) => (entry === readingPosition ? position : entry));
+		readingPosition = position;
+		persistReadingHistory();
 	}
 
 	async function reopenDirectory() {
@@ -273,7 +303,21 @@
 		{ id: '25%', label: '25%' }
 	];
 	let editable = $derived(selectedEdit === 'yes');
-	let languages = $derived(dedup($collection.flatMap((c) => c.languages)));
+	let albumPath = $derived(
+		$selectedComic?.path.slice(0, $selectedComic.path.lastIndexOf('/') + 1) ?? ''
+	);
+	let languages = $derived(
+		dedup(
+			$comics
+				.filter(
+					(c) => c.kind === 'page' && c.path.slice(0, c.path.lastIndexOf('/') + 1) === albumPath
+				)
+				.flatMap((c) => c.languages)
+		)
+	);
+	let selectedLanguage = $derived(
+		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
+	);
 </script>
 
 <Header platformName="Comix Sense" bind:isSideNavOpen>
@@ -286,7 +330,7 @@
 		<HeaderNavItem text="Link 2" />
 
 		<HeaderNavMenu href={resolve('/')} text={selectedZoom.toUpperCase()}>
-			<TileGroup bind:selected={selectedZoom}>
+			<TileGroup selected={selectedZoom} on:select={(event) => selectZoom(event.detail)}>
 				{#each zoomLevels as { id, label }}
 					<RadioTile value={id}>{label}</RadioTile>
 				{/each}
@@ -297,7 +341,7 @@
 			href={resolve('/')}
 			text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}
 		>
-			<TileGroup bind:selected={selectedLanguage}>
+			<TileGroup selected={selectedLanguage} on:select={(event) => selectLanguage(event.detail)}>
 				<RadioTile value="org">ORG</RadioTile>
 				{#each languages as lang}
 					<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
@@ -390,17 +434,21 @@
 				<ContextMenuDivider />
 			{/if}
 			<ContextMenuOption labelText="Language">
-				<ContextMenuRadioGroup bind:selectedId={selectedLanguage}>
-					<ContextMenuOption id="org" labelText="ORG" />
+				<ContextMenuRadioGroup selectedId={selectedLanguage}>
+					<ContextMenuOption id="org" labelText="ORG" on:click={() => selectLanguage('org')} />
 					{#each languages as lang}
-						<ContextMenuOption id={lang} labelText={lang.toUpperCase()} />
+						<ContextMenuOption
+							id={lang}
+							labelText={lang.toUpperCase()}
+							on:click={() => selectLanguage(lang)}
+						/>
 					{/each}
 				</ContextMenuRadioGroup>
 			</ContextMenuOption>
 			<ContextMenuOption labelText="Zoom">
-				<ContextMenuRadioGroup bind:selectedId={selectedZoom}>
+				<ContextMenuRadioGroup selectedId={selectedZoom}>
 					{#each zoomLevels as { id, label }}
-						<ContextMenuOption {id} labelText={label} />
+						<ContextMenuOption {id} labelText={label} on:click={() => selectZoom(id)} />
 					{/each}
 				</ContextMenuRadioGroup>
 			</ContextMenuOption>

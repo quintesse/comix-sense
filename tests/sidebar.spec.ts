@@ -1,43 +1,57 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function setupDirectory(page: Page, nested = false) {
-	await page.addInitScript((nested) => {
-		// Real, cloneable browser handles exercise IndexedDB persistence across reloads.
-		Object.defineProperty(window, 'showDirectoryPicker', {
-			value: async () => {
-				const root = await navigator.storage.getDirectory();
-				const directory = await root.getDirectoryHandle('comics', { create: true });
-				for (const name of nested ? ['album', 'series/volume', 'series'] : ['album', 'other']) {
-					let album = directory;
-					for (const part of name.split('/')) {
-						album = await album.getDirectoryHandle(part, { create: true });
+async function setupDirectory(page: Page, nested = false, translations = false) {
+	await page.addInitScript(
+		({ nested, translations }) => {
+			Object.defineProperty(navigator, 'languages', { value: ['fr-FR', 'en-GB', 'nl-NL'] });
+			// Real, cloneable browser handles exercise IndexedDB persistence across reloads.
+			Object.defineProperty(window, 'showDirectoryPicker', {
+				value: async () => {
+					const root = await navigator.storage.getDirectory();
+					const directory = await root.getDirectoryHandle('comics', { create: true });
+					for (const name of nested ? ['album', 'series/volume', 'series'] : ['album', 'other']) {
+						let album = directory;
+						for (const part of name.split('/')) {
+							album = await album.getDirectoryHandle(part, { create: true });
+						}
+						const file = await album.getFileHandle('01.png', { create: true });
+						const writer = await file.createWritable();
+						const canvas = document.createElement('canvas');
+						canvas.width = 800;
+						canvas.height = 1000;
+						const image = await new Promise<Blob>((resolve) =>
+							canvas.toBlob((blob) => resolve(blob!))
+						);
+						await writer.write(image);
+						await writer.close();
+						const second = await album.getFileHandle('02.png', { create: true });
+						const secondWriter = await second.createWritable();
+						await secondWriter.write(image);
+						await secondWriter.close();
+						if (translations) {
+							for (const language of name === 'album' ? ['en', 'nl'] : ['nl']) {
+								const translation = await album.getFileHandle(`01.${language}.bbl`, {
+									create: true
+								});
+								const writer = await translation.createWritable();
+								await writer.write(JSON.stringify({ pages: [{ bubbles: [] }] }));
+								await writer.close();
+							}
+						}
 					}
-					const file = await album.getFileHandle('01.png', { create: true });
-					const writer = await file.createWritable();
-					const canvas = document.createElement('canvas');
-					canvas.width = 800;
-					canvas.height = 1000;
-					const image = await new Promise<Blob>((resolve) =>
-						canvas.toBlob((blob) => resolve(blob!))
-					);
-					await writer.write(image);
-					await writer.close();
-					const second = await album.getFileHandle('02.png', { create: true });
-					const secondWriter = await second.createWritable();
-					await secondWriter.write(image);
-					await secondWriter.close();
+					if (nested) await directory.getDirectoryHandle('empty', { create: true });
+					return directory;
 				}
-				if (nested) await directory.getDirectoryHandle('empty', { create: true });
-				return directory;
-			}
-		});
-		FileSystemHandle.prototype.queryPermission = async () =>
-			localStorage.getItem('requirePermission') ? 'prompt' : 'granted';
-		FileSystemHandle.prototype.requestPermission = async () => {
-			localStorage.removeItem('requirePermission');
-			return 'granted';
-		};
-	}, nested);
+			});
+			FileSystemHandle.prototype.queryPermission = async () =>
+				localStorage.getItem('requirePermission') ? 'prompt' : 'granted';
+			FileSystemHandle.prototype.requestPermission = async () => {
+				localStorage.removeItem('requirePermission');
+				return 'granted';
+			};
+		},
+		{ nested, translations }
+	);
 	const response = await page.goto('./');
 	expect(response?.status()).toBe(200);
 	await page.getByRole('button', { name: 'Select directory...' }).click();
@@ -150,6 +164,70 @@ async function savedHistory(page: Page) {
 		);
 	});
 }
+
+async function chooseLanguage(page: Page, current: string, language: string) {
+	await page.getByRole('menuitem', { name: current, exact: true }).click();
+	await page
+		.getByRole('menu', { name: current, exact: true })
+		.getByText(language, { exact: true })
+		.click();
+	await page.getByRole('menuitem', { name: language, exact: true }).click();
+}
+
+test('remember explicit language choices per album including ORG across reloads', async ({
+	page
+}) => {
+	await setupDirectory(page, false, true);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	const other = page.getByRole('treeitem', { name: 'other', exact: true });
+	await album.click();
+	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeVisible();
+	await chooseLanguage(page, 'EN', 'ORG');
+	await other.click();
+	await expect(page.getByRole('menuitem', { name: 'NL', exact: true })).toBeVisible();
+	await chooseLanguage(page, 'NL', 'ORG');
+	await album.click();
+	await expect(page.getByRole('menuitem', { name: 'ORG', exact: true })).toBeVisible();
+	await chooseLanguage(page, 'ORG', 'NL');
+	await expect
+		.poll(async () => (await savedHistory(page))[0])
+		.toMatchObject({
+			albumLanguages: { 'album/': 'nl', 'other/': 'org' }
+		});
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: 'NL', exact: true })).toBeVisible();
+	await other.click();
+	await expect(page.getByRole('menuitem', { name: 'ORG', exact: true })).toBeVisible();
+});
+
+test('unavailable saved language falls back to browser preferences then ORG', async ({ page }) => {
+	await setupDirectory(page, false, true);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).click();
+	await chooseLanguage(page, 'EN', 'NL');
+	await expect
+		.poll(async () => (await savedHistory(page))[0])
+		.toMatchObject({
+			albumLanguages: { 'album/': 'nl' }
+		});
+	await page.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		const comics = await root.getDirectoryHandle('comics');
+		const album = await comics.getDirectoryHandle('album');
+		await album.removeEntry('01.nl.bbl');
+	});
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeVisible();
+	await page.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		const comics = await root.getDirectoryHandle('comics');
+		const album = await comics.getDirectoryHandle('album');
+		await album.removeEntry('01.en.bbl');
+	});
+	await page.reload();
+	await expect(page.getByRole('menuitem', { name: 'ORG', exact: true })).toBeVisible();
+	// Automatic fallbacks must not replace the user's original choice.
+	expect((await savedHistory(page))[0]).toMatchObject({ albumLanguages: { 'album/': 'nl' } });
+});
 
 test('restore the last page on startup and after delayed permission renewal', async ({ page }) => {
 	await setupDirectory(page);

@@ -7,6 +7,7 @@ export interface ReadingPosition {
 	directory: FileSystemDirectoryHandle;
 	lastPage?: string;
 	albumPages: Record<string, string>;
+	albumLanguages?: Record<string, string>;
 }
 
 // Directory handles must be stored in IndexedDB to retain their browser permissions.
