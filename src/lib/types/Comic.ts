@@ -1,10 +1,15 @@
 import type { ComicStore } from './ComicStore';
+import type { ArchivePriority } from '../archives/ArchiveReader';
 import { baseNameExt, type StrStrMap } from './funcs';
 
 export type ComicKind = 'page' | 'album' | 'collection' | 'archive';
 
 export class Comic {
 	path: string;
+	/** Explicit membership for archive pages, independent of internal directories. */
+	album?: string;
+	entryPath?: string;
+	archiveState?: string;
 	languages: string[];
 	readonly kind: ComicKind;
 	displayName: string;
@@ -21,12 +26,20 @@ export class Comic {
 		this.displayName = kind === 'page' || kind === 'archive' ? baseNameExt(name)[0] : name;
 	}
 
+	get albumPath(): string {
+		return this.album ?? this.path.slice(0, this.path.lastIndexOf('/') + 1);
+	}
+
 	get fileName(): string {
 		return this.path.replace(/\/$/, '').split('/').at(-1)!;
 	}
 
-	getImageUrl(): Promise<string> {
-		return this.store.getImageUrl(this);
+	getImageUrl(priority: ArchivePriority = 'reader'): Promise<string> {
+		return this.store.getImageUrl(this, priority);
+	}
+
+	protectImage(): () => void {
+		return this.store.protectImage?.(this) ?? (() => {});
 	}
 
 	getBubbles(language?: string): Promise<Bubble[]> {

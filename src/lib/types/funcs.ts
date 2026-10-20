@@ -16,6 +16,33 @@ export function withoutParentPrefix(name: string, parent: string): string {
 	return name.slice(parent.length).replace(/^[^\p{L}\p{N}]+/u, '') || name;
 }
 
+/** Strip a known collection + album heading while retaining the original suffix. */
+export function withoutAlbumPrefix(name: string, collection: string, album: string): string {
+	const letters = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+	const collectionName = letters(collection),
+		albumName = letters(album);
+	if (!collectionName || !albumName) return name;
+	const prefixes = [collectionName + albumName];
+	// Album folders/archives may already include their collection name.
+	if (albumName.startsWith(collectionName)) prefixes.push(albumName);
+	for (const prefix of prefixes) {
+		let matched = 0,
+			offset = 0;
+		for (const character of name) {
+			offset += character.length;
+			const part = letters(character);
+			if (!prefix.startsWith(part, matched)) break;
+			matched += part.length;
+			if (matched === prefix.length) {
+				const suffix = name.slice(offset).replace(/^[^\p{L}\p{N}]+/u, '');
+				if (suffix) return suffix;
+				break;
+			}
+		}
+	}
+	return name;
+}
+
 /** Find a shared label prefix in linear time. */
 export function sharedFilenamePrefix(names: string[]): string {
 	if (names.length < 2) return '';

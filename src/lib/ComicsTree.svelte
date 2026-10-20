@@ -14,6 +14,7 @@
 		selectedComic?: Comic | null;
 		expandedIds?: string[];
 		onselect?: (comic: Comic) => void;
+		onarchive?: (comic: Comic, select?: boolean) => void;
 		ondisconnect?: (folder: ComicFolder) => void;
 	}
 
@@ -22,6 +23,7 @@
 		selectedComic = $bindable(null),
 		expandedIds = $bindable([]),
 		onselect,
+		onarchive,
 		ondisconnect
 	}: Props = $props();
 	let activeId = $derived(selectedComic ? idForComic(selectedComic) : '');
@@ -92,9 +94,12 @@
 			}
 			let tc: TreeChild = {
 				id: comicNodeId(folder, c),
-				text: c.displayName + (c.kind === 'collection' ? '/' : ''),
-				fullName: c.fileName,
-				disabled: c.kind === 'archive',
+				text:
+					c.displayName +
+					(c.archiveState ? ` (${c.archiveState})` : '') +
+					(c.kind === 'collection' ? '/' : ''),
+				fullName: c.entryPath ?? c.fileName,
+
 				icon:
 					c.kind === 'album' || c.kind === 'archive'
 						? AlbumIcon
@@ -103,8 +108,8 @@
 							: PageIcon
 			};
 			idx[0] = idx[0] + 1;
-			if (c.kind === 'album' || c.kind === 'collection') {
-				tc.nodes = comicsChildren(folder, idx, c.path);
+			if (c.kind === 'album' || c.kind === 'collection' || c.kind === 'archive') {
+				tc.nodes = comicsChildren(folder, idx, c.kind === 'archive' ? c.path + '/' : c.path);
 			}
 			result.push(tc);
 		}
@@ -115,6 +120,10 @@
 		const folder = folders.find((folder) => String(event.detail.id).startsWith(folder.id + '/'));
 		const comics = folder?.comics ?? [];
 		const item = comics.find((c) => comicNodeId(folder!, c) === event.detail.id);
+		if (item?.kind === 'archive') {
+			onarchive?.(item, true);
+			return;
+		}
 		const comic =
 			item?.kind === 'album'
 				? (comics.find((c) => c.kind === 'page' && c.path === folder?.albumPages[item.path]) ??
@@ -143,6 +152,18 @@
 		bind:activeId
 		bind:expandedIds
 		on:select={forwardSelect}
+		on:toggle={(event) => {
+			if (!event.detail.expanded) return;
+			const archive = folders
+				.flatMap((f) => f.comics)
+				.find((c) => c.kind === 'archive' && idForComic(c) === event.detail.id);
+			if (
+				archive &&
+				archive.archiveState !== 'loading' &&
+				!folders.some((f) => f.comics.some((c) => c.album === archive.path))
+			)
+				onarchive?.(archive, false);
+		}}
 		let:node
 	>
 		{@const folder = folders.find((folder) => folder.id === node.id)}

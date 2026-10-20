@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { releaseImageUrl } from './ImageUrls';
 	import type { Comic } from './types/Comic';
 
 	let {
@@ -60,13 +61,27 @@
 	function thumbnail(node: HTMLImageElement, comic: Comic) {
 		let disposed = false;
 		let url: string | undefined;
+		let generation = 0;
+		let visible = false;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (!entries.some((entry) => entry.isIntersecting)) return;
-				observer.disconnect();
-				void comic.getImageUrl().then(
+				visible = entries.some((entry) => entry.isIntersecting);
+				if (!comic.entryPath) {
+					if (!visible) return;
+					observer.disconnect();
+				}
+				if (!visible) {
+					generation++;
+					if (url) releaseImageUrl(url);
+					url = undefined;
+					node.removeAttribute('src');
+					return;
+				}
+				if (url) return;
+				const request = ++generation;
+				void comic.getImageUrl('thumbnail').then(
 					(loaded) => {
-						if (disposed) URL.revokeObjectURL(loaded);
+						if (disposed || !visible || request !== generation) releaseImageUrl(loaded);
 						else {
 							url = loaded;
 							node.src = loaded;
@@ -84,7 +99,7 @@
 			destroy() {
 				disposed = true;
 				observer.disconnect();
-				if (url) URL.revokeObjectURL(url);
+				if (url) releaseImageUrl(url);
 			}
 		};
 	}
@@ -98,7 +113,7 @@
 				<button
 					type="button"
 					data-page={comic.path}
-					title={comic.fileName}
+					title={comic.entryPath ?? comic.fileName}
 					aria-current={selectedComic === comic ? 'page' : undefined}
 					onclick={() => onselect(comic)}
 				>

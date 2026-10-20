@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import { sharedFilenamePrefix, withoutParentPrefix } from '../src/lib/types/funcs';
+import {
+	sharedFilenamePrefix,
+	withoutParentPrefix,
+	withoutAlbumPrefix
+} from '../src/lib/types/funcs';
 
 async function setupDirectory(page: Page, nested = false, translations = false) {
 	await page.addInitScript(
@@ -694,9 +698,7 @@ test('disconnecting another root preserves the current album and reader', async 
 	);
 });
 
-test('show unsupported archives as disabled albums without hiding adjacent pages', async ({
-	page
-}) => {
+test('report malformed archives without hiding adjacent pages', async ({ page }) => {
 	await setupDirectory(page);
 	await page.getByRole('treeitem', { name: 'other', exact: true }).press('ArrowRight');
 	await expectSavedFolders(page, ['other/']);
@@ -723,14 +725,14 @@ test('show unsupported archives as disabled albums without hiding adjacent pages
 			name: name.replace(/\.(cbr|cbz|zip)$/i, ''),
 			exact: true
 		});
-		await expect(archive).toHaveAttribute('aria-disabled', 'true');
+		await expect(archive).toHaveAttribute('aria-disabled', 'false');
 		await expect(
 			archive.getByText(name.replace(/\.(cbr|cbz|zip)$/i, ''), { exact: true })
 		).toHaveAttribute('title', name);
 		await expect(archive.locator('[data-comic-icon="album"]')).toBeVisible();
-		await expect(archive).not.toHaveAttribute('aria-expanded');
+		await expect(archive).toHaveAttribute('aria-expanded', 'false');
 		await archive.click({ force: true });
-		await archive.press('Enter');
+		await expect(page.getByRole('alert')).toContainText('signature');
 		await expect(selectedPage).toHaveAttribute('data-page-path', 'other/01.png');
 	}
 	await expect(page.getByRole('treeitem', { name: 'notes.txt', exact: true })).toHaveCount(0);
@@ -738,7 +740,7 @@ test('show unsupported archives as disabled albums without hiding adjacent pages
 	await album.press('ArrowRight');
 	await expect(album.getByRole('treeitem', { name: 'bonus', exact: true })).toHaveAttribute(
 		'aria-disabled',
-		'true'
+		'false'
 	);
 	const sibling = page.getByRole('treeitem', { name: 'issue.cbz-extra', exact: true });
 	await sibling.click();
@@ -883,7 +885,7 @@ test('remove parent names from albums and collections regardless of sibling name
 	const archives = page.getByRole('treeitem', { name: 'Archives/', exact: true });
 	await archives.press('ArrowRight');
 	const archive = archives.getByRole('treeitem', { name: '001', exact: true });
-	await expect(archive).toHaveAttribute('aria-disabled', 'true');
+	await expect(archive).toHaveAttribute('aria-disabled', 'false');
 	await expect(archive.getByText('001', { exact: true })).toHaveAttribute(
 		'title',
 		'ARCHIVES - 001.cbz'
@@ -901,4 +903,62 @@ test('parent prefixes ignore case and strip separators without changing remainin
 		['Unrelated', 'Series', 'Unrelated']
 	])
 		expect(withoutParentPrefix(name, parent)).toBe(expected);
+});
+
+test('page headings match collection plus album across separators without changing suffixes', () => {
+	for (const [name, collection, album, expected] of [
+		['SERIES — _ ✨ Volume_001', 'Series', 'Volume', '001'],
+		['SeriesVolume002', 'Series', 'Volume', '002'],
+		['The — Series ✨ Vol. 2 — Éclair', 'The Series', 'Vol 2', 'Éclair'],
+		['Series — Volume_003', 'Series', 'Series - Volume', '003'],
+		['SeriesSeriesVolume004', 'Series', 'Series - Volume', '004'],
+		['本棚 — 巻一 _ 日本語', '本棚', '巻一', '日本語'],
+		['Series — Volume --', 'Series', 'Volume', 'Series — Volume --'],
+		['SeriesVolume', 'Series', 'Volume', 'SeriesVolume'],
+		['Another Volume001', 'Series', 'Volume', 'Another Volume001'],
+		['SeriesOther001', 'Series', 'Volume', 'SeriesOther001'],
+		['Volume001', '', 'Volume', 'Volume001']
+	])
+		expect(withoutAlbumPrefix(name, collection, album)).toBe(expected);
+});
+
+test('shorten collection and album page headings in both panes while keeping source filenames', async ({
+	page
+}) => {
+	await setupDirectory(page);
+	await page.getByRole('treeitem', { name: 'album', exact: true }).press('ArrowRight');
+	await expectSavedFolders(page, ['album/']);
+	await page.evaluate(async () => {
+		const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('comics');
+		const image = await (
+			await (await root.getDirectoryHandle('album')).getFileHandle('01.png')
+		).getFile();
+		const collection = await root.getDirectoryHandle('Series', { create: true });
+		const album = await collection.getDirectoryHandle('Volume', { create: true });
+		for (const name of ['Series — Volume_001.png', 'SERIES✨VOLUME002.png']) {
+			const writer = await (await album.getFileHandle(name, { create: true })).createWritable();
+			await writer.write(image);
+			await writer.close();
+		}
+	});
+	await page.reload();
+	const collection = page.getByRole('treeitem', { name: 'Series/', exact: true });
+	await collection.press('ArrowRight');
+	const album = collection.getByRole('treeitem', { name: 'Volume', exact: true });
+	await album.press('ArrowRight');
+	await album.getByRole('treeitem', { name: '1', exact: true }).click();
+	const pane = page.getByRole('region', { name: 'Album pages' });
+	await expect(pane.getByRole('button', { name: '1', exact: true })).toHaveAttribute(
+		'title',
+		'Series — Volume_001.png'
+	);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'Series/Volume/Series — Volume_001.png'
+	);
+	await pane.getByRole('button', { name: '2', exact: true }).click();
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'Series/Volume/SERIES✨VOLUME002.png'
+	);
 });

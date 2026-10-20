@@ -35,3 +35,4 @@ vite.config.ts.timestamp-*
 # Python helper caches
 __pycache__/
 *.pyc
+/static/codecs/
