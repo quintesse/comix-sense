@@ -18,7 +18,7 @@ export class Comic {
 		this.store = store;
 		this.kind = kind;
 		const name = path.replace(/\/$/, '').split('/').at(-1)!;
-		this.displayName = kind === 'page' ? baseNameExt(name)[0] : name;
+		this.displayName = kind === 'page' || kind === 'archive' ? baseNameExt(name)[0] : name;
 	}
 
 	get fileName(): string {

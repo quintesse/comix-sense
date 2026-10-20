@@ -10,6 +10,12 @@ export function svgPoint(svg: SVGSVGElement, event: MouseEvent) {
 
 export const supportedImageTypes = ['bmp', 'gif', 'jpg', 'jpeg', 'png', 'webp'];
 
+/** Hide a redundant parent name and separators, retaining a nonempty label. */
+export function withoutParentPrefix(name: string, parent: string): string {
+	if (!name.toLowerCase().startsWith(parent.toLowerCase())) return name;
+	return name.slice(parent.length).replace(/^[^\p{L}\p{N}]+/u, '') || name;
+}
+
 /** Find a shared label prefix in linear time. */
 export function sharedFilenamePrefix(names: string[]): string {
 	if (names.length < 2) return '';

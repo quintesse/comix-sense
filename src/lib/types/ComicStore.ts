@@ -1,5 +1,11 @@
 import { Comic, type Bubble } from './Comic';
-import { baseNameExt, resolveFile, sharedFilenamePrefix, supportedImageTypes } from './funcs';
+import {
+	baseNameExt,
+	resolveFile,
+	sharedFilenamePrefix,
+	supportedImageTypes,
+	withoutParentPrefix
+} from './funcs';
 
 export interface ComicStore {
 	list(): Promise<Comic[]>;
@@ -22,7 +28,6 @@ export class DirectoryComicStore implements ComicStore {
 
 	private async listDirectory(dir: FileSystemDirectoryHandle, prefix: string, comics: Comic[]) {
 		const pages: Comic[] = [];
-		const albums: Comic[] = [];
 		const entries = [];
 		for await (const entry of dir.values()) entries.push(entry);
 		entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -39,14 +44,14 @@ export class DirectoryComicStore implements ComicStore {
 						? 'album'
 						: 'collection';
 				const folder = new Comic(path + '/', [], this, kind);
-				if (kind === 'album') albums.push(folder);
+				folder.displayName = withoutParentPrefix(entry.name, dir.name);
 				comics.push(folder);
 				for (const child of children) comics.push(child);
 			} else {
 				const [base, ext] = baseNameExt(entry.name);
 				if (['cbr', 'cbz', 'zip'].includes(ext.toLowerCase())) {
 					const archive = new Comic(path, [], this, 'archive');
-					albums.push(archive);
+					archive.displayName = withoutParentPrefix(base, dir.name);
 					comics.push(archive);
 					continue;
 				}
@@ -63,12 +68,9 @@ export class DirectoryComicStore implements ComicStore {
 				comics.push(page);
 			}
 		}
-		for (const siblings of [pages, albums]) {
-			const sharedPrefix = sharedFilenamePrefix(siblings.map((comic) => comic.displayName));
-			if (sharedPrefix) {
-				for (const comic of siblings)
-					comic.displayName = comic.displayName.slice(sharedPrefix.length);
-			}
+		const sharedPrefix = sharedFilenamePrefix(pages.map((page) => page.displayName));
+		if (sharedPrefix) {
+			for (const page of pages) page.displayName = page.displayName.slice(sharedPrefix.length);
 		}
 	}
 
