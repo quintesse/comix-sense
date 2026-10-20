@@ -4,6 +4,15 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+	// Include lazy worker and page dependencies before the first browser request.
+	// Discovering them during extraction reloads pages and abandons active work.
+	optimizeDeps: {
+		include: [
+			'@zip.js/zip.js/index-native.js',
+			'@fortawesome/free-solid-svg-icons',
+			'carbon-components-svelte'
+		]
+	},
 	plugins: [
 		sveltekit({
 			preprocess: vitePreprocess(),

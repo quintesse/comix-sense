@@ -17,7 +17,9 @@ export default defineConfig({
 	webServer: process.env.TEST_BASE_URL
 		? undefined
 		: {
-				command: 'node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173 --strictPort',
+				// Exercise cold dependency optimization instead of hiding reload races in a warm cache.
+				command:
+					'node node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173 --strictPort --force',
 				url: baseURL,
 				reuseExistingServer: !process.env.CI
 			}
