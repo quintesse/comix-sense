@@ -568,8 +568,12 @@ test('reader renders inherited fonts, keeps SVG styles separate, scales text and
 	await expect(page.getByRole('textbox')).toHaveCSS('font-size', '44px');
 	const svg = page.getByRole('img', { name: 'Comic page' });
 	const box = await svg.boundingBox();
-	await page.mouse.click(box!.x + (400 * box!.width) / 800, box!.y + (400 * box!.height) / 1000);
-	await page.mouse.click(box!.x + (600 * box!.width) / 800, box!.y + (600 * box!.height) / 1000);
+	await page.mouse.move(box!.x + (400 * box!.width) / 800, box!.y + (400 * box!.height) / 1000);
+	await page.mouse.down();
+	await page.mouse.move(box!.x + (600 * box!.width) / 800, box!.y + (600 * box!.height) / 1000, {
+		steps: 5
+	});
+	await page.mouse.up();
 	await expect(page.getByRole('textbox')).toHaveCount(2);
 	await expect(page.getByRole('textbox').last()).toHaveCSS('font-size', '30px');
 	await expect(page.getByRole('textbox').last()).toHaveCSS('font-style', 'normal');

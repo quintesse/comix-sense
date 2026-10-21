@@ -24,17 +24,54 @@
 	} = $props();
 	let container: HTMLDivElement;
 	let bubbles = $state<Bubble[]>([]);
+	let activeBubble = $state<Bubble>();
+	let indexedBubbles = $derived(bubbles.map((bubble, index) => ({ bubble, index })));
+	let orderedBubbles = $derived(
+		indexedBubbles.toSorted(
+			(a, b) => Number(a.bubble === activeBubble) - Number(b.bubble === activeBubble)
+		)
+	);
+
+	$effect(() => {
+		if (!editable || !showBubbles) activeBubble = undefined;
+	});
 
 	export function getBubble(target: Element) {
 		if (!container?.contains(target)) return;
-		const index = target.closest('foreignObject')?.getAttribute('data-bubble-index');
-		if (index != null) return { bubble: bubbles[Number(index)], bubbles };
+		const element = target.closest('[data-bubble-index]');
+		const index = element?.getAttribute('data-bubble-index');
+		const pointIndex = element?.getAttribute('data-point-index');
+		if (index != null)
+			return {
+				bubble: bubbles[Number(index)],
+				bubbles,
+				pointIndex: pointIndex != null ? Number(pointIndex) : undefined
+			};
 	}
+
+	function deselectOutside(event: MouseEvent) {
+		if (!activeBubble || !(event.target instanceof Element)) return;
+		if (getBubble(event.target)?.bubble === activeBubble) return;
+		const editor = document.activeElement;
+		if (editor instanceof HTMLElement && container.contains(editor) && editor.isContentEditable) {
+			const selection = window.getSelection();
+			if (selection && editor.contains(selection.anchorNode)) selection.removeAllRanges();
+			editor.blur();
+		}
+		activeBubble = undefined;
+	}
+
+	$effect(() => {
+		// Run before drawing or handle dragging can prevent the browser's focus change.
+		document.addEventListener('mousedown', deselectOutside, true);
+		return () => document.removeEventListener('mousedown', deselectOutside, true);
+	});
 
 	$effect(() => {
 		const page = comic;
 		const lang = language;
 		bubbles = loadedBubbles;
+		activeBubble = undefined;
 		untrack(() => page.setBubbles(lang, bubbles));
 	});
 </script>
@@ -50,11 +87,13 @@
 	>
 		{#snippet children({ renderMode })}
 			{#if showBubbles}
-				{#each bubbles as bubble, i (bubble)}
+				{#each orderedBubbles as { bubble, index } (bubble)}
 					<ComicBubble
 						font={comic.textFont(language, bubble)}
-						bind:bubble={bubbles[i]}
-						bubbleIndex={i}
+						bind:bubble={bubbles[index]}
+						bubbleIndex={index}
+						active={bubble === activeBubble}
+						onactivate={() => (activeBubble = bubble)}
 						{renderMode}
 						{editable}
 					/>

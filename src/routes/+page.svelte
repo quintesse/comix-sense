@@ -558,15 +558,18 @@
 
 	let menuTargetBubble: Bubble | undefined = $state();
 	let menuTargetBubbles: Bubble[] = [];
+	let menuTargetPointIndex = $state<number>();
 
 	function setupMenu(evt: CustomEvent<Element>) {
 		menuTargetBubble = undefined;
+		menuTargetPointIndex = undefined;
 		if (!editable || !showBubbles) return;
 		for (const view of pageViews) {
 			const target = view?.getBubble(evt.detail);
 			if (target) {
 				menuTargetBubble = target.bubble;
 				menuTargetBubbles = target.bubbles;
+				menuTargetPointIndex = target.pointIndex;
 				break;
 			}
 		}
@@ -578,6 +581,19 @@
 			localStorage.setItem('comix-sense.page-mode', mode);
 		} catch {
 			persistenceError = 'Could not save page layout for the next startup.';
+		}
+	}
+
+	function handlePointDelete() {
+		const shape = menuTargetBubble?.shape;
+		if (
+			shape?.type === BblShapeType.poly &&
+			shape.vs.length > 3 &&
+			menuTargetPointIndex != null &&
+			menuTargetPointIndex >= 0 &&
+			menuTargetPointIndex < shape.vs.length
+		) {
+			shape.vs.splice(menuTargetPointIndex, 1);
 		}
 	}
 
@@ -847,6 +863,14 @@
 			<ContextMenu on:open={setupMenu}>
 				{#if menuTargetBubble}
 					{#if menuTargetBubble.shape.type === BblShapeType.poly}
+						{#if menuTargetPointIndex != null && menuTargetBubble.shape.vs.length > 3}
+							<ContextMenuOption
+								kind="danger"
+								labelText="Delete point"
+								on:click={handlePointDelete}
+							/>
+							<ContextMenuDivider />
+						{/if}
 						<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
 					{:else if menuTargetBubble.shape.type === BblShapeType.box}
 						<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />

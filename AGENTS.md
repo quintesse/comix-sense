@@ -1,3 +1,17 @@
+# Pull request workflow
+
+Apply this workflow only when the user explicitly asks for a pull request (PR).
+Do not create a branch, commit, or PR for ordinary change requests unless asked.
+
+1. Create a new branch for the requested changes, don't use any prefix.
+2. Commit the relevant changes, preserving unrelated local work, and push the
+   branch. The GitHub CLI (`gh`) may be used to create and manage the PR.
+3. Open a PR against `main` using a message that follows the commit message guidelines
+   and provide its link to the user.
+4. Wait for the user's explicit approval before merging the PR.
+5. After approval, rebase-merge the PR, switch back to `main`, and run
+   `git pull --ff-only`. Preserve any unrelated local work throughout.
+
 # Comic bubble translations
 
 When a user requests translations, create only missing target-language `.bbl`

@@ -35,8 +35,7 @@
 	<image href={img} {width} {height} />
 	<image href={img} {width} {height} filter="url(#{id}-blurry)" clip-path="url(#{id}-clip)" />
 	<g class="svgcontent">
-		{@render children?.({ renderMode: 'shapes' })}
-		{@render children?.({ renderMode: 'text' })}
+		{@render children?.({ renderMode: 'content' })}
 		{@render children?.({ renderMode: 'handles' })}
 	</g>
 	{#if editable && svg}<ShapeEditor {svg} shape={selectedShape} {onshape} />{/if}
