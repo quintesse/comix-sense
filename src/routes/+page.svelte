@@ -3,7 +3,6 @@
 	import {
 		Header,
 		HeaderNav,
-		HeaderNavItem,
 		HeaderNavMenu,
 		SideNav,
 		SkipToContent,
@@ -41,6 +40,8 @@
 	import SidebarPanes from '#lib/SidebarPanes.svelte';
 	import ReaderPage from '#lib/ReaderPage.svelte';
 	import Zoom from '#lib/Zoom.svelte';
+	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
+	import LanguageMenu from '#lib/LanguageMenu.svelte';
 	import { dedup } from '#lib/types/funcs.js';
 
 	let isSideNavOpen = $state(false);
@@ -443,11 +444,25 @@
 		)
 			return;
 		const pane = event.target instanceof Element ? event.target.closest('main') : null;
-		if (!pane) return;
-		const bounds = pane.getBoundingClientRect();
-		const x = event.clientX - bounds.left;
-		if (x < bounds.width * 0.25) navigatePage(-1, event.shiftKey);
-		else if (x > bounds.width * 0.75) navigatePage(1, event.shiftKey);
+		const pages = pane?.querySelectorAll<SVGSVGElement>('svg[aria-label="Comic page"]');
+		if (!pages?.length) return;
+		const bounds = [...pages].map((page) => page.getBoundingClientRect());
+		// Only artwork is clickable, including when spread pages have different heights.
+		if (
+			!bounds.some(
+				(page) =>
+					event.clientX >= page.left &&
+					event.clientX < page.right &&
+					event.clientY >= page.top &&
+					event.clientY < page.bottom
+			)
+		)
+			return;
+		const left = Math.min(...bounds.map((page) => page.left));
+		const right = Math.max(...bounds.map((page) => page.right));
+		const x = event.clientX - left;
+		if (x < (right - left) * 0.25) navigatePage(-1, event.shiftKey);
+		else if (x > (right - left) * 0.75) navigatePage(1, event.shiftKey);
 	}
 
 	let lastWheelAt = -Infinity;
@@ -642,15 +657,21 @@
 			<SkipToContent />
 		</svelte:fragment>
 		<HeaderNav>
-			<HeaderNavItem text="Link 1" />
-			<HeaderNavItem text="Link 2" />
-
-			<HeaderNavMenu href={resolve('/')} text={pageMode}>
-				<TileGroup selected={pageMode} on:select={(event) => selectPageMode(event.detail)}>
-					<RadioTile value="1P">1P</RadioTile>
-					<RadioTile value="2P">2P</RadioTile>
-				</TileGroup>
-			</HeaderNavMenu>
+			<li role="none" class="toolbar-group">
+				<div role="group" aria-label="Page layout">
+					{#each [{ value: '1P', icon: 'file', label: 'Single Page' }, { value: '2P', icon: 'book-open', label: 'Side by Side' }] as mode}
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label={mode.label}
+							title={mode.label}
+							aria-pressed={pageMode === mode.value}
+							onclick={() => selectPageMode(mode.value)}
+							><ToolbarIcon name={mode.icon as 'file' | 'book-open'} /></button
+						>
+					{/each}
+				</div>
+			</li>
 
 			<HeaderNavMenu href={resolve('/')} text={selectedZoom.toUpperCase()}>
 				<TileGroup selected={selectedZoom} on:select={(event) => selectZoom(event.detail)}>
@@ -660,45 +681,62 @@
 				</TileGroup>
 			</HeaderNavMenu>
 
-			<HeaderNavMenu
-				href={resolve('/')}
-				text={selectedLanguage ? selectedLanguage.toUpperCase() : 'ORG'}
-			>
-				<TileGroup selected={selectedLanguage} on:select={(event) => selectLanguage(event.detail)}>
-					<RadioTile value="org">ORG</RadioTile>
-					{#each languages as lang}
-						<RadioTile value={lang}>{lang.toUpperCase()}</RadioTile>
-					{/each}
-				</TileGroup>
-			</HeaderNavMenu>
+			<LanguageMenu selected={selectedLanguage || 'org'} {languages} onselect={selectLanguage} />
 
-			<li role="none">
+			<li role="none" class="toolbar-group">
 				<button
 					type="button"
-					class="bx--header__menu-item bubble-toggle"
-					role="menuitemcheckbox"
-					aria-checked={showBubbles}
+					class="toolbar-button"
+					aria-label="Show Translations"
+					title="Show Translations"
+					aria-pressed={showBubbles}
 					aria-keyshortcuts="b"
-					title="Show/hide bubbles (B)"
-					onclick={() => (showBubbles = !showBubbles)}
+					onclick={() => (showBubbles = !showBubbles)}><ToolbarIcon name="comments" /></button
 				>
-					BUBBLES: {showBubbles ? 'ON' : 'OFF'}
-				</button>
 			</li>
-
-			<HeaderNavMenu href={resolve('/')} text={'EDIT: ' + selectedEdit.toUpperCase()}>
-				<TileGroup bind:selected={selectedEdit}>
-					<RadioTile value="yes">Yes</RadioTile>
-					<RadioTile value="no">No</RadioTile>
-				</TileGroup>
-			</HeaderNavMenu>
+			<li role="none" class="toolbar-group">
+				<div role="group" aria-label="Reader mode">
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Reading Mode"
+						title="Reading Mode"
+						aria-pressed={selectedEdit === 'no'}
+						onclick={() => (selectedEdit = 'no')}><ToolbarIcon name="eye" /></button
+					>
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Edit Mode"
+						title="Edit Mode"
+						aria-pressed={selectedEdit === 'yes'}
+						onclick={() => (selectedEdit = 'yes')}><ToolbarIcon name="file-pen" /></button
+					>
+				</div>
+			</li>
 			{#if editable}
-				<HeaderNavMenu href={resolve('/')} text={selectedShape.toUpperCase()}>
-					<TileGroup bind:selected={selectedShape}>
-						<RadioTile value="box">Box</RadioTile>
-						<RadioTile value="poly">Poly</RadioTile>
-					</TileGroup>
-				</HeaderNavMenu>
+				<li role="none" class="toolbar-group">
+					<div role="group" aria-label="Drawing tool">
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Draw Boxes"
+							title="Draw Boxes"
+							aria-pressed={selectedShape === BblShapeType.box}
+							onclick={() => (selectedShape = BblShapeType.box)}
+							><ToolbarIcon name="square" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Draw Polygons"
+							title="Draw Polygons"
+							aria-pressed={selectedShape === BblShapeType.poly}
+							onclick={() => (selectedShape = BblShapeType.poly)}
+							><ToolbarIcon name="star" /></button
+						>
+					</div>
+				</li>
 			{/if}
 		</HeaderNav>
 	</Header>
@@ -848,10 +886,44 @@
 </div>
 
 <style>
-	.bubble-toggle {
+	.toolbar-group {
+		display: flex;
+		align-items: center;
+		padding: 0 0.5rem;
+	}
+	.toolbar-group > div {
+		display: flex;
+		border: 1px solid #c6c6c6;
+		border-radius: 0.25rem;
+		overflow: hidden;
+	}
+	.toolbar-button {
+		display: grid;
+		place-items: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		padding: 0;
 		border: 0;
-		font: inherit;
+		background: transparent;
+		color: #525252;
 		cursor: pointer;
+		border-radius: 0.125rem;
+	}
+	.toolbar-group > div .toolbar-button + .toolbar-button {
+		border-left: 1px solid #c6c6c6;
+	}
+	.toolbar-button:hover {
+		background: #e8e8e8;
+		color: #161616;
+	}
+	.toolbar-button[aria-pressed='true'] {
+		background: #e0e0e0;
+		color: #161616;
+		box-shadow: inset 0 -2px #0f62fe;
+	}
+	.toolbar-button:focus-visible {
+		outline: 2px solid #0f62fe;
+		outline-offset: -3px;
 	}
 
 	.reader-shell :global(.bx--side-nav__resize-handle::after) {

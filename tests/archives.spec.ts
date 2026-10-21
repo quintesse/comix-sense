@@ -346,12 +346,7 @@ test('archive text edits survive navigation, missing overlays stay empty and inv
 	};
 	await setup(page, { 'edit.cbz': await zipBytes(bad) });
 	await page.getByRole('treeitem', { name: 'edit', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'EDIT: NO', exact: true }).click();
-	await page
-		.getByRole('menu', { name: 'EDIT: NO', exact: true })
-		.getByText('Yes', { exact: true })
-		.click();
-	await page.getByRole('menuitem', { name: 'EDIT: YES', exact: true }).click();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await page.locator('[contenteditable=true]').fill('Retained archive edit');
 	const pane = page.getByRole('region', { name: 'Album pages' });
 	await pane.getByRole('button', { name: 'z/1.png', exact: true }).click();
