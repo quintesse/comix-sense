@@ -51,7 +51,13 @@
 		{#snippet children({ renderMode })}
 			{#if showBubbles}
 				{#each bubbles as bubble, i (bubble)}
-					<ComicBubble bind:bubble={bubbles[i]} bubbleIndex={i} {renderMode} {editable} />
+					<ComicBubble
+						font={comic.textFont(language, bubble)}
+						bind:bubble={bubbles[i]}
+						bubbleIndex={i}
+						{renderMode}
+						{editable}
+					/>
 				{/each}
 			{/if}
 		{/snippet}

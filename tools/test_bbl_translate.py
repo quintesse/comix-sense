@@ -52,6 +52,23 @@ class TranslationWorkflowTest(unittest.TestCase):
         self.run_tool("insert", "--batch", self.batch, succeeds=False)
         self.assertEqual(self.target.read_bytes(), before)
 
+    def test_typography_and_album_metadata_preserved(self):
+        data = {"lang": "es", "font": {"family": ["Test", "serif"], "size": 32},
+                "fontFaces": [{"family": "Test", "src": "fonts/test.ttf", "weight": 700}],
+                "pages": [{"filename": "pages/01.jpg", "font": {"style": "italic"},
+                           "bubbles": [{"text": "Hola", "font": {"weight": 400},
+                                        "shape": {"type": "box", "vs": [{"x": 1, "y": 2}]}}]}]}
+        self.source.write_text(json.dumps(data), encoding="utf-8")
+        self.batch.write_text(json.dumps({self.source.name: ["Bonjour"]}), encoding="utf-8")
+        self.translate()
+        self.run_tool("validate")
+        result = json.loads(self.target.read_text(encoding="utf-8"))
+        self.assertEqual(result["font"], data["font"])
+        self.assertEqual(result["fontFaces"], data["fontFaces"])
+        self.assertEqual(result["pages"][0]["filename"], "pages/01.jpg")
+        self.assertEqual(result["pages"][0]["font"], {"style": "italic"})
+        self.assertEqual(result["pages"][0]["bubbles"][0]["font"], {"weight": 400})
+
     def test_incomplete_batch_writes_nothing(self):
         self.run_tool("init")
         self.batch.write_text(json.dumps({self.source.name: []}), encoding="utf-8")

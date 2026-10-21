@@ -1,3 +1,5 @@
+import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
+import { Diagnostics, matchDocument } from '../bbl/metadata';
 import { ArchiveComicStore } from '../archives/ArchiveComicStore';
 import type { ArchivePriority } from '../archives/ArchiveReader';
 import { Comic, type Bubble } from './Comic';
@@ -24,6 +26,13 @@ export interface UpdatableComicStore extends ComicStore {
 export class DirectoryComicStore implements ComicStore {
 	private archives = new Map<string, ArchiveComicStore>();
 	private disposed = false;
+	private metadata = new Map<string, AlbumMetadata>();
+	private pageMetadata = new Map<string, { album: AlbumMetadata; filename: string }>();
+	private files = new Set<string>();
+	private directories = new Map<string, string[]>();
+	private pageSidecars = new Set<string>();
+	private adjacent = new Map<string, Source[]>();
+	private diagnostics = new Diagnostics();
 	constructor(private readonly dir: FileSystemDirectoryHandle) {}
 
 	archive(path: string): ArchiveComicStore {
@@ -33,7 +42,8 @@ export class DirectoryComicStore implements ComicStore {
 			store = new ArchiveComicStore(
 				path,
 				async () => (await resolveFile(this.dir, path)).getFile(),
-				path.split('/').at(-2) ?? this.dir.name
+				path.split('/').at(-2) ?? this.dir.name,
+				this.adjacent.get(path) ?? []
 			);
 			this.archives.set(path, store);
 		}
@@ -46,10 +56,14 @@ export class DirectoryComicStore implements ComicStore {
 		this.disposed = true;
 		for (const store of this.archives.values()) store.dispose();
 		this.archives.clear();
+		for (const album of this.metadata.values()) album.dispose();
+		this.metadata.clear();
+		this.pageMetadata.clear();
 	}
 	async list(): Promise<Comic[]> {
 		const comics: Comic[] = [];
 		await this.listDirectory(this.dir, '', comics);
+		await this.discoverMetadata(comics);
 		return comics;
 	}
 
@@ -63,7 +77,11 @@ export class DirectoryComicStore implements ComicStore {
 		const entries = [];
 		for await (const entry of dir.values()) entries.push(entry);
 		entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-		const files = entries.filter((entry): entry is FileSystemFileHandle => entry.kind === 'file');
+		for (const entry of entries) if (entry.kind === 'file') this.files.add(prefix + entry.name);
+		this.directories.set(
+			prefix,
+			entries.map((entry) => entry.name)
+		);
 
 		for (const entry of entries) {
 			const path = prefix + entry.name;
@@ -88,14 +106,7 @@ export class DirectoryComicStore implements ComicStore {
 					continue;
 				}
 				if (!supportedImageTypes.includes(ext.toLowerCase())) continue;
-				const languages = files.flatMap((file) => {
-					if (file.name === base + '.bbl') return [''];
-					if (file.name.startsWith(base + '.') && file.name.endsWith('.bbl')) {
-						return [file.name.slice(base.length + 1, -4)];
-					}
-					return [];
-				});
-				const page = new Comic(path, languages, this);
+				const page = new Comic(path, [], this);
 				page.displayName = withoutAlbumPrefix(page.displayName, collection, dir.name);
 				pages.push(page);
 				comics.push(page);
@@ -112,19 +123,97 @@ export class DirectoryComicStore implements ComicStore {
 		return URL.createObjectURL(await handle.getFile());
 	}
 
-	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
-		const lang = language ?? comic.languages[0];
-		if (lang === undefined) return [];
-		const path = baseNameExt(comic.path)[0] + (lang ? '.' + lang : '') + '.bbl';
-		try {
-			const handle = await resolveFile(this.dir, path);
-			const json = JSON.parse(await (await handle.getFile()).text());
-			if (!Array.isArray(json.pages?.[0]?.bubbles)) throw new Error('Invalid bubble data');
-			return json.pages[0].bubbles;
-		} catch (error) {
-			// A language may exist on another page in this collection.
-			if (error instanceof DOMException && error.name === 'NotFoundError') return [];
-			throw new Error('Could not read bubbles: ' + path, { cause: error });
+	private async discoverMetadata(comics: Comic[]) {
+		const read = async (path: string) => (await resolveFile(this.dir, path)).getFile();
+		for (const [prefix, names] of this.directories) {
+			const targets = comics
+				.filter(
+					(c) =>
+						c.path.replace(/\/$/, '').slice(0, c.path.replace(/\/$/, '').lastIndexOf('/') + 1) ===
+						prefix
+				)
+				.map((c) => c.fileName);
+			for (const name of names
+				.filter((n) => n.endsWith('.bbl') && this.files.has(prefix + n))
+				.sort()) {
+				// Reserved internal index names belong to the containing album.
+				if (/^album(?:\.[^.]+)?\.bbl$/.test(name)) continue;
+				const match = matchDocument(name, targets, this.diagnostics, prefix + name);
+				if (!match) continue;
+				const target = comics.find((c) => c.path.replace(/\/$/, '') === prefix + match.target);
+				if (target?.kind === 'page') {
+					this.pageSidecars.add(prefix + name);
+					continue;
+				}
+				const sources = this.adjacent.get(prefix + match.target) ?? [];
+				sources.push({
+					path: prefix + name,
+					language: match.language,
+					exact: match.exact,
+					read: async () => (await read(prefix + name)).text()
+				});
+				this.adjacent.set(prefix + match.target, sources);
+			}
 		}
+		const indexed = [...this.directories]
+			.filter(
+				([prefix, names]) =>
+					names.some((n) => this.files.has(prefix + n) && /^album(?:\.[^.]+)?\.bbl$/.test(n)) ||
+					this.adjacent.has(prefix.replace(/\/$/, ''))
+			)
+			.map(([prefix]) => prefix);
+		const groups = new Map<string, Comic[]>();
+		for (const page of comics.filter((c) => c.kind === 'page')) {
+			const parent = page.path.slice(0, page.path.lastIndexOf('/') + 1);
+			const root =
+				indexed
+					.filter((prefix) => page.path.startsWith(prefix))
+					.sort((a, b) => b.length - a.length)[0] ?? parent;
+			const pages = groups.get(root) ?? [];
+			pages.push(page);
+			groups.set(root, pages);
+		}
+		for (const [root, pages] of groups) {
+			if (this.disposed) throw new Error('Directory disconnected');
+			const album = new AlbumMetadata((path) => read(root + path), this.diagnostics, root);
+			this.metadata.set(root, album);
+			const paths = [...this.directories]
+				.filter(([prefix]) => prefix.startsWith(root))
+				.flatMap(([prefix, names]) =>
+					names
+						.filter(
+							(name) =>
+								!name.endsWith('.bbl') ||
+								this.pageSidecars.has(prefix + name) ||
+								(prefix === root &&
+									this.files.has(prefix + name) &&
+									/^album(?:\.[^.]+)?\.bbl$/.test(name))
+						)
+						.map((name) => prefix.slice(root.length) + name)
+				);
+			await album.discover(
+				paths,
+				pages.map((p) => p.path.slice(root.length)),
+				this.adjacent.get(root.replace(/\/$/, ''))
+			);
+			if (this.disposed) {
+				album.dispose();
+				throw new Error('Directory disconnected');
+			}
+			for (const page of pages) {
+				const filename = page.path.slice(root.length);
+				page.languages = album.languages(filename);
+				this.pageMetadata.set(page.path, { album, filename });
+			}
+		}
+	}
+
+	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
+		const entry = this.pageMetadata.get(comic.path);
+		if (!entry) return [];
+		const lang = language ?? comic.languages[0] ?? '';
+		const overlay = await entry.album.overlay(entry.filename, lang);
+		await comic.prepareTypography(lang, overlay, entry.album.fonts);
+		return overlay.bubbles;
 	}
 }

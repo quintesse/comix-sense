@@ -1,3 +1,5 @@
+import type { Font } from '../bbl/metadata';
+import type { FontResources, ResourceFace } from '../bbl/FontResources';
 import type { ComicStore } from './ComicStore';
 import type { ArchivePriority } from '../archives/ArchiveReader';
 import { baseNameExt, type StrStrMap } from './funcs';
@@ -14,6 +16,8 @@ export class Comic {
 	readonly kind: ComicKind;
 	displayName: string;
 	private store: ComicStore;
+
+	private typography = new Map<string, Map<string, Font>>();
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
 
@@ -54,6 +58,29 @@ export class Comic {
 		}
 	}
 
+	async prepareTypography(
+		language: string,
+		overlay: { font: Font; faces: ResourceFace[]; bubbles: Bubble[] },
+		resources: FontResources
+	) {
+		const values = new Map<string, Font>();
+		const overrides = [undefined, ...overlay.bubbles.map((b) => b.font)];
+		await Promise.all(
+			overrides.map(async (override) => {
+				values.set(
+					JSON.stringify(override ?? {}),
+					await resources.resolve({ ...overlay.font, ...override }, overlay.faces)
+				);
+			})
+		);
+		this.typography.set(language, values);
+	}
+
+	textFont(language: string, bubble: Bubble): Font {
+		const values = this.typography.get(language);
+		return values?.get(JSON.stringify(bubble.font ?? {})) ?? values?.get('{}') ?? bubble.font ?? {};
+	}
+
 	// Retain the editor's reactive array when revisiting a page or language.
 	// These are session edits only; no files are written.
 	setBubbles(language: string, bubbles: Bubble[]): void {
@@ -62,6 +89,7 @@ export class Comic {
 }
 
 export type Bubble = {
+	font?: Font;
 	text: string;
 	lang?: string;
 	style?: StrStrMap;
