@@ -179,6 +179,40 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
+test('bubble visibility toggles in reading and edit modes and resets on reload', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	const toggle = page.getByRole('menuitemcheckbox', { name: /^BUBBLES:/ });
+	await expect(toggle).toBeChecked();
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await toggle.click();
+	await expect(toggle).not.toBeChecked();
+	await expect(page.locator('foreignObject, clipPath .bubble')).toHaveCount(0);
+	await page.keyboard.press('b');
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	await page.getByRole('textbox').fill('Edited');
+	await page.getByRole('textbox').press('End');
+	await page.keyboard.press('b');
+	await expect(page.getByRole('textbox')).toHaveText('Editedb');
+	await expect(toggle).toBeChecked();
+	await toggle.click();
+	await expect(page.getByRole('textbox')).toHaveCount(0);
+	await expect(page.locator('svg .bubble, svg circle')).toHaveCount(0);
+	// Hidden overlays must not let edit mode draw new invisible bubbles.
+	const image = page.locator('svg[aria-label="Comic page"] > image').first();
+	await image.click({ position: { x: 200, y: 200 } });
+	await image.click({ position: { x: 250, y: 250 } });
+	await page.keyboard.press('b');
+	await expect(page.getByRole('textbox')).toHaveText('Editedb');
+	await toggle.click();
+	await page.reload();
+	await expect(toggle).toBeChecked();
+});
+
 test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
 	await mockDirectory(page, { shuffled: true });
 	await openComic(page);
@@ -400,6 +434,14 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 	await page.getByRole('textbox').last().click({ button: 'right' });
 	await page.getByText('Convert to Poly', { exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(1);
+	// Every background precedes every text overlay, and all edit handles stay on top.
+	await expect
+		.poll(() =>
+			page
+				.locator('.svgcontent')
+				.evaluate((layer) => Array.from(layer.children, (element) => element.localName))
+		)
+		.toEqual(['rect', 'polygon', 'foreignObject', 'foreignObject', ...Array(6).fill('circle')]);
 	await page.getByRole('textbox').last().click({ button: 'right' });
 	await page.getByText('Convert to Box', { exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(0);
