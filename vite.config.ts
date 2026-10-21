@@ -1,9 +1,14 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+	define: {
+		'import.meta.env.GOOGLE_VISION_KEY': JSON.stringify(
+			loadEnv(mode, process.cwd(), 'GOOGLE_VISION_KEY').GOOGLE_VISION_KEY?.trim() ?? ''
+		)
+	},
 	// Include lazy worker and page dependencies before the first browser request.
 	// Discovering them during extraction reloads pages and abandons active work.
 	optimizeDeps: {
@@ -22,4 +27,4 @@ export default defineConfig({
 			}
 		})
 	]
-});
+}));

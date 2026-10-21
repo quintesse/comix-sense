@@ -31,11 +31,21 @@ async function mockDirectory(
 		browserLanguages?: string[];
 		pageCount?: number;
 		mixedSizes?: boolean;
+		overlays?: 'none' | 'ocr';
 		delayedImage?: string;
 	} = {}
 ) {
 	await page.addInitScript(
-		({ shuffled, delayed, cancel, browserLanguages, pageCount, mixedSizes, delayedImage }) => {
+		({
+			shuffled,
+			delayed,
+			cancel,
+			browserLanguages,
+			pageCount,
+			mixedSizes,
+			delayedImage,
+			overlays
+		}) => {
 			Object.defineProperty(navigator, 'languages', { value: browserLanguages ?? ['zz'] });
 			window.__filesRead = [];
 			window.__imageWaiting = false;
@@ -83,6 +93,14 @@ async function mockDirectory(
 			}
 			if (mixedSizes)
 				contents['album/02.png'] = svg.replaceAll('800', '600').replaceAll('1000', '1200');
+
+			if (overlays) {
+				for (const name of Object.keys(contents)) if (name.endsWith('.bbl')) delete contents[name];
+				if (overlays === 'ocr')
+					contents['album/01.OCR.bbl'] = JSON.stringify({
+						pages: [{ bubbles: [bubble('Old OCR')] }]
+					});
+			}
 
 			function file(path: string) {
 				return {
@@ -218,6 +236,39 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
 
+test('R and E switch reader modes from the tree and toolbar without intercepting text entry', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	const reading = page.getByRole('button', { name: 'Reading Mode', exact: true });
+	const editing = page.getByRole('button', { name: 'Edit Mode', exact: true });
+	await expect(reading).toHaveAttribute('title', 'Reading Mode (R)');
+	await expect(editing).toHaveAttribute('title', 'Edit Mode (E)');
+	await expect(reading).toHaveAttribute('aria-keyshortcuts', 'r');
+	await expect(editing).toHaveAttribute('aria-keyshortcuts', 'e');
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).focus();
+	await page.keyboard.press('e');
+	await expect(editing).toHaveAttribute('aria-pressed', 'true');
+	const textbox = page.getByRole('textbox');
+	await textbox.fill('Text');
+	await textbox.press('End');
+	await page.keyboard.type('re');
+	await expect(textbox).toHaveText('Textre');
+	await expect(editing).toHaveAttribute('aria-pressed', 'true');
+	await editing.focus();
+	await page.keyboard.press('r');
+	await expect(reading).toHaveAttribute('aria-pressed', 'true');
+	await expect(textbox).toHaveCount(0);
+	await page.keyboard.press('Control+e');
+	await expect(reading).toHaveAttribute('aria-pressed', 'true');
+	await page.keyboard.press('Shift+E');
+	await expect(editing).toHaveAttribute('aria-pressed', 'true');
+	await page.keyboard.press('Shift+R');
+	await expect(reading).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('bubble visibility toggles in reading and edit modes and resets on reload', async ({
 	page
 }) => {
@@ -269,6 +320,28 @@ test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
 });
 
 for (const mode of ['1P', '2P']) {
+	test(`toolbar page navigation follows ${mode} and disables at boundaries`, async ({ page }) => {
+		await mockDirectory(page, { pageCount: 5 });
+		await openComic(page, mode);
+		const navigation = page.getByRole('group', { name: 'Page navigation', exact: true });
+		const previous = navigation.getByRole('button', { name: 'Previous Page', exact: true });
+		const next = navigation.getByRole('button', { name: 'Next Page', exact: true });
+		await expect(previous).toHaveAttribute('title', 'Previous Page (Pg Up)');
+		await expect(next).toHaveAttribute('title', 'Next Page (Pg Dn)');
+		await expect(previous.locator('[data-toolbar-icon="caret-left"]')).toBeVisible();
+		await expect(next.locator('[data-toolbar-icon="caret-right"]')).toBeVisible();
+		await expect(previous).toBeDisabled();
+		const step = mode === '2P' ? 2 : 1;
+		const leftPage = page.locator('[data-page-path]').first();
+		await next.click();
+		await expect(leftPage).toHaveAttribute('data-page-path', `album/0${1 + step}.png`);
+		await previous.click();
+		await expect(leftPage).toHaveAttribute('data-page-path', 'album/01.png');
+		for (let number = 1 + step; number <= 5; number += step) await next.click();
+		await expect(leftPage).toHaveAttribute('data-page-path', 'album/05.png');
+		await expect(next).toBeDisabled();
+	});
+
 	test(`Page Up/Down navigate app-wide in ${mode} with optional Shift`, async ({ page }) => {
 		await mockDirectory(page, { pageCount: 6 });
 		await openComic(page, mode);
@@ -1474,4 +1547,243 @@ test('page layout shortcuts leave text editing, modified keys and composition al
 		expect(prevented).toBe(false);
 		await expect(layoutButton(page, '2P')).toBeVisible();
 	}
+});
+
+const visionResponse = {
+	responses: [
+		{
+			textAnnotations: [
+				{ description: 'Hello world', locale: 'en' },
+				{
+					description: 'Hello',
+					boundingPoly: {
+						vertices: [
+							{ x: 80, y: 80 },
+							{ x: 170, y: 80 },
+							{ x: 170, y: 120 },
+							{ x: 80, y: 120 }
+						]
+					}
+				},
+				{
+					description: 'world',
+					boundingPoly: {
+						vertices: [
+							{ x: 180, y: 80 },
+							{ x: 280, y: 80 },
+							{ x: 280, y: 120 },
+							{ x: 180, y: 120 }
+						]
+					}
+				}
+			]
+		}
+	]
+};
+
+test('external Google Vision key overrides saved settings and replaces key controls', async ({
+	page
+}) => {
+	test.skip(!process.env.GOOGLE_VISION_KEY?.trim(), 'Requires an externally configured dev server');
+	await page.addInitScript(() => {
+		localStorage.setItem('comix-sense.google-vision-api-key', 'saved-browser-key');
+	});
+	await mockDirectory(page);
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	const settings = page.getByRole('dialog', { name: 'Google Vision OCR', exact: true });
+	await expect(settings).toContainText('Using the externally set GOOGLE_VISION_KEY.');
+	await expect(settings.locator('input')).toHaveCount(0);
+	await expect(settings.getByRole('button', { name: 'Forget key', exact: true })).toHaveCount(0);
+	await expect(settings.getByRole('button', { name: 'Use key', exact: true })).toHaveCount(0);
+	await settings.getByRole('button', { name: 'Close the modal', exact: true }).click();
+	let requests = 0;
+	await page.route('https://vision.googleapis.com/**', async (route) => {
+		requests++;
+		expect(route.request().headers()['x-goog-api-key']).toBe(process.env.GOOGLE_VISION_KEY!.trim());
+		await route.fulfill({ json: visionResponse });
+	});
+	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
+	expect(requests).toBe(1);
+	expect(await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))).toBe(
+		'saved-browser-key'
+	);
+});
+
+test('scan creates a session OCR overlay and preserves existing translations', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await expect(page.getByRole('button', { name: 'Scan Full Page' })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	const scan = page.getByRole('button', { name: 'Scan Full Page' });
+	await expect(scan).toHaveAttribute('title', 'Scan Full Page');
+	await expect(scan).toHaveText('');
+	let requests = 0;
+	await page.route('https://vision.googleapis.com/**', async (route) => {
+		requests++;
+		expect(route.request().headers()['x-goog-api-key']).toBe('test-session-key');
+		const request = route.request().postDataJSON();
+		expect(request.requests[0].features).toEqual([{ type: 'TEXT_DETECTION' }]);
+		expect(atob(request.requests[0].image.content)).toContain('<svg');
+		await route.fulfill({ json: visionResponse });
+	});
+	await scan.click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-session-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
+	await expect(scan).toBeFocused();
+	await selectMenu(page, 'MRG', 'OCR');
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
+	expect(requests).toBe(1);
+	expect(
+		await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))
+	).toBeNull();
+	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
+	await expect(
+		page
+			.getByRole('menuitemradio', { name: 'MRG', exact: true })
+			.locator('[data-language-icon="object-group"]')
+	).toBeVisible();
+	await page.getByRole('menuitemradio', { name: 'MRG', exact: true }).click();
+	await expect(
+		page
+			.getByRole('menuitem', { name: 'MRG', exact: true })
+			.locator('[data-language-icon="object-group"]')
+	).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+	await selectMenu(page, 'MRG', 'EN');
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await selectMenu(page, 'EN', 'OCR');
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+});
+
+test('Scan label includes all page languages and remembered keys can be forgotten', async ({
+	page
+}) => {
+	await mockDirectory(page, { overlays: 'none' });
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	const scan = page.getByRole('button', { name: 'Scan Full Page' });
+	await expect(scan).toHaveText('Scan');
+	await page.route('https://vision.googleapis.com/**', (route) =>
+		route.fulfill({ json: visionResponse })
+	);
+	await scan.click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('remembered-key');
+	await page.getByLabel('Remember on this browser').check();
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+	await expect(scan).toHaveText('');
+	expect(await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))).toBe(
+		'remembered-key'
+	);
+	await page.reload();
+	await expect(page.getByRole('button', { name: 'Add folder' })).toBeEnabled();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	await expect(page.getByLabel('Google Vision API key', { exact: true })).toHaveValue(
+		'remembered-key'
+	);
+	await page.getByRole('button', { name: 'Forget key', exact: true }).click();
+	await expect(page.getByLabel('Google Vision API key', { exact: true })).toHaveValue('');
+	expect(
+		await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))
+	).toBeNull();
+});
+
+test('failed scans preserve an existing OCR overlay', async ({ page }) => {
+	await mockDirectory(page, { overlays: 'ocr', browserLanguages: ['OCR'] });
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	const scan = page.getByRole('button', { name: 'Scan Full Page' });
+	await expect(scan).toHaveText('');
+	await page.route('https://vision.googleapis.com/**', (route) =>
+		route.fulfill({ json: { responses: [{ error: { message: 'Invalid API key' } }] } })
+	);
+	await scan.click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('invalid-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await page.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
+	await expect(page.getByRole('alert')).toContainText('Invalid API key');
+	await expect(page.locator('foreignObject')).toHaveText('Old OCR');
+	await expect(scan).toBeEnabled();
+});
+
+test('late scans stay with their page and successful rescans refresh OCR', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'ORG', 'EN');
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'OCR Settings', exact: true })).toBeFocused();
+	let finish!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	await page.route('https://vision.googleapis.com/**', async (route) => {
+		await gate;
+		await route.fulfill({ json: visionResponse });
+	});
+	const scan = page.getByRole('button', { name: 'Scan Full Page' });
+	await scan.click();
+	await expect(scan).toBeDisabled();
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	finish();
+	await expect(scan).toBeEnabled();
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await selectMenu(page, 'EN', 'OCR');
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await page.unroute('https://vision.googleapis.com/**');
+	let rescans = 0;
+	await page.route('https://vision.googleapis.com/**', (route) => {
+		rescans++;
+		return route.fulfill({ json: { responses: [{}] } });
+	});
+	await scan.click();
+	const confirmation = page.getByRole('dialog', { name: 'Overwrite OCR and MRG overlays?' });
+	await expect(confirmation).toContainText('OCR and MRG text and shapes');
+	await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(scan).toBeFocused();
+	await expect(scan).toBeEnabled();
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	expect(rescans).toBe(0);
+	await scan.click();
+	await confirmation.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'No text recognized' })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect(scan).toBeFocused();
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
+	await selectMenu(page, 'OCR', 'MRG');
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+});
+
+test('a scan with no text creates OCR without creating or selecting MRG', async ({ page }) => {
+	await mockDirectory(page, { overlays: 'none' });
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.route('https://vision.googleapis.com/**', (route) =>
+		route.fulfill({ json: { responses: [{}] } })
+	);
+	const scan = page.getByRole('button', { name: 'Scan Full Page' });
+	await scan.click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'No text recognized' })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect(scan).toBeFocused();
+	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
+	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('menuitemradio', { name: 'OCR', exact: true })).toBeVisible();
 });

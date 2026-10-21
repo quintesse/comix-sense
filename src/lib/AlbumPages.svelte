@@ -45,7 +45,7 @@
 		return { destroy: () => node.removeEventListener('keydown', pageKeyboard) };
 	}
 
-	$effect(() => {
+	export function locate() {
 		const path = selectedComic?.path;
 		if (!path || !list) return;
 		const current = Array.from(list.querySelectorAll('button')).find(
@@ -56,7 +56,9 @@
 		if (current.offsetTop < list.scrollTop) list.scrollTop = current.offsetTop;
 		else if (current.offsetTop + current.offsetHeight > list.scrollTop + list.clientHeight)
 			list.scrollTop = current.offsetTop + current.offsetHeight - list.clientHeight;
-	});
+	}
+
+	$effect(() => locate());
 
 	function thumbnail(node: HTMLImageElement, comic: Comic) {
 		let disposed = false;
