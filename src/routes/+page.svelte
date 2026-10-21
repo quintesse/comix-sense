@@ -764,6 +764,7 @@
 					<div class="tree-scroll">
 						{#if !noSources}
 							<ComicsTree
+								{selectedLanguage}
 								onarchive={openArchive}
 								{folders}
 								selectedComic={$selectedComic}

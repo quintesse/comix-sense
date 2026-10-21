@@ -5,9 +5,14 @@ import {
 	withoutAlbumPrefix
 } from '../src/lib/types/funcs';
 
-async function setupDirectory(page: Page, nested = false, translations = false) {
+async function setupDirectory(
+	page: Page,
+	nested = false,
+	translations = false,
+	iconLanguages = false
+) {
 	await page.addInitScript(
-		({ nested, translations }) => {
+		({ nested, translations, iconLanguages }) => {
 			Object.defineProperty(navigator, 'languages', { value: ['fr-FR', 'en-GB', 'nl-NL'] });
 			// Real, cloneable browser handles exercise IndexedDB persistence across reloads.
 			Object.defineProperty(window, 'showDirectoryPicker', {
@@ -39,7 +44,9 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 						await secondWriter.write(image);
 						await secondWriter.close();
 						if (translations) {
-							for (const language of name === 'album' ? ['en', 'nl'] : ['nl']) {
+							for (const language of name === 'album'
+								? ['en', 'nl', ...(iconLanguages ? ['ocr', 'zz'] : [])]
+								: ['nl']) {
 								const translation = await album.getFileHandle(`01.${language}.bbl`, {
 									create: true
 								});
@@ -60,7 +67,7 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 				return 'granted';
 			};
 		},
-		{ nested, translations }
+		{ nested, translations, iconLanguages }
 	);
 	const response = await page.goto('./');
 	expect(response?.status()).toBe(200);
@@ -397,6 +404,70 @@ async function chooseLanguage(page: Page, current: string, language: string) {
 		.click();
 	await page.getByRole('menuitem', { name: language, exact: true }).click();
 }
+
+test('tree page icons follow translation availability for flags, OCR and original', async ({
+	page
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await setupDirectory(page, false, true, true);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	const other = page.getByRole('treeitem', { name: 'other', exact: true });
+	await album.press('ArrowRight');
+	await other.press('ArrowRight');
+	await album.click();
+	const first = album.getByRole('treeitem', { name: /^0?1$/, exact: true });
+	const second = album.getByRole('treeitem', { name: /^0?2$/, exact: true });
+	const otherFirst = other.getByRole('treeitem', { name: /^0?1$/, exact: true });
+	const flag = first.locator('.page-icon img');
+	await expect(flag).toHaveAttribute(
+		'src',
+		(await page
+			.getByRole('menuitem', { name: 'EN', exact: true })
+			.locator('img')
+			.getAttribute('src'))!
+	);
+	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(otherFirst.locator('[data-comic-icon="page"]')).toBeVisible();
+	await second.click();
+
+	async function select(current: string, next: string) {
+		await page.getByRole('menuitem', { name: current, exact: true }).click();
+		await page.getByRole('menuitemradio', { name: next, exact: true }).click();
+		await expect(second).toHaveAttribute('aria-current', 'true');
+		await expect(album).toHaveAttribute('aria-expanded', 'true');
+		await expect(other).toHaveAttribute('aria-expanded', 'true');
+	}
+	await select('EN', 'NL');
+	const dutchFlag = (await page
+		.getByRole('menuitem', { name: 'NL', exact: true })
+		.locator('img')
+		.getAttribute('src'))!;
+	await expect(flag).toHaveAttribute('src', dutchFlag);
+	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
+	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
+	await select('NL', 'OCR');
+	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
+	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(otherFirst.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(first.locator('.page-icon img')).toHaveCount(0);
+	await select('OCR', 'ZZ');
+	await expect(first.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(first.locator('[data-toolbar-icon="video"]')).toHaveCount(0);
+	await select('ZZ', 'EN');
+	await expect(flag).toHaveAttribute(
+		'src',
+		(await page
+			.getByRole('menuitem', { name: 'EN', exact: true })
+			.locator('img')
+			.getAttribute('src'))!
+	);
+	await select('EN', 'ORG');
+	await expect(page.locator('.comic-tree .page-icon img')).toHaveCount(0);
+	await expect(page.locator('.comic-tree [data-comic-icon="page"]')).toHaveCount(4);
+	await expect(page.locator('.comic-tree [data-comic-icon="album"]')).toHaveCount(2);
+	expect(errors).toEqual([]);
+});
 
 test('remember explicit language choices per album including ORG across reloads', async ({
 	page
