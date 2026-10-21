@@ -566,6 +566,14 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 test('delete a polygon point on the right page while keeping at least three vertices', async ({
 	page
 }) => {
+	const contextMenu = page.locator('ul.bx--menu--root');
+	async function closeContextMenu() {
+		// Carbon registers dismissal on the next task; Escape can arrive before it is ready.
+		await expect(async () => {
+			await page.keyboard.press('Escape');
+			await expect(contextMenu).not.toBeVisible();
+		}).toPass();
+	}
 	await mockDirectory(page);
 	await openComic(page, '2P');
 	await selectMenu(page, 'ORG', 'EN');
@@ -579,10 +587,11 @@ test('delete a polygon point on the right page while keeping at least three vert
 	// A text menu must not inherit a previously targeted vertex.
 	await rightPage.locator('circle[data-point-index="0"]').click({ button: 'right' });
 	await expect(page.getByText('Delete point', { exact: true })).toBeVisible();
-	await page.keyboard.press('Escape');
+	await closeContextMenu();
 	await rightPage.getByRole('textbox').click({ button: 'right' });
+	await expect(contextMenu).toBeVisible();
 	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
-	await page.keyboard.press('Escape');
+	await closeContextMenu();
 
 	await rightPage.locator('circle[data-point-index="1"]').click({ button: 'right' });
 	await page.getByText('Delete point', { exact: true }).click();
@@ -596,11 +605,13 @@ test('delete a polygon point on the right page while keeping at least three vert
 	await expect(leftPage.getByRole('textbox')).toHaveText('Hello');
 
 	await rightPage.locator('circle[data-point-index="1"]').click({ button: 'right' });
+	await expect(contextMenu).toBeVisible();
 	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
-	await page.keyboard.press('Escape');
+	await closeContextMenu();
 	await leftPage.locator('circle').first().click({ button: 'right' });
+	await expect(contextMenu).toBeVisible();
 	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
-	await page.keyboard.press('Escape');
+	await closeContextMenu();
 
 	// Remaining handles still refer to the correct vertices after removing a middle point.
 	const handle = await rightPage.locator('circle[data-point-index="1"]').boundingBox();
