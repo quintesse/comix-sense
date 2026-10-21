@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { textStyle } from './bbl/FontResources';
+	import type { Font } from './bbl/metadata';
 	import DragHandle from './DragHandle.svelte';
 	import { bounds, points, type Bubble, BblShapeType } from './types/Comic';
 	import type { StrStrMap } from './types/funcs';
@@ -8,13 +10,15 @@
 		editable?: boolean;
 		renderMode?: string;
 		bubbleIndex?: number;
+		font?: Font;
 	}
 
 	let {
 		bubble = $bindable(),
 		editable = false,
 		renderMode = 'normal',
-		bubbleIndex
+		bubbleIndex,
+		font = {}
 	}: Props = $props();
 
 	function styleString(style: StrStrMap | undefined): string {
@@ -49,13 +53,14 @@
 		{#if editable}
 			<div
 				title={bubble.text}
+				style={textStyle(font)}
 				role="textbox"
 				aria-label="Bubble text"
 				contenteditable="true"
 				bind:textContent={bubble.text}
 			></div>
 		{:else}
-			<div title={bubble.text}>{bubble.text}</div>
+			<div style={textStyle(font)} title={bubble.text}>{bubble.text}</div>
 		{/if}
 	</foreignObject>
 {/if}

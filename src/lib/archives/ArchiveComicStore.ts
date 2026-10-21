@@ -1,3 +1,4 @@
+import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
 import { archiveImageUrl } from '../ImageUrls';
 import { Comic, type Bubble } from '../types/Comic';
 import type { ComicStore } from '../types/ComicStore';
@@ -17,11 +18,13 @@ export class ArchiveComicStore implements ComicStore {
 	private pages?: Comic[];
 	private pending?: Promise<Comic[]>;
 	private disposed = false;
+	private metadata?: AlbumMetadata;
 	readonly prefix: string;
 	constructor(
 		readonly archivePath: string,
 		private file: () => Promise<File>,
-		private collectionName = archivePath.split('/').at(-2) ?? ''
+		private collectionName = archivePath.split('/').at(-2) ?? '',
+		private adjacent: Source[] = []
 	) {
 		// The slash after an archive filename cannot collide with a physical directory.
 		this.prefix = archivePath + '/';
@@ -31,6 +34,7 @@ export class ArchiveComicStore implements ComicStore {
 		if (this.pages) return Promise.resolve(this.pages);
 		return (this.pending ??= this.index().catch((error) => {
 			this.pending = undefined;
+			this.metadata?.dispose();
 			this.reader?.dispose();
 			this.reader = undefined;
 			throw error;
@@ -51,17 +55,7 @@ export class ArchiveComicStore implements ComicStore {
 					a.path.localeCompare(b.path, 'en')
 			)
 			.map((entry) => {
-				const base = baseNameExt(entry.path)[0];
-				const languages = entries.flatMap((e) =>
-					e.path === base + '.bbl'
-						? ['']
-						: e.path.startsWith(base + '.') &&
-							  e.path.endsWith('.bbl') &&
-							  !e.path.slice(base.length + 1).includes('/')
-							? [e.path.slice(base.length + 1, -4)]
-							: []
-				);
-				const page = new Comic(this.prefix + entry.path, languages, this);
+				const page = new Comic(this.prefix + entry.path, [], this);
 				page.album = this.archivePath;
 				page.entryPath = entry.path;
 				const parts = entry.path.split('/');
@@ -72,6 +66,18 @@ export class ArchiveComicStore implements ComicStore {
 				return page;
 			});
 		if (!pages.length) throw new Error('Archive contains no supported images');
+		this.metadata?.dispose();
+		this.metadata = new AlbumMetadata((path) => this.reader!.read(path), undefined, this.prefix);
+		await this.metadata.discover(
+			[...this.entries],
+			pages.map((p) => p.entryPath!),
+			this.adjacent
+		);
+		if (this.disposed) {
+			this.metadata.dispose();
+			throw new Error('Archive disconnected');
+		}
+		for (const page of pages) page.languages = this.metadata.languages(page.entryPath!);
 		// Archives often wrap every page in the album's directory. Include that
 		// virtual directory in the shared-prefix rule used for folder albums.
 		const sharedPrefix = sharedFilenamePrefix(
@@ -111,23 +117,17 @@ export class ArchiveComicStore implements ComicStore {
 		return archiveImageUrl(blob, 'image/' + (ext === 'jpg' ? 'jpeg' : ext));
 	}
 	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
-		const lang = language ?? comic.languages[0];
-		if (lang === undefined) return [];
-		const path = baseNameExt(comic.entryPath!)[0] + (lang ? '.' + lang : '') + '.bbl';
-		if (!this.entries.has(path)) return [];
-		try {
-			const json = JSON.parse(await (await this.reader!.read(path)).text());
-			if (!Array.isArray(json.pages?.[0]?.bubbles)) throw new Error('Invalid bubble data');
-			return json.pages[0].bubbles;
-		} catch (error) {
-			throw new Error('Could not read bubbles: ' + path, { cause: error });
-		}
+		const lang = language ?? comic.languages[0] ?? '';
+		const overlay = await this.metadata!.overlay(comic.entryPath!, lang);
+		await comic.prepareTypography(lang, overlay, this.metadata!.fonts);
+		return overlay.bubbles;
 	}
 	cancel() {
 		this.reader?.cancel();
 	}
 	dispose() {
 		this.disposed = true;
+		this.metadata?.dispose();
 		this.reader?.dispose();
 		this.entries.clear();
 		this.pages = undefined;
