@@ -23,7 +23,41 @@ Choose **ORG** to see the original page, or select a language to show its speech
 
 Enable **EDIT: YES** to edit text or drag a bubble's handles. For a new box, click two opposite corners. For a polygon, click its vertices and then click near the first vertex to close it. Escape cancels a drawing; Backspace removes the last vertex or cancels a box. Right-click bubble text to convert its shape or delete it. The zoom menu supports fit, width, and percentage scales.
 
-Edits to language overlays are retained while switching pages in the current session. **Saving/exporting is not implemented**, so reloading the app loses edits. The scan/OCR actions and drag-and-drop import are still placeholders; automatic translation is not implemented.
+Edits to language overlays are retained while switching pages in the current session. **Saving/exporting is not implemented**, so reloading the app loses edits. Region-scanning context-menu actions and drag-and-drop import are still placeholders; automatic translation is not implemented.
+
+### Full-page OCR
+
+In Edit Mode, click the camera button (**Scan Full Page**) to scan the selected
+page using Google Cloud Vision `TEXT_DETECTION`. It also displays **Scan** when
+that page has no language overlays. The request sends the original image directly
+from the browser to Google; configure a user-provided API key with Cloud Vision
+enabled. Google Cloud usage charges may apply.
+
+On the first scan, enter the key in the masked field. **Remember on this browser**
+opts into storing it in localStorage; otherwise it remains in memory for this
+session. **OCR Settings** lets you change or **Forget key**. Browser storage is
+not an encrypted vault, and clearing site data removes the remembered key.
+
+Alternatively, set `GOOGLE_VISION_KEY` in the environment or a local `.env` file
+before starting the dev server or building the app. It takes precedence over the
+dialog key. OCR Settings then displays a message that the external key is in use
+instead of the input, Remember and Forget controls. Restart the dev server or
+rebuild after changing the variable. Because this is a static browser app, the
+key is included in the client bundle; use an appropriately restricted browser API
+key. Setting it only when serving an already-built app does not change that build.
+
+Results appear as an editable **OCR** overlay, with one bounding box per word,
+matching `tools/ocr.java` followed by `tools/ocr2bbl.java`. Each successful scan that recognizes text
+also creates an **MRG** overlay using `tools/bubblemerge.java`'s grouping algorithm,
+with line breaks and merged shapes. MRG has a solid object-group icon in the
+language menu. Both overlays use the existing language/bubble model and can be
+edited independently. Scans with text select MRG automatically.
+Scans without text select OCR and leave any existing MRG overlay unchanged.
+
+Rescanning a page with OCR or MRG asks for confirmation before sending a request.
+A rescan with text replaces both overlays; other languages remain unchanged.
+Results and edits exist only in memory and disappear on reload. In side-by-side
+mode, only the selected page is scanned.
 
 ### Bubble file format (`.bbl`)
 

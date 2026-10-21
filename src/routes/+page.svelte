@@ -42,9 +42,134 @@
 	import Zoom from '#lib/Zoom.svelte';
 	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
 	import LanguageMenu from '#lib/LanguageMenu.svelte';
+	import OcrSettings from '#lib/OcrSettings.svelte';
+	import { scanImage } from '#lib/ocr.js';
+	import { mergeBubbles } from '#lib/mergeBubbles.js';
+	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
 
+	let ocrKey = $state('');
+	const externalVisionKey = import.meta.env.GOOGLE_VISION_KEY;
+	let effectiveOcrKey = $derived(externalVisionKey || ocrKey);
+	let ocrSettingsOpen = $state(false);
+	let overwriteOcrOpen = $state(false);
+	let overwriteOcrComic = $state.raw<Comic>();
+	let scanAfterSettings = false;
+	let scanning = $state(false);
+	let scanMessage = $state('');
+	let scanError = $state('');
+	let scanController: AbortController | undefined;
+
+	function dismissScanFeedback() {
+		scanMessage = '';
+		scanError = '';
+	}
+
+	$effect(() => {
+		if (!scanning && scanMessage) {
+			const timer = window.setTimeout(dismissScanFeedback, 6000);
+			return () => window.clearTimeout(timer);
+		}
+	});
+
+	function requestScan() {
+		if (!effectiveOcrKey) {
+			scanAfterSettings = true;
+			ocrSettingsOpen = true;
+		} else void scanPage();
+	}
+
+	function confirmOcrOverwrite() {
+		const comic = overwriteOcrComic;
+		overwriteOcrOpen = false;
+		overwriteOcrComic = undefined;
+		if (comic && comic === $selectedComic) void scanPage(comic);
+	}
+
+	async function scanPage(confirmedComic?: Comic) {
+		const comic = $selectedComic;
+		if (!comic || scanning || !editable || loadingPages) return;
+		const key = effectiveOcrKey;
+		const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
+		const mergedLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'mrg') ?? 'MRG';
+		if (
+			(comic.languages.includes(ocrLanguage) || comic.languages.includes(mergedLanguage)) &&
+			confirmedComic !== comic
+		) {
+			overwriteOcrComic = comic;
+			overwriteOcrOpen = true;
+			return;
+		}
+		scanning = true;
+		scanError = '';
+		scanMessage = `Scanning ${comic.displayName}…`;
+		const controller = new AbortController();
+		scanController = controller;
+		const release = comic.protectImage();
+		let url: string | undefined;
+		try {
+			const previous = await Promise.all(
+				[ocrLanguage, mergedLanguage].map(async (language) =>
+					comic.languages.includes(language) ? await comic.getBubbles(language) : []
+				)
+			);
+			const baseline = JSON.stringify(previous);
+			url = await comic.getImageUrl();
+			const response = await fetch(url, { signal: controller.signal });
+			if (!response.ok) throw new Error('Could not read the page image.');
+			const result = await scanImage(await response.blob(), key, controller.signal);
+			if (controller.signal.aborted || !folders.some((folder) => folder.comics.includes(comic))) {
+				scanMessage = '';
+				return;
+			}
+			if (JSON.stringify(previous) !== baseline)
+				throw new Error('A scan overlay was edited during scanning. Scan again to replace it.');
+			const merged = result.bubbles.some((bubble) => bubble.text.trim())
+				? mergeBubbles(result.bubbles)
+				: undefined;
+			comic.setBubbles(ocrLanguage, result.bubbles);
+			if (merged) comic.setBubbles(mergedLanguage, merged);
+			comic.languages = [
+				...new Set([...comic.languages, ocrLanguage, ...(merged ? [mergedLanguage] : [])])
+			];
+			comics.update((values) => [...values]);
+			if ($selectedComic === comic) {
+				selectLanguage(merged ? mergedLanguage : ocrLanguage);
+				showBubbles = true;
+				// Refresh either scan overlay if it is already displayed.
+				displayedPages = displayedPages.map((page) =>
+					page.comic === comic &&
+					(page.language === ocrLanguage || (merged && page.language === mergedLanguage))
+						? { ...page, bubbles: page.language === ocrLanguage ? result.bubbles : merged! }
+						: page
+				);
+			}
+			scanMessage = merged
+				? `${comic.displayName}: ${result.bubbles.length} words recognized, ${merged.length} merged regions. OCR and MRG results are kept in memory.`
+				: `${comic.displayName}: No text recognized. No MRG overlay was created.`;
+		} catch (error) {
+			if (!controller.signal.aborted)
+				scanError = 'Scan failed: ' + (error instanceof Error ? error.message : String(error));
+			scanMessage = '';
+		} finally {
+			if (url) releaseImageUrl(url);
+			release();
+			scanning = false;
+			scanController = undefined;
+		}
+	}
+
 	let isSideNavOpen = $state(false);
+	let comicsTree: ComicsTree | undefined = $state();
+	let albumPageList: AlbumPages | undefined = $state();
+
+	async function locatePage() {
+		if (!$selectedComic) return;
+		isSideNavOpen = true;
+		await tick();
+		await comicsTree?.locate();
+		albumPageList?.locate();
+	}
 	let fullscreen = $state(false);
 	let readerUi: HTMLDivElement;
 
@@ -86,6 +211,7 @@
 	});
 
 	onDestroy(() => {
+		scanController?.abort();
 		pageImages.retain([]);
 		for (const folder of folders) folder.store.dispose();
 	});
@@ -378,6 +504,8 @@
 	function handleNavigationKey(event: KeyboardEvent) {
 		if (
 			disconnectOpen ||
+			ocrSettingsOpen ||
+			overwriteOcrOpen ||
 			event.defaultPrevented ||
 			event.isComposing ||
 			event.altKey ||
@@ -413,8 +541,37 @@
 	}
 
 	function handlePageNavigationKey(event: KeyboardEvent) {
+		const key = event.key.toLowerCase();
+		if (
+			(key === 'l' || key === 'r' || key === 'e') &&
+			!(
+				event.target instanceof Element &&
+				event.target.closest(
+					'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
+				)
+			) &&
+			!disconnectOpen &&
+			!ocrSettingsOpen &&
+			!overwriteOcrOpen &&
+			!event.defaultPrevented &&
+			!event.isComposing &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			(key !== 'l' || $selectedComic)
+		) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!event.repeat) {
+				if (key === 'l') void locatePage();
+				else selectedEdit = key === 'e' ? 'yes' : 'no';
+			}
+			return;
+		}
 		if (
 			disconnectOpen ||
+			ocrSettingsOpen ||
+			overwriteOcrOpen ||
 			(event.key !== 'PageUp' && event.key !== 'PageDown') ||
 			event.defaultPrevented ||
 			event.isComposing ||
@@ -652,6 +809,7 @@
 				)
 			: []
 	);
+	let pageLanguages = $derived($comics.find((comic) => comic === $selectedComic)?.languages ?? []);
 	let languages = $derived(
 		dedup(
 			$comics
@@ -674,13 +832,48 @@
 		</svelte:fragment>
 		<HeaderNav>
 			<li role="none" class="toolbar-group">
+				<button
+					type="button"
+					class="toolbar-button"
+					aria-label="Locate"
+					title="Locate Page (L)"
+					aria-keyshortcuts="l"
+					disabled={!$selectedComic}
+					onclick={locatePage}><ToolbarIcon name="crosshairs" /></button
+				>
+			</li>
+			<li role="none" class="toolbar-group">
+				<div role="group" aria-label="Page navigation">
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Previous Page"
+						title="Previous Page (Pg Up)"
+						aria-keyshortcuts="PageUp"
+						disabled={!$selectedComic || albumPages.indexOf($selectedComic) <= 0}
+						onclick={() => navigatePage(-1)}><ToolbarIcon name="caret-left" /></button
+					>
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Next Page"
+						title="Next Page (Pg Dn)"
+						aria-keyshortcuts="PageDown"
+						disabled={!$selectedComic ||
+							albumPages.indexOf($selectedComic) + (pageMode === '2P' ? 2 : 1) >= albumPages.length}
+						onclick={() => navigatePage(1)}><ToolbarIcon name="caret-right" /></button
+					>
+				</div>
+			</li>
+			<li role="none" class="toolbar-group">
 				<div role="group" aria-label="Page layout">
 					{#each [{ value: '1P', icon: 'file', label: 'Single Page' }, { value: '2P', icon: 'book-open', label: 'Side by Side' }] as mode}
 						<button
 							type="button"
 							class="toolbar-button"
 							aria-label={mode.label}
-							title={mode.label}
+							title={`${mode.label} (${mode.value === '1P' ? '1 / S' : '2 / D'})`}
+							aria-keyshortcuts={mode.value === '1P' ? '1 s' : '2 d'}
 							aria-pressed={pageMode === mode.value}
 							onclick={() => selectPageMode(mode.value)}
 							><ToolbarIcon name={mode.icon as 'file' | 'book-open'} /></button
@@ -704,7 +897,7 @@
 					type="button"
 					class="toolbar-button"
 					aria-label="Show Translations"
-					title="Show Translations"
+					title="Show Translations (B)"
 					aria-pressed={showBubbles}
 					aria-keyshortcuts="b"
 					onclick={() => (showBubbles = !showBubbles)}><ToolbarIcon name="comments" /></button
@@ -716,7 +909,8 @@
 						type="button"
 						class="toolbar-button"
 						aria-label="Reading Mode"
-						title="Reading Mode"
+						title="Reading Mode (R)"
+						aria-keyshortcuts="r"
 						aria-pressed={selectedEdit === 'no'}
 						onclick={() => (selectedEdit = 'no')}><ToolbarIcon name="eye" /></button
 					>
@@ -724,13 +918,42 @@
 						type="button"
 						class="toolbar-button"
 						aria-label="Edit Mode"
-						title="Edit Mode"
+						title="Edit Mode (E)"
+						aria-keyshortcuts="e"
 						aria-pressed={selectedEdit === 'yes'}
 						onclick={() => (selectedEdit = 'yes')}><ToolbarIcon name="file-pen" /></button
 					>
 				</div>
 			</li>
 			{#if editable}
+				<li role="none" class="toolbar-group">
+					<div role="group" aria-label="Text tools">
+						<button
+							type="button"
+							class="toolbar-button scan-button"
+							aria-label="Scan Full Page"
+							title="Scan Full Page"
+							disabled={!$selectedComic || loadingPages || scanning}
+							aria-busy={scanning}
+							onclick={requestScan}
+						>
+							<ToolbarIcon name="camera" />
+							{#if $selectedComic && pageLanguages.length === 0}<span>Scan</span>{/if}
+						</button>
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Cleanup Text"
+							title="Cleanup Text (C)"><ToolbarIcon name="spell-check" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Translate"
+							title="Translate (T)"><ToolbarIcon name="globe" /></button
+						>
+					</div>
+				</li>
 				<li role="none" class="toolbar-group">
 					<div role="group" aria-label="Drawing tool">
 						<button
@@ -753,6 +976,18 @@
 						>
 					</div>
 				</li>
+				<li role="none" class="toolbar-group">
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="OCR Settings"
+						title="OCR Settings"
+						onclick={() => {
+							scanAfterSettings = false;
+							ocrSettingsOpen = true;
+						}}><ToolbarIcon name="settings" /></button
+					>
+				</li>
 			{/if}
 		</HeaderNav>
 	</Header>
@@ -764,6 +999,7 @@
 					<div class="tree-scroll">
 						{#if !noSources}
 							<ComicsTree
+								bind:this={comicsTree}
 								{selectedLanguage}
 								onarchive={openArchive}
 								{folders}
@@ -801,6 +1037,7 @@
 			{/snippet}
 			{#snippet pages()}
 				<AlbumPages
+					bind:this={albumPageList}
 					{noSources}
 					pages={$selectedComic ? albumPages : []}
 					selectedComic={$selectedComic}
@@ -811,6 +1048,34 @@
 		{#if directoryError}<p role="alert">{directoryError}</p>{/if}
 		{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
 	</SideNav>
+
+	<OcrSettings
+		externallyConfigured={!!externalVisionKey}
+		bind:open={ocrSettingsOpen}
+		bind:apiKey={ocrKey}
+		onsaved={() => {
+			if (scanAfterSettings) {
+				scanAfterSettings = false;
+				void scanPage();
+			}
+		}}
+	/>
+
+	<Modal
+		bind:open={overwriteOcrOpen}
+		modalHeading="Overwrite OCR and MRG overlays?"
+		primaryButtonText="Overwrite and scan"
+		secondaryButtonText="Cancel"
+		size="xs"
+		shouldSubmitOnEnter={false}
+		on:submit={confirmOcrOverwrite}
+		on:click:button--secondary={() => (overwriteOcrOpen = false)}
+	>
+		<p>
+			“{overwriteOcrComic?.displayName}” already has scan overlays. Scanning again will replace its
+			OCR and MRG text and shapes.
+		</p>
+	</Modal>
 
 	<Modal
 		bind:open={disconnectOpen}
@@ -829,6 +1094,21 @@
 		style={fullscreen ? 'padding: 0; margin: 0; min-height: 0' : 'padding: 0'}
 		class={displayedPages.length === 0 ? 'fullsize empty-reader' : 'fullsize'}
 	>
+		{#if !fullscreen}
+			{#if scanError || scanMessage}
+				<div class="scan-feedback">
+					{#if scanError}<p role="alert">{scanError}</p>{/if}
+					{#if scanMessage}<p role="status">{scanMessage}</p>{/if}
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Dismiss scan notification"
+						title="Dismiss scan notification"
+						onclick={dismissScanFeedback}>×</button
+					>
+				</div>
+			{/if}
+		{/if}
 		{#if pageLoadError && !fullscreen}<p role="alert">{pageLoadError}</p>{/if}
 		{#if displayedPages.length}
 			<Zoom level={selectedZoom} contentSize={spreadSize} centered={fullscreen}>
@@ -933,6 +1213,30 @@
 		color: #525252;
 		cursor: pointer;
 		border-radius: 0.125rem;
+	}
+	.scan-feedback {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		position: absolute;
+		top: 0.5rem;
+		left: 1rem;
+		z-index: 1;
+		max-width: calc(100% - 2rem);
+		padding: 0.5rem 1rem;
+		background: white;
+		box-shadow: 0 2px 6px #0003;
+	}
+	.scan-button {
+		display: flex;
+		width: auto;
+		min-width: 2.25rem;
+		gap: 0.5rem;
+		padding: 0 0.5rem;
+	}
+	.toolbar-button:disabled {
+		opacity: 0.5;
+		cursor: default;
 	}
 	.toolbar-group > div .toolbar-button + .toolbar-button {
 		border-left: 1px solid #c6c6c6;

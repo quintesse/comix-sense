@@ -319,6 +319,52 @@ test('Enter selects without toggling expansion or moving focus out of the tree',
 	await expect(series).toHaveAttribute('aria-expanded', 'false');
 });
 
+test('Locate reveals the current page through collapsed ancestors with button and shortcut', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 720 });
+	await page.addInitScript(() => Object.defineProperty(window, 'fullScreen', { value: false }));
+	await setupDirectory(page, true);
+	const locate = page.getByRole('button', { name: 'Locate', exact: true });
+	await expect(locate).toBeDisabled();
+	await expect(locate).toHaveAttribute('aria-keyshortcuts', 'l');
+	await expect(locate).toHaveAttribute('title', 'Locate Page (L)');
+	await expect(locate.locator('[data-toolbar-icon="crosshairs"]')).toBeVisible();
+	const root = page.getByRole('treeitem', { name: 'comics/', exact: true });
+	const series = page.getByRole('treeitem', { name: 'series/', exact: true });
+	await series.press('ArrowRight');
+	const volume = series.getByRole('treeitem', { name: 'volume', exact: true });
+	await volume.press('Enter');
+	await expect(locate).toBeEnabled();
+	const pageList = page.getByRole('region', { name: 'Album pages' });
+	const currentThumbnail = pageList.locator('button[aria-current="page"]');
+	await pageList.locator('ul').evaluate((list) => (list.scrollTop = list.scrollHeight));
+	await expect(currentThumbnail).not.toBeInViewport({ ratio: 1 });
+	await root.press('ArrowLeft');
+	await locate.click();
+	await expect(currentThumbnail).toHaveAttribute('data-page', 'series/volume/01.png');
+	await expect(currentThumbnail).toBeInViewport({ ratio: 1 });
+	const first = volume.getByRole('treeitem', { name: /^0?1$/, exact: true });
+	await expect(root).toHaveAttribute('aria-expanded', 'true');
+	await expect(volume).toHaveAttribute('aria-expanded', 'true');
+	await expect(first).toBeVisible();
+	await expect(first).toBeFocused();
+	await expect(first).toHaveAttribute('aria-current', 'true');
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	await series.press('ArrowLeft');
+	await root.press('ArrowLeft');
+	await pageList.locator('ul').evaluate((list) => (list.scrollTop = list.scrollHeight));
+	await expect(currentThumbnail).not.toBeInViewport({ ratio: 1 });
+	await root.press('l');
+	await expect(currentThumbnail).toBeInViewport({ ratio: 1 });
+	await expect(series).toHaveAttribute('aria-expanded', 'true');
+	await expect(first).toBeVisible();
+	await expect(first).toBeFocused();
+	await expect
+		.poll(async () => (await savedHistory(page))[0]?.lastPage)
+		.toBe('series/volume/01.png');
+});
+
 test('mouse selections keep focus in the tree', async ({ page }) => {
 	await setupDirectory(page);
 	const album = page.getByRole('treeitem', { name: 'album', exact: true });

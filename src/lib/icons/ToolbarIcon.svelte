@@ -2,7 +2,22 @@
 	let {
 		name
 	}: {
-		name: 'eye' | 'file-pen' | 'comments' | 'file' | 'book-open' | 'square' | 'star' | 'video';
+		name:
+			| 'eye'
+			| 'file-pen'
+			| 'comments'
+			| 'file'
+			| 'book-open'
+			| 'square'
+			| 'star'
+			| 'video'
+			| 'camera'
+			| 'spell-check'
+			| 'globe'
+			| 'crosshairs'
+			| 'caret-left'
+			| 'caret-right'
+			| 'settings';
 	} = $props();
 </script>
 
@@ -31,6 +46,27 @@
 		/>
 	{:else if name === 'book-open'}
 		<path d="M12 5C9 3 5 3 2 4v16c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v16" />
+	{:else if name === 'caret-left' || name === 'caret-right'}
+		<path
+			d={name === 'caret-left' ? 'm15 5-7 7 7 7Z' : 'm9 5 7 7-7 7Z'}
+			fill="currentColor"
+			stroke="none"
+		/>
+	{:else if name === 'crosshairs'}
+		<circle cx="12" cy="12" r="8" /><path d="M12 2v5M12 17v5M2 12h5M17 12h5" />
+	{:else if name === 'spell-check'}
+		<path d="m3 12 3-9 3 9M4 9h4M12 3h4a2 2 0 0 1 0 4h-4m0-4v9h4a2.5 2.5 0 0 0 0-5M10 19l4 3 7-8" />
+	{:else if name === 'globe'}
+		<circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" />
+	{:else if name === 'camera'}
+		<path d="M3 6h4l2-3h6l2 3h4v15H3Z" /><circle cx="12" cy="13" r="4" />
+	{:else if name === 'settings'}
+		<path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="white" /><circle
+			cx="16"
+			cy="12"
+			r="2"
+			fill="white"
+		/><circle cx="10" cy="18" r="2" fill="white" />
 	{:else if name === 'video'}
 		<rect x="2" y="5" width="14" height="14" rx="2" /><path d="m16 9 6-4v14l-6-4Z" />
 	{:else if name === 'square'}

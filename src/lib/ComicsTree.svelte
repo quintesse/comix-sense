@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { TreeView } from 'carbon-components-svelte';
 	import type { TreeNode } from 'carbon-components-svelte/src/TreeView/TreeView.svelte';
 	import type { Comic } from './types/Comic';
@@ -31,6 +32,31 @@
 		ondisconnect
 	}: Props = $props();
 	let activeId = $derived(selectedComic ? idForComic(selectedComic) : '');
+	let tree: HTMLDivElement;
+
+	export async function locate() {
+		if (!selectedComic) return;
+		const folder = folders.find((folder) => folder.comics.includes(selectedComic!));
+		if (!folder) return;
+		const id = comicNodeId(folder, selectedComic);
+		function ancestors(nodes: TreeNode[], parents: string[]): string[] | undefined {
+			for (const node of nodes) {
+				if (node.id === id) return parents;
+				const found = node.nodes && ancestors(node.nodes, [...parents, String(node.id)]);
+				if (found) return found;
+			}
+		}
+		const parents = ancestors(comicsChildren(folder), [folder.id]);
+		if (!parents) return;
+		expandedIds = [...new Set([...expandedIds, ...parents])];
+		activeId = id;
+		await tick();
+		const row = Array.from(tree.querySelectorAll<HTMLElement>('[data-page-id]'))
+			.find((node) => node.dataset.pageId === id)
+			?.closest<HTMLElement>('[role="treeitem"]');
+		row?.focus({ preventScroll: true });
+		row?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+	}
 
 	function idForComic(comic: Comic): string {
 		const folder = folders.find((folder) => folder.comics.includes(comic));
@@ -144,9 +170,10 @@
 	}
 </script>
 
-<div class="comic-tree" use:treeKeyboard>
+<div class="comic-tree" bind:this={tree} use:treeKeyboard>
 	<TreeView
 		hideLabel
+		size="compact"
 		labelText="Comics"
 		nodes={folders.map((folder) => ({
 			id: folder.id,
@@ -190,7 +217,7 @@
 			{@const page = (node as TreeChild).page!}
 			{@const translated = selectedLanguage !== 'org' && page.languages.includes(selectedLanguage)}
 			{@const flagUrl = translated ? flag(selectedLanguage) : undefined}
-			<span class="page-row">
+			<span class="page-row" data-page-id={node.id}>
 				<span class="page-icon bx--tree-node__icon" aria-hidden="true">
 					{#if translated && selectedLanguage.toLowerCase() === 'ocr'}
 						<ToolbarIcon name="video" />
@@ -211,7 +238,7 @@
 <style>
 	.page-row {
 		display: inline-flex;
-		align-items: flex-start;
+		align-items: center;
 	}
 	.page-icon {
 		display: inline-flex;
@@ -229,13 +256,10 @@
 		background-color: #fff;
 	}
 	.comic-tree :global(.bx--tree-node__label:not(:has(.root-row))) {
-		align-items: flex-start;
+		align-items: center;
 	}
 	.comic-tree :global(.bx--tree-node__label__details:not(:has(.root-row))) {
-		align-items: flex-start;
-	}
-	:global(.comic-tree .bx--tree-node__label:not(:has(.root-row)) .bx--tree-node__icon) {
-		margin-top: 1px;
+		align-items: center;
 	}
 	:global(.comic-tree .bx--tree-node__label__details:has(.root-row)),
 	:global(.comic-tree .bx--tree-node__label__text:has(.root-row)) {
@@ -261,7 +285,7 @@
 		align-items: center;
 		justify-content: center;
 		flex: 0 0 2rem;
-		height: 2rem;
+		height: 1.5rem;
 		border: 0;
 		background: transparent;
 		color: inherit;
