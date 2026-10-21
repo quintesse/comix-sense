@@ -159,7 +159,32 @@ async function openComic(page: Page, mode = '1P') {
 	await expect(page.locator('svg image').first()).toBeVisible();
 }
 
+function layoutButton(page: Page, mode: string) {
+	return page.getByRole('button', {
+		name: mode === '1P' ? 'Single Page' : 'Side by Side',
+		exact: true
+	});
+}
+
 async function selectMenu(page: Page, name: string, option: string) {
+	if (name === '1P' || name === '2P') {
+		await layoutButton(page, option).click();
+		await expect(layoutButton(page, option)).toHaveAttribute('aria-pressed', 'true');
+		return;
+	}
+	if (name.startsWith('EDIT:') || name === 'BOX' || name === 'POLY') {
+		const label = name.startsWith('EDIT:')
+			? option === 'Yes'
+				? 'Edit Mode'
+				: 'Reading Mode'
+			: option === 'Box'
+				? 'Draw Boxes'
+				: 'Draw Polygons';
+		const button = page.getByRole('button', { name: label, exact: true });
+		await button.click();
+		await expect(button).toHaveAttribute('aria-pressed', 'true');
+		return;
+	}
 	await page.getByRole('menuitem', { name, exact: true }).click();
 	await page.getByRole('menu', { name, exact: true }).getByText(option, { exact: true }).click();
 	const newName = name.startsWith('EDIT:') ? 'EDIT: ' + option.toUpperCase() : option.toUpperCase();
@@ -175,6 +200,20 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await expect(
+		page.getByRole('menuitem', { name: 'EN', exact: true }).locator('img')
+	).toBeVisible();
+	await expect(page.getByText('Link 1', { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Reading Mode', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await page.getByRole('menuitem', { name: 'EN', exact: true }).press('ArrowDown');
+	await expect(
+		page.getByRole('menuitemradio', { name: 'NL', exact: true }).locator('img')
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeFocused();
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 });
@@ -185,11 +224,11 @@ test('bubble visibility toggles in reading and edit modes and resets on reload',
 	await mockDirectory(page);
 	await openComic(page);
 	await selectMenu(page, 'ORG', 'EN');
-	const toggle = page.getByRole('menuitemcheckbox', { name: /^BUBBLES:/ });
-	await expect(toggle).toBeChecked();
+	const toggle = page.getByRole('button', { name: 'Show Translations', exact: true });
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
 	await toggle.click();
-	await expect(toggle).not.toBeChecked();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
 	await expect(page.locator('foreignObject, clipPath .bubble')).toHaveCount(0);
 	await page.keyboard.press('b');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
@@ -198,10 +237,10 @@ test('bubble visibility toggles in reading and edit modes and resets on reload',
 	await page.getByRole('textbox').press('End');
 	await page.keyboard.press('b');
 	await expect(page.getByRole('textbox')).toHaveText('Editedb');
-	await expect(toggle).toBeChecked();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 	await toggle.click();
 	await expect(page.getByRole('textbox')).toHaveCount(0);
-	await expect(page.locator('svg .bubble, svg circle')).toHaveCount(0);
+	await expect(page.locator('main svg .bubble, main svg circle')).toHaveCount(0);
 	// Hidden overlays must not let edit mode draw new invisible bubbles.
 	const image = page.locator('svg[aria-label="Comic page"] > image').first();
 	await image.click({ position: { x: 200, y: 200 } });
@@ -210,7 +249,7 @@ test('bubble visibility toggles in reading and edit modes and resets on reload',
 	await expect(page.getByRole('textbox')).toHaveText('Editedb');
 	await toggle.click();
 	await page.reload();
-	await expect(toggle).toBeChecked();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
@@ -254,7 +293,7 @@ for (const mode of ['1P', '2P']) {
 		await expect(treeItem).toBeFocused();
 
 		// Header controls also receive the shortcuts without transferring focus.
-		const headerItem = page.getByRole('menuitem', { name: mode, exact: true });
+		const headerItem = layoutButton(page, mode);
 		await headerItem.focus();
 		await page.keyboard.press('PageDown');
 		await expectPage(1 + step);
@@ -279,36 +318,91 @@ for (const mode of ['1P', '2P']) {
 	});
 }
 
-test('click the outer quarters to navigate and ignore the middle half of the pane', async ({
-	page
-}) => {
-	await mockDirectory(page);
-	await openComic(page);
-	await selectMenu(page, 'ORG', 'EN');
-	const pane = page.locator('main');
-	const bounds = await pane.boundingBox();
-	if (!bounds) throw new Error('Missing main pane');
-	const right = { x: bounds.width - 10, y: 400 };
-	await pane.click({ position: { x: 10, y: 400 } });
-	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await pane.click({ position: right });
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
-	await pane.click({ position: right });
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
-	for (const fraction of [0.25, 0.35, 0.49, 0.51, 0.65, 0.75]) {
-		await pane.click({ position: { x: bounds.width * fraction, y: 400 } });
-		await expect(page.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(
-			/--active/
-		);
-	}
-	await pane.click({ position: { x: bounds.width / 2, y: 400 }, modifiers: ['Shift'] });
-	await expect(page.getByRole('treeitem', { name: /^0?2$/, exact: true })).toHaveClass(/--active/);
-	await page.locator('foreignObject').click();
-	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await page.getByRole('img', { name: 'Comic page' }).click({ position: { x: 700, y: 400 } });
-	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveClass(/--active/);
-	await pane.click({ position: right });
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
+async function clickSpread(page: Page, fraction: number, shift = false) {
+	const bounds = await page.locator('main svg[aria-label="Comic page"]').evaluateAll((pages) => {
+		const boxes = pages.map((page) => page.getBoundingClientRect());
+		return {
+			left: Math.min(...boxes.map((box) => box.left)),
+			right: Math.max(...boxes.map((box) => box.right)),
+			top: Math.min(...boxes.map((box) => box.top))
+		};
+	});
+	if (shift) await page.keyboard.down('Shift');
+	await page.mouse.click(bounds.left + (bounds.right - bounds.left) * fraction, bounds.top + 40);
+	if (shift) await page.keyboard.up('Shift');
+}
+
+for (const zoom of ['Fit', '50%']) {
+	test(`click navigation uses page quarters and ignores surrounding space at ${zoom}`, async ({
+		page
+	}) => {
+		await mockDirectory(page);
+		await openComic(page);
+		await selectMenu(page, 'ORG', 'EN');
+		if (zoom !== 'Fit') await selectMenu(page, 'FIT', zoom);
+		const texts = page.locator('foreignObject');
+		const pane = page.locator('main');
+		const paneBounds = (await pane.boundingBox())!;
+		const image = page.getByRole('img', { name: 'Comic page' });
+		const bounds = (await image.boundingBox())!;
+		// The unused area to the right used to advance the page.
+		await page.mouse.click(paneBounds.x + paneBounds.width - 10, bounds.y + 40);
+		await expect(texts).toHaveText('Hello');
+		if (zoom === '50%') {
+			await page.mouse.click(bounds.x + bounds.width * 0.9, bounds.y + bounds.height + 20);
+			await expect(texts).toHaveText('Hello');
+		}
+		await clickSpread(page, 0.1);
+		await expect(texts).toHaveText('Hello');
+		await clickSpread(page, 0.9);
+		await expect(texts).toHaveText('Second page');
+		for (const fraction of [0.3, 0.5, 0.7]) {
+			await clickSpread(page, fraction);
+			await expect(texts).toHaveText('Second page');
+		}
+		await clickSpread(page, 0.9);
+		await expect(texts).toHaveText('Second page');
+		await clickSpread(page, 0.1);
+		await expect(texts).toHaveText('Hello');
+		// A centered fullscreen page also leaves non-clickable margins.
+		await page.evaluate(() => document.documentElement.requestFullscreen());
+		await expect(page.getByRole('banner')).toBeHidden();
+		await page.mouse.click(1430, 400);
+		await expect(texts).toHaveText('Hello');
+		await clickSpread(page, 0.9);
+		await expect(texts).toHaveText('Second page');
+	});
+}
+
+test('spread click zones exclude blank space below a shorter page', async ({ page }) => {
+	await mockDirectory(page, { mixedSizes: true, pageCount: 4 });
+	await openComic(page, '2P');
+	await selectMenu(page, 'FIT', '50%');
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	const images = page.getByRole('img', { name: 'Comic page' });
+	const short = (await images.last().boundingBox())!;
+	await page.mouse.click(short.x + short.width - 10, short.y + short.height + 20);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/02.png'
+	);
+	await clickSpread(page, 0.1);
+	await clickSpread(page, 0.9);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/03.png'
+	);
+	// A click in the spread's middle half stays put even on the edge of one page.
+	await clickSpread(page, 0.55);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/03.png'
+	);
+	await clickSpread(page, 0.1);
+	await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
+		'data-page-path',
+		'album/01.png'
+	);
 });
 
 test('navigation leaves editor clicks and text cursor keys available', async ({ page }) => {
@@ -373,7 +467,7 @@ test('edit text, resize a bubble and retain edits when switching languages', asy
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await page.locator('[contenteditable=true]').fill('Edited text');
-	const handle = page.locator('circle').last();
+	const handle = page.locator('main circle').last();
 	const point = await handle.boundingBox();
 	if (!point) throw new Error('Missing drag handle');
 	await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
@@ -494,7 +588,7 @@ test('fit and percentage zoom update after image load and resize in page coordin
 	await expect.poll(async () => (await image.boundingBox())?.width).toBeCloseTo(400, 0);
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	const handle = await page.locator('circle').last().boundingBox();
+	const handle = await page.locator('main circle').last().boundingBox();
 	if (!handle) throw new Error('Missing drag handle');
 	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
 	await page.mouse.down();
@@ -631,7 +725,7 @@ test('2P defaults to a separated spread, fits mixed page sizes and remembers the
 }) => {
 	await mockDirectory(page, { pageCount: 5, mixedSizes: true });
 	await openComic(page, '2P');
-	await expect(page.getByRole('menuitem', { name: '2P', exact: true })).toBeVisible();
+	await expect(layoutButton(page, '2P')).toBeVisible();
 	const images = page.getByRole('img', { name: 'Comic page' });
 	await expect(images).toHaveCount(2);
 	const viewport = page.locator('main .viewport');
@@ -697,7 +791,7 @@ test('2P defaults to a separated spread, fits mixed page sizes and remembers the
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/02.png');
 	await expect(page.locator('.page-separator')).toHaveCount(0);
 	await page.reload();
-	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
+	await expect(layoutButton(page, '1P')).toBeVisible();
 });
 
 for (const pageCount of [5, 6]) {
@@ -709,25 +803,22 @@ for (const pageCount of [5, 6]) {
 		await selectMenu(page, 'ORG', 'EN');
 		const texts = page.locator('foreignObject');
 		await expect(texts).toHaveText(['Hello', 'Second page']);
-		const pane = page.locator('main');
-		const bounds = (await pane.boundingBox())!;
-		const right = { x: bounds.width - 10, y: 400 };
-		await pane.click({ position: { x: 10, y: 400 } });
+		await clickSpread(page, 0.1);
 		await page.keyboard.press('ArrowRight');
 		await expect(texts).toHaveText(['Page 3', 'Page 4']);
 		await page.keyboard.press('Shift+ArrowLeft');
 		await expect(texts).toHaveText(['Second page', 'Page 3']);
-		await pane.click({ position: right, modifiers: ['Shift'] });
+		await clickSpread(page, 0.9, true);
 		await expect(texts).toHaveText(['Page 3', 'Page 4']);
-		await pane.click({ position: { x: 10, y: 400 }, modifiers: ['Shift'] });
+		await clickSpread(page, 0.1, true);
 		await expect(texts).toHaveText(['Second page', 'Page 3']);
 		await page.keyboard.press('Shift+ArrowRight');
 		await expect(texts).toHaveText(['Page 3', 'Page 4']);
-		await pane.click({ position: right });
+		await clickSpread(page, 0.9);
 		await expect(texts).toHaveText(pageCount === 5 ? ['Page 5'] : ['Page 5', 'Page 6']);
 		await page.keyboard.press('ArrowRight');
 		await expect(texts).toHaveText(pageCount === 5 ? ['Page 5'] : ['Page 5', 'Page 6']);
-		await pane.click({ position: { x: 10, y: 400 } });
+		await clickSpread(page, 0.1);
 		await expect(texts).toHaveText(['Page 3', 'Page 4']);
 		await page.keyboard.press('ArrowLeft');
 		await expect(texts).toHaveText(['Hello', 'Second page']);
@@ -860,7 +951,7 @@ test('fullscreen hides reader UI, fills the window, and restores editing and sid
 	await expect(page.getByRole('banner')).toBeHidden();
 	await expect(page.getByRole('tree')).toBeHidden();
 	await expect(page.getByRole('textbox')).toHaveCount(0);
-	await expect(page.locator('circle')).toHaveCount(0);
+	await expect(page.locator('main circle')).toHaveCount(0);
 	await expect
 		.poll(() => page.locator('main').boundingBox())
 		.toEqual({ x: 0, y: 0, width: 1440, height: 1100 });
@@ -872,7 +963,7 @@ test('fullscreen hides reader UI, fills the window, and restores editing and sid
 	await page.evaluate(() => document.exitFullscreen());
 	await expect(page.getByRole('banner')).toBeVisible();
 	await expect(page.getByRole('tree')).toBeVisible();
-	await expect(page.getByRole('menuitem', { name: 'EDIT: YES', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Edit Mode', exact: true })).toBeVisible();
 	await expect.poll(() => page.locator('main').boundingBox()).toEqual(before);
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Fullscreen edit', 'Second page']);
@@ -1091,7 +1182,7 @@ test('1/s and 2/d switch page layout, retain the left page and work in fullscree
 		['d', '2P']
 	]) {
 		await page.keyboard.press(key);
-		await expect(page.getByRole('menuitem', { name: mode, exact: true })).toBeVisible();
+		await expect(layoutButton(page, mode)).toBeVisible();
 		await expect(page.locator('[data-page-path]')).toHaveCount(mode === '1P' ? 1 : 2);
 		await expect(page.locator('[data-page-path]').first()).toHaveAttribute(
 			'data-page-path',
@@ -1108,9 +1199,9 @@ test('1/s and 2/d switch page layout, retain the left page and work in fullscree
 	await expect(page.locator('[data-page-path]')).toHaveCount(1);
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/02.png');
 	await page.evaluate(() => document.exitFullscreen());
-	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
+	await expect(layoutButton(page, '1P')).toBeVisible();
 	await page.reload();
-	await expect(page.getByRole('menuitem', { name: '1P', exact: true })).toBeVisible();
+	await expect(layoutButton(page, '1P')).toBeVisible();
 });
 
 test('page layout shortcuts leave text editing, modified keys and composition alone', async ({
@@ -1124,7 +1215,7 @@ test('page layout shortcuts leave text editing, modified keys and composition al
 	await text.fill('');
 	await text.pressSequentially('12sd');
 	await expect(text).toHaveText('12sd');
-	await expect(page.getByRole('menuitem', { name: '2P', exact: true })).toBeVisible();
+	await expect(layoutButton(page, '2P')).toBeVisible();
 	for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'isComposing']) {
 		const prevented = await page.evaluate(
 			(modifier) =>
@@ -1134,6 +1225,6 @@ test('page layout shortcuts leave text editing, modified keys and composition al
 			modifier
 		);
 		expect(prevented).toBe(false);
-		await expect(page.getByRole('menuitem', { name: '2P', exact: true })).toBeVisible();
+		await expect(layoutButton(page, '2P')).toBeVisible();
 	}
 });
