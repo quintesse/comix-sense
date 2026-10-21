@@ -5,12 +5,15 @@
 	import AlbumIcon from './icons/AlbumIcon.svelte';
 	import CollectionIcon from './icons/CollectionIcon.svelte';
 	import PageIcon from './icons/PageIcon.svelte';
+	import ToolbarIcon from './icons/ToolbarIcon.svelte';
+	import { flag } from './languageFlags';
 	import HardDriveIcon from './icons/HardDriveIcon.svelte';
 	import { comicNodeId, type ComicFolder } from './types/ComicFolder';
 	import DisconnectIcon from './icons/DisconnectIcon.svelte';
 
 	interface Props {
 		folders?: ComicFolder[];
+		selectedLanguage?: string;
 		selectedComic?: Comic | null;
 		expandedIds?: string[];
 		onselect?: (comic: Comic) => void;
@@ -20,6 +23,7 @@
 
 	let {
 		folders = [],
+		selectedLanguage = 'org',
 		selectedComic = $bindable(null),
 		expandedIds = $bindable([]),
 		onselect,
@@ -78,7 +82,7 @@
 		};
 	}
 
-	type TreeChild = TreeNode & { fullName?: string };
+	type TreeChild = TreeNode & { fullName?: string; page?: Comic };
 
 	function comicsChildren(
 		folder: ComicFolder,
@@ -99,13 +103,14 @@
 					(c.archiveState ? ` (${c.archiveState})` : '') +
 					(c.kind === 'collection' ? '/' : ''),
 				fullName: c.entryPath ?? c.fileName,
+				page: c.kind === 'page' ? c : undefined,
 
 				icon:
 					c.kind === 'album' || c.kind === 'archive'
 						? AlbumIcon
 						: c.kind === 'collection'
 							? CollectionIcon
-							: PageIcon
+							: undefined
 			};
 			idx[0] = idx[0] + 1;
 			if (c.kind === 'album' || c.kind === 'collection' || c.kind === 'archive') {
@@ -181,6 +186,22 @@
 					}}><DisconnectIcon /></button
 				>
 			</span>
+		{:else if (node as TreeChild).page}
+			{@const page = (node as TreeChild).page!}
+			{@const translated = selectedLanguage !== 'org' && page.languages.includes(selectedLanguage)}
+			{@const flagUrl = translated ? flag(selectedLanguage) : undefined}
+			<span class="page-row">
+				<span class="page-icon bx--tree-node__icon" aria-hidden="true">
+					{#if translated && selectedLanguage.toLowerCase() === 'ocr'}
+						<ToolbarIcon name="video" />
+					{:else if flagUrl}
+						<img src={flagUrl} alt="" width="16" height="16" />
+					{:else}
+						<PageIcon />
+					{/if}
+				</span>
+				<span title={(node as TreeChild).fullName}>{node.text}</span>
+			</span>
 		{:else}
 			<span title={(node as TreeChild).fullName}>{node.text}</span>
 		{/if}
@@ -188,6 +209,22 @@
 </div>
 
 <style>
+	.page-row {
+		display: inline-flex;
+		align-items: flex-start;
+	}
+	.page-icon {
+		display: inline-flex;
+		flex: 0 0 16px;
+		width: 16px;
+		height: 16px;
+	}
+	.page-icon :global(svg),
+	.page-icon img {
+		width: 16px;
+		height: 16px;
+		object-fit: contain;
+	}
 	.comic-tree :global(.bx--tree .bx--tree-node) {
 		background-color: #fff;
 	}
