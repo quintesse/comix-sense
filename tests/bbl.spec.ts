@@ -532,14 +532,14 @@ test('reader renders inherited fonts, keeps SVG styles separate, scales text and
 	const select = async (name: string, option: string) => {
 		await page.getByRole('menuitem', { name, exact: true }).click();
 		await page.getByRole('menu', { name, exact: true }).getByText(option, { exact: true }).click();
-		const next = name.startsWith('EDIT:') ? 'EDIT: ' + option.toUpperCase() : option.toUpperCase();
+		const next = option.toUpperCase();
 		const menu = page.getByRole('menu', { name: next, exact: true });
 		if (await menu.isVisible())
 			await page.getByRole('menuitem', { name: next, exact: true }).click();
 	};
 	await page.goto('./');
 	await page.getByRole('button', { name: 'Add folder' }).click();
-	await select('2P', '1P');
+	await page.getByRole('button', { name: 'Single Page', exact: true }).click();
 	await page.getByRole('treeitem', { name: 'book/', exact: true }).press('ArrowRight');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	const text = page.locator('foreignObject div').first();
@@ -559,7 +559,7 @@ test('reader renders inherited fonts, keeps SVG styles separate, scales text and
 		.toBe(200);
 	await expect(text).toHaveCSS('font-size', '44px');
 	await select('200%', 'Fit');
-	await select('EDIT: NO', 'Yes');
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await page.getByRole('textbox').fill('Edited');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveCount(0);
