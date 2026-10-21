@@ -128,6 +128,7 @@
 	let browserLanguages = $state<readonly string[]>([]);
 	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
+	let showBubbles = $state(true);
 
 	let folders = $state.raw<ComicFolder[]>([]);
 	let savedDirectories = $state.raw<SidebarDirectory[]>([]);
@@ -380,11 +381,24 @@
 			event.isComposing ||
 			event.altKey ||
 			event.ctrlKey ||
-			event.metaKey ||
-			isNavigationControl(event.target)
+			event.metaKey
 		)
 			return;
 		const key = event.key.toLowerCase();
+		if (
+			key === 'b' &&
+			!(
+				event.target instanceof Element &&
+				event.target.closest(
+					'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]'
+				)
+			)
+		) {
+			event.preventDefault();
+			if (!event.repeat) showBubbles = !showBubbles;
+			return;
+		}
+		if (isNavigationControl(event.target)) return;
 		const mode = key === '1' || key === 's' ? '1P' : key === '2' || key === 'd' ? '2P' : undefined;
 		if (mode) {
 			event.preventDefault();
@@ -532,7 +546,7 @@
 
 	function setupMenu(evt: CustomEvent<Element>) {
 		menuTargetBubble = undefined;
-		if (!editable) return;
+		if (!editable || !showBubbles) return;
 		for (const view of pageViews) {
 			const target = view?.getBubble(evt.detail);
 			if (target) {
@@ -658,6 +672,20 @@
 				</TileGroup>
 			</HeaderNavMenu>
 
+			<li role="none">
+				<button
+					type="button"
+					class="bx--header__menu-item bubble-toggle"
+					role="menuitemcheckbox"
+					aria-checked={showBubbles}
+					aria-keyshortcuts="b"
+					title="Show/hide bubbles (B)"
+					onclick={() => (showBubbles = !showBubbles)}
+				>
+					BUBBLES: {showBubbles ? 'ON' : 'OFF'}
+				</button>
+			</li>
+
 			<HeaderNavMenu href={resolve('/')} text={'EDIT: ' + selectedEdit.toUpperCase()}>
 				<TileGroup bind:selected={selectedEdit}>
 					<RadioTile value="yes">Yes</RadioTile>
@@ -756,6 +784,7 @@
 						image={page.image}
 						loadedBubbles={page.bubbles}
 						language={page.language}
+						{showBubbles}
 						{editable}
 						{selectedShape}
 					/>
@@ -819,6 +848,12 @@
 </div>
 
 <style>
+	.bubble-toggle {
+		border: 0;
+		font: inherit;
+		cursor: pointer;
+	}
+
 	.reader-shell :global(.bx--side-nav__resize-handle::after) {
 		background-color: #c6c6c6;
 		transition: none;

@@ -10,6 +10,7 @@
 		language,
 		image,
 		loadedBubbles,
+		showBubbles = true,
 		editable,
 		selectedShape
 	}: {
@@ -17,6 +18,7 @@
 		language: string;
 		image: PageImage;
 		loadedBubbles: Bubble[];
+		showBubbles?: boolean;
 		editable: boolean;
 		selectedShape: BblShapeType;
 	} = $props();
@@ -42,14 +44,16 @@
 		img={image.url}
 		width={image.width}
 		height={image.height}
-		{editable}
+		editable={editable && showBubbles}
 		{selectedShape}
 		onshape={(shape) => bubbles.push({ text: '', shape })}
 	>
 		{#snippet children({ renderMode })}
-			{#each bubbles as bubble, i (bubble)}
-				<ComicBubble bind:bubble={bubbles[i]} bubbleIndex={i} {renderMode} {editable} />
-			{/each}
+			{#if showBubbles}
+				{#each bubbles as bubble, i (bubble)}
+					<ComicBubble bind:bubble={bubbles[i]} bubbleIndex={i} {renderMode} {editable} />
+				{/each}
+			{/if}
 		{/snippet}
 	</ComicPage>
 </div>

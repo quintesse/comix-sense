@@ -23,45 +23,44 @@
 			.join('');
 	}
 
-	function shapeOnly(): boolean {
-		return renderMode === 'clippath';
-	}
-
 	let cursor = $derived(bubble.shape.type === BblShapeType.box ? 'nw-resize' : 'move');
 	let shapeStyle = $derived(styleString(bubble.style));
 	let bb = $derived(bounds(bubble.shape.vs));
 </script>
 
-{#if bubble.shape.type === BblShapeType.box}
-	<rect x={bb.x1} y={bb.y1} width={bb.w} height={bb.h} class="bubble" style={shapeStyle}>
-		{#if bubble.text && !shapeOnly()}
-			<title>{bubble.text}</title>
-		{/if}
-	</rect>
-{:else if bubble.shape.type === BblShapeType.poly}
-	<polygon points={points(bubble.shape.vs)} class="bubble" style={shapeStyle}>
-		{#if bubble.text && !shapeOnly()}
-			<title>{bubble.text}</title>
-		{/if}
-	</polygon>
+{#if renderMode === 'normal' || renderMode === 'shapes' || renderMode === 'clippath'}
+	{#if bubble.shape.type === BblShapeType.box}
+		<rect x={bb.x1} y={bb.y1} width={bb.w} height={bb.h} class="bubble" style={shapeStyle}>
+			{#if bubble.text && renderMode !== 'clippath'}
+				<title>{bubble.text}</title>
+			{/if}
+		</rect>
+	{:else if bubble.shape.type === BblShapeType.poly}
+		<polygon points={points(bubble.shape.vs)} class="bubble" style={shapeStyle}>
+			{#if bubble.text && renderMode !== 'clippath'}
+				<title>{bubble.text}</title>
+			{/if}
+		</polygon>
+	{/if}
 {/if}
 
-{#if !shapeOnly()}
+{#if renderMode === 'normal' || renderMode === 'text'}
 	<foreignObject data-bubble-index={bubbleIndex} x={bb.x1} y={bb.y1} width={bb.w} height={bb.h}>
 		{#if editable}
 			<div
+				title={bubble.text}
 				role="textbox"
 				aria-label="Bubble text"
 				contenteditable="true"
 				bind:textContent={bubble.text}
 			></div>
 		{:else}
-			<div>{bubble.text}</div>
+			<div title={bubble.text}>{bubble.text}</div>
 		{/if}
 	</foreignObject>
 {/if}
 
-{#if editable && !shapeOnly()}
+{#if editable && (renderMode === 'normal' || renderMode === 'handles')}
 	{#each bubble.shape.vs as v, i}
 		<DragHandle bind:shape={bubble.shape} index={i} style={'cursor:' + cursor} />
 	{/each}
@@ -81,7 +80,7 @@
 	foreignObject div {
 		font-size: 18pt;
 		line-height: 100%;
-		overflow: hidden;
+		overflow: visible;
 		width: 100%;
 		height: 100%;
 		word-wrap: break-word;
