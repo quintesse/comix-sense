@@ -35,55 +35,94 @@
 				: vs.length >= 4 && distance(vs[0], vs[vs.length - 1]) < 10)
 	);
 
-	function handleClick(event: MouseEvent) {
-		if (event.button !== 0) return;
-		const point = svgPoint(svg, event);
-		if (!drawing) {
-			if (!(event.target instanceof SVGImageElement)) return;
-			vs = [point, point];
-		} else {
-			vs[vs.length - 1] = point;
-			if (shape === BblShapeType.box || (vs.length >= 4 && distance(vs[0], point) < 10)) {
-				if (valid) {
-					const vertices = shape === BblShapeType.box ? boundsv(vs) : vs.slice(0, -1);
-					onshape?.({ type: shape, vs: vertices.map((v) => vertex(v.x, v.y)) });
-				}
-				vs = [];
-			} else {
-				vs.push(point);
-			}
-		}
-	}
-
 	$effect(() => {
 		// Reset an unfinished shape when changing tool or page.
-		shape;
+		const tool = shape;
 		const target = svg;
 		vs = [];
-		target.addEventListener('click', handleClick);
-		return () => target.removeEventListener('click', handleClick);
-	});
+		// Measure intent in screen pixels so the threshold stays consistent at any zoom.
+		const minimumDrag = 8;
+		let start: { point: Vertex; x: number; y: number } | undefined;
+		let ignoreClick = false;
 
-	$effect(() => {
-		if (!drawing) return;
+		function cancel() {
+			start = undefined;
+			vs = [];
+		}
+		function finish() {
+			if (valid) {
+				const vertices = tool === BblShapeType.box ? boundsv(vs) : vs.slice(0, -1);
+				onshape?.({ type: tool, vs: vertices.map((v) => vertex(v.x, v.y)) });
+			}
+			cancel();
+		}
+		function down(event: MouseEvent) {
+			ignoreClick = false;
+			if (event.button !== 0 || drawing || !(event.target instanceof SVGImageElement)) return;
+			event.preventDefault();
+			start = { point: svgPoint(target, event), x: event.clientX, y: event.clientY };
+		}
 		function move(event: MouseEvent) {
-			vs[vs.length - 1] = svgPoint(svg, event);
+			if (start) {
+				if (!(event.buttons & 1)) {
+					cancel();
+					return;
+				}
+				if (!drawing) {
+					if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < minimumDrag) return;
+					vs = [start.point, svgPoint(target, event)];
+				}
+			}
+			if (drawing) vs[vs.length - 1] = svgPoint(target, event);
+		}
+		function up(event: MouseEvent) {
+			if (event.button !== 0 || !start) return;
+			ignoreClick = true;
+			if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < minimumDrag) {
+				cancel();
+				return;
+			}
+			start = undefined;
+			if (!drawing) return;
+			vs[vs.length - 1] = svgPoint(target, event);
+			if (tool === BblShapeType.box) finish();
+			else vs.push(svgPoint(target, event));
+		}
+		function click(event: MouseEvent) {
+			if (ignoreClick) {
+				ignoreClick = false;
+				return;
+			}
+			if (event.button !== 0 || !drawing || start || tool !== BblShapeType.poly) return;
+			const point = svgPoint(target, event);
+			vs[vs.length - 1] = point;
+			if (vs.length >= 4 && distance(vs[0], point) < 10) finish();
+			else vs.push(point);
 		}
 		function keydown(event: KeyboardEvent) {
+			if (!drawing && !start) return;
 			if (event.key === 'Escape') {
 				event.preventDefault();
-				vs = [];
+				cancel();
 			} else if (event.key === 'Backspace') {
 				event.preventDefault();
-				if (vs.length > 2) vs.splice(vs.length - 2, 1);
-				else vs = [];
+				if (!start && vs.length > 2) vs.splice(vs.length - 2, 1);
+				else cancel();
 			}
 		}
-		svg.addEventListener('mousemove', move);
+		target.addEventListener('mousedown', down);
+		target.addEventListener('click', click);
+		document.addEventListener('mousemove', move);
+		document.addEventListener('mouseup', up);
 		document.addEventListener('keydown', keydown);
+		window.addEventListener('blur', cancel);
 		return () => {
-			svg.removeEventListener('mousemove', move);
+			target.removeEventListener('mousedown', down);
+			target.removeEventListener('click', click);
+			document.removeEventListener('mousemove', move);
+			document.removeEventListener('mouseup', up);
 			document.removeEventListener('keydown', keydown);
+			window.removeEventListener('blur', cancel);
 		};
 	});
 </script>

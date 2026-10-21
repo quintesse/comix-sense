@@ -416,7 +416,7 @@ test('navigation leaves editor clicks and text cursor keys available', async ({ 
 	await text.press('ArrowLeft');
 	await expect(text).toHaveText('Edited text');
 	await clickPage(page, 600, 400);
-	await expect(page.locator('.drawing-target')).toHaveCount(1);
+	await expect(page.locator('.drawing-target')).toHaveCount(0);
 	await expect(text).toHaveText('Edited text');
 });
 
@@ -514,28 +514,36 @@ async function clickPage(page: Page, x: number, y: number) {
 	await page.mouse.click(point.x, point.y);
 }
 
+async function dragPage(page: Page, x1: number, y1: number, x2: number, y2: number) {
+	const start = await pagePoint(page, x1, y1);
+	const end = await pagePoint(page, x2, y2);
+	await page.mouse.move(start.x, start.y);
+	await page.mouse.down();
+	await page.mouse.move(end.x, end.y, { steps: 5 });
+	await page.mouse.up();
+}
+
 test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	await clickPage(page, 400, 300);
-	await clickPage(page, 650, 420);
+	await dragPage(page, 400, 300, 650, 420);
 	await expect(page.locator('foreignObject')).toHaveCount(2);
 	await page.getByRole('textbox').last().fill('New bubble');
 	await expect(page.locator('.svgcontent rect').last()).toHaveAttribute('width', '250');
 	await page.getByRole('textbox').last().click({ button: 'right' });
 	await page.getByText('Convert to Poly', { exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(1);
-	// Every background precedes every text overlay, and all edit handles stay on top.
+	// Each bubble stacks its shape and text together; edit handles stay above all bubbles.
 	await expect
 		.poll(() =>
 			page
 				.locator('.svgcontent')
 				.evaluate((layer) => Array.from(layer.children, (element) => element.localName))
 		)
-		.toEqual(['rect', 'polygon', 'foreignObject', 'foreignObject', ...Array(6).fill('circle')]);
+		.toEqual(['rect', 'foreignObject', 'polygon', 'foreignObject', ...Array(6).fill('circle')]);
 	await page.getByRole('textbox').last().click({ button: 'right' });
 	await page.getByText('Convert to Box', { exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(0);
@@ -544,8 +552,7 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 	await expect(page.locator('foreignObject')).toHaveCount(1);
 
 	await selectMenu(page, 'BOX', 'Poly');
-	await clickPage(page, 400, 300);
-	await clickPage(page, 650, 300);
+	await dragPage(page, 400, 300, 650, 300);
 	await clickPage(page, 650, 450);
 	await clickPage(page, 400, 300);
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(1);
@@ -556,22 +563,247 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 	await page.screenshot({ path: test.info().outputPath('editor.png') });
 });
 
+test('delete a polygon point on the right page while keeping at least three vertices', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page, '2P');
+	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	const leftPage = page.locator('[data-page-path="album/01.png"]');
+	const rightPage = page.locator('[data-page-path="album/02.png"]');
+	await rightPage.getByRole('textbox').click({ button: 'right' });
+	await page.getByText('Convert to Poly', { exact: true }).click();
+	await expect(rightPage.locator('circle')).toHaveCount(4);
+
+	// A text menu must not inherit a previously targeted vertex.
+	await rightPage.locator('circle[data-point-index="0"]').click({ button: 'right' });
+	await expect(page.getByText('Delete point', { exact: true })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await rightPage.getByRole('textbox').click({ button: 'right' });
+	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
+	await page.keyboard.press('Escape');
+
+	await rightPage.locator('circle[data-point-index="1"]').click({ button: 'right' });
+	await page.getByText('Delete point', { exact: true }).click();
+	await expect(rightPage.locator('.svgcontent polygon')).toHaveAttribute(
+		'points',
+		'80,80 300,180 80,180'
+	);
+	await expect(rightPage.locator('circle')).toHaveCount(3);
+	await expect(rightPage.getByRole('textbox')).toHaveText('Second page');
+	await expect(leftPage.locator('circle')).toHaveCount(2);
+	await expect(leftPage.getByRole('textbox')).toHaveText('Hello');
+
+	await rightPage.locator('circle[data-point-index="1"]').click({ button: 'right' });
+	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await leftPage.locator('circle').first().click({ button: 'right' });
+	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
+	await page.keyboard.press('Escape');
+
+	// Remaining handles still refer to the correct vertices after removing a middle point.
+	const handle = await rightPage.locator('circle[data-point-index="1"]').boundingBox();
+	if (!handle) throw new Error('Missing polygon handle');
+	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(handle.x + handle.width / 2 + 20, handle.y + handle.height / 2 + 20);
+	await page.mouse.up();
+	const points = await rightPage.locator('.svgcontent polygon').getAttribute('points');
+	expect(points).not.toBe('80,80 300,180 80,180');
+	expect(points?.split(' ')[0]).toBe('80,80');
+	expect(points?.split(' ')[2]).toBe('80,180');
+	await selectMenu(page, 'EN', 'NL');
+	await selectMenu(page, 'NL', 'EN');
+	await expect(rightPage.locator('.svgcontent polygon')).toHaveAttribute('points', points!);
+});
+
+test('focus and handle presses raise the active shape, editor and highlighted handles', async ({
+	page
+}) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await selectMenu(page, 'FIT', '100%');
+	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	// Draw a second bubble with a corner exactly on the first bubble's corner.
+	await dragPage(page, 400, 300, 300, 180);
+	await page.getByRole('textbox').last().click({ button: 'right' });
+	await page.getByText('Convert to Poly', { exact: true }).click();
+	const handles = page.locator('.svgcontent circle');
+	const activeHandles = page.locator('.svgcontent circle.active');
+	const box = page.locator('foreignObject[data-bubble-index="0"]');
+	const poly = page.locator('foreignObject[data-bubble-index="1"]');
+	await expect(handles).toHaveCount(6);
+
+	await box.getByRole('textbox').focus();
+	await expect(box.getByRole('textbox')).toBeFocused();
+	await expect(page.locator('foreignObject').last()).toHaveAttribute('data-bubble-index', '0');
+	await expect
+		.poll(() => page.locator('.svgcontent').evaluate((layer) => layer.children[2].localName))
+		.toBe('rect');
+	await expect(activeHandles).toHaveCount(2);
+	await expect(handles.nth(4)).toHaveAttribute('class', /active/);
+	await expect(handles.nth(5)).toHaveAttribute('class', /active/);
+	await expect(activeHandles.first()).toHaveCSS('fill', 'rgb(15, 98, 254)');
+
+	// Hit testing at the shared corner must choose the raised box handle.
+	const shared = await pagePoint(page, 300, 180);
+	const moved = await pagePoint(page, 320, 200);
+	await page.mouse.move(shared.x, shared.y);
+	await page.mouse.down();
+	await page.mouse.move(moved.x, moved.y, { steps: 5 });
+	await page.mouse.up();
+	await expect(box).toHaveAttribute('width', '240');
+	await expect(poly).toHaveAttribute('width', '100');
+
+	// Pressing a different shape's handle activates its whole set immediately,
+	// and moving its DOM nodes to the front must not interrupt the drag.
+	const corner = await pagePoint(page, 400, 300);
+	const destination = await pagePoint(page, 420, 320);
+	await page.mouse.move(corner.x, corner.y);
+	await page.mouse.down();
+	await expect(page.locator('foreignObject').last()).toHaveAttribute('data-bubble-index', '1');
+	await expect
+		.poll(() => page.locator('.svgcontent').evaluate((layer) => layer.children[2].localName))
+		.toBe('polygon');
+	await expect(activeHandles).toHaveCount(4);
+	await expect(handles.nth(0)).not.toHaveAttribute('class', /active/);
+	await expect(handles.nth(1)).not.toHaveAttribute('class', /active/);
+	for (let index = 2; index < 6; index++) {
+		await expect(handles.nth(index)).toHaveAttribute('class', /active/);
+		await expect(handles.nth(index)).toHaveCSS('fill', 'rgb(15, 98, 254)');
+	}
+	await page.mouse.move(destination.x, destination.y, { steps: 5 });
+	await page.mouse.up();
+	await expect(poly).toHaveAttribute('width', '120');
+	await expect(poly).toHaveAttribute('height', '140');
+	await expect(box).toHaveText('Hello');
+
+	await box.getByRole('textbox').focus();
+	await expect(activeHandles).toHaveCount(2);
+	await page.keyboard.press('End');
+	await page.keyboard.insertText('!');
+	await expect(box).toHaveText('Hello!');
+	await poly.getByRole('textbox').focus();
+	await expect(activeHandles).toHaveCount(4);
+	await expect(poly.getByRole('textbox')).toBeFocused();
+
+	await box.getByRole('textbox').click();
+	await box.getByRole('textbox').click();
+	await expect(activeHandles).toHaveCount(2);
+	await expect(box.getByRole('textbox')).toBeFocused();
+	await clickPage(page, 700, 700);
+	await expect(activeHandles).toHaveCount(0);
+	await expect(box.getByRole('textbox')).not.toBeFocused();
+	await expect(box).toHaveText('Hello!');
+	await expect(page.locator('foreignObject').last()).toHaveAttribute('data-bubble-index', '1');
+	await expect(handles.first()).toHaveCSS('opacity', '0.2');
+	await expect(page.locator('.drawing-target')).toHaveCount(0);
+	await expect(page.locator('foreignObject')).toHaveCount(2);
+	await box.getByRole('textbox').click();
+	await expect(activeHandles).toHaveCount(2);
+	await expect(box.getByRole('textbox')).toBeFocused();
+});
+
+test('clicking another page or the toolbar leaves the previous bubble editor', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page, '2P');
+	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
+	const leftPage = page.locator('[data-page-path="album/01.png"]');
+	const rightPage = page.locator('[data-page-path="album/02.png"]');
+	const leftText = leftPage.getByRole('textbox');
+	const rightText = rightPage.getByRole('textbox');
+	await leftText.click();
+	await expect(leftPage.locator('circle.active')).toHaveCount(2);
+	await rightText.click();
+	await expect(leftPage.locator('circle.active')).toHaveCount(0);
+	await expect(leftText).not.toBeFocused();
+	await expect(rightText).toBeFocused();
+	await expect(rightPage.locator('circle.active')).toHaveCount(2);
+	await rightPage.locator('circle').first().click();
+	await expect(rightPage.locator('circle.active')).toHaveCount(2);
+	await expect(rightText).not.toBeFocused();
+	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
+	await expect(page.locator('circle.active')).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await rightText.click();
+	await page.keyboard.press('End');
+	await page.keyboard.insertText('!');
+	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
+	await expect(rightText).not.toBeFocused();
+	await expect(page.locator('circle.active')).toHaveCount(0);
+	await expect(rightText).toHaveText('Second page!');
+});
+
+for (const tool of ['Box', 'Poly']) {
+	for (const zoom of ['50%', '100%']) {
+		test(`${tool} requires a deliberate drag at ${zoom} zoom`, async ({ page }) => {
+			await mockDirectory(page);
+			await openComic(page);
+			await selectMenu(page, 'FIT', zoom);
+			await selectMenu(page, 'EDIT: NO', 'Yes');
+			if (tool === 'Poly') await selectMenu(page, 'BOX', 'Poly');
+			const origin = await pagePoint(page, 400, 300);
+			await page.mouse.click(origin.x, origin.y);
+			await page.mouse.move(origin.x + 40, origin.y + 40);
+			await expect(page.locator('.drawing-target')).toHaveCount(0);
+			await expect(page.locator('foreignObject')).toHaveCount(0);
+
+			await page.mouse.move(origin.x, origin.y);
+			await page.mouse.down();
+			await page.mouse.move(origin.x + 4, origin.y + 4);
+			await expect(page.locator('.drawing-target')).toHaveCount(0);
+			await page.mouse.up();
+			await page.mouse.move(origin.x + 40, origin.y + 40);
+			await expect(page.locator('.drawing-target')).toHaveCount(0);
+			await expect(page.locator('foreignObject')).toHaveCount(0);
+
+			await page.mouse.move(origin.x, origin.y);
+			await page.mouse.down();
+			await page.mouse.move(origin.x + 20, origin.y + 20);
+			await expect(page.locator('.drawing-target')).toHaveCount(1);
+			await page.keyboard.press('Escape');
+			await page.mouse.up();
+			await expect(page.locator('.drawing-target')).toHaveCount(0);
+			await expect(page.locator('foreignObject')).toHaveCount(0);
+
+			await page.mouse.move(origin.x, origin.y);
+			await page.mouse.down();
+			await page.mouse.move(origin.x + 20, origin.y + 20);
+			await expect(page.locator('.drawing-target')).toHaveCount(1);
+			await expect(page.locator('foreignObject')).toHaveCount(0);
+			await page.mouse.up();
+			if (tool === 'Poly') {
+				await expect(page.locator('.drawing-target')).toHaveCount(1);
+				await expect(page.locator('foreignObject')).toHaveCount(0);
+				await page.mouse.click(origin.x + 20, origin.y + 40);
+				await page.mouse.click(origin.x, origin.y);
+			}
+			await expect(page.locator('.drawing-target')).toHaveCount(0);
+			await expect(page.locator('foreignObject')).toHaveCount(1);
+		});
+	}
+}
+
 test('cancel drawing with Escape and Backspace and reject a tiny box', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	await clickPage(page, 400, 300);
+	await selectMenu(page, 'BOX', 'Poly');
+	await dragPage(page, 400, 300, 600, 300);
 	await page.keyboard.press('Escape');
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await clickPage(page, 400, 300);
+	await dragPage(page, 400, 300, 600, 300);
+	await page.keyboard.press('Backspace');
 	await page.keyboard.press('Backspace');
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await clickPage(page, 400, 300);
-	await clickPage(page, 405, 305);
+	await selectMenu(page, 'POLY', 'Box');
+	await dragPage(page, 400, 300, 420, 305);
 	await expect(page.locator('foreignObject')).toHaveCount(0);
-	await clickPage(page, 400, 300);
-	await clickPage(page, 600, 400);
+	await dragPage(page, 400, 300, 600, 400);
 	await expect(page.locator('foreignObject')).toHaveCount(1);
 });
 
@@ -708,12 +940,13 @@ test('discard unfinished drawing when leaving a page or disabling editing', asyn
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	await clickPage(page, 400, 300);
+	await selectMenu(page, 'BOX', 'Poly');
+	await dragPage(page, 400, 300, 600, 300);
 	await expect(page.locator('.drawing-target')).toHaveCount(1);
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await clickPage(page, 400, 300);
+	await dragPage(page, 400, 300, 600, 300);
 	await selectMenu(page, 'EDIT: YES', 'No');
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
 	await page.keyboard.press('Backspace');
@@ -861,14 +1094,17 @@ test('edit both pages in 2P, target the right context menu and retain overlappin
 		)
 		.toBeLessThan(1000 / box.height);
 
-	await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.3);
-	await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.45);
+	await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.45, { steps: 5 });
+	await page.mouse.up();
 	await expect(rightPage.getByRole('textbox')).toHaveCount(2);
-	await rightPage.getByRole('textbox').last().fill('New on right');
-	await rightPage.getByRole('textbox').last().click({ button: 'right' });
+	const newBubble = rightPage.locator('foreignObject[data-bubble-index="1"]').getByRole('textbox');
+	await newBubble.fill('New on right');
+	await newBubble.click({ button: 'right' });
 	await page.getByText('Convert to Poly', { exact: true }).click();
 	await expect(rightPage.locator('.svgcontent polygon')).toHaveCount(1);
-	await rightPage.getByRole('textbox').last().click({ button: 'right' });
+	await newBubble.click({ button: 'right' });
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Left edit', 'Right edit']);
 	// Navigation starts outside editable text; the retained right page becomes the left page.
