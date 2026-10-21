@@ -12,8 +12,9 @@ async function setupDirectory(page: Page, nested = false, translations = false) 
 			// Real, cloneable browser handles exercise IndexedDB persistence across reloads.
 			Object.defineProperty(window, 'showDirectoryPicker', {
 				value: async () => {
-					const root = await navigator.storage.getDirectory();
+					// Capture the requested root when the picker opens, before async fixture creation.
 					const parentName = localStorage.getItem('pickerParent');
+					const root = await navigator.storage.getDirectory();
 					const parent = parentName
 						? await root.getDirectoryHandle(parentName, { create: true })
 						: root;
