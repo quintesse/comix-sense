@@ -21,6 +21,16 @@ export class Comic {
 	private typography = new Map<string, Map<string, Font>>();
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
+	private sourceLanguages = new Map<string, string>();
+
+	sourceLanguage(overlay: string): string | undefined {
+		return this.sourceLanguages.get(overlay);
+	}
+
+	setSourceLanguage(overlay: string, language: string | undefined): void {
+		if (language) this.sourceLanguages.set(overlay, language);
+		else this.sourceLanguages.delete(overlay);
+	}
 	private documents = new Map<string, string>();
 	private targets = new Map<string, string>();
 	readonly documentTargets = writable<ReadonlyMap<string, string>>(new Map());

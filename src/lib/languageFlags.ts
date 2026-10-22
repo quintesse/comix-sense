@@ -66,3 +66,22 @@ export function flag(language: string) {
 	const code = country === 'GB' ? 'GB-UKM' : country;
 	return code ? flags[`/node_modules/svelte-flagpack/dist/flags/m/${code}.svg`] : undefined;
 }
+
+const languageNames = new Intl.DisplayNames(['en'], { type: 'language', fallback: 'none' });
+
+export function languageLabel(language: string): string {
+	const code = language.toUpperCase();
+	if (!language || ['org', 'ocr', 'mrg'].includes(language.toLowerCase())) return code;
+	try {
+		const name = languageNames.of(language.replaceAll('_', '-'));
+		return name ? `${name} (${code})` : code;
+	} catch {
+		return code;
+	}
+}
+
+/** Language codes with the same representative Flagpack flags as the reader menu. */
+export const translationLanguages = Object.keys(countries)
+	.filter((language) => flag(language))
+	.map((language) => ({ id: language, text: languageLabel(language) }))
+	.sort((a, b) => a.text.localeCompare(b.text, 'en'));

@@ -10,6 +10,7 @@
 		//
 		Button,
 		Modal,
+		Dropdown,
 		TileGroup,
 		RadioTile,
 		//
@@ -43,7 +44,14 @@
 	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
 	import LanguageMenu from '#lib/LanguageMenu.svelte';
 	import OcrSettings from '#lib/OcrSettings.svelte';
-	import { prepareCleanup, requestCleanup, type AiSettings } from '#lib/textCleanup.js';
+	import { flag, languageLabel, translationLanguages } from '#lib/languageFlags.js';
+	import {
+		prepareCleanup,
+		requestCleanup,
+		requestTranslation,
+		resolveSourceLanguage,
+		type AiSettings
+	} from '#lib/textCleanup.js';
 	import { scanImage } from '#lib/ocr.js';
 	import { mergeBubbles } from '#lib/mergeBubbles.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
@@ -53,8 +61,29 @@
 	let settingsTab = $state('ocr');
 	let cleanupOpen = $state(false);
 	let cleanupScope = $state('page');
+	let translationOpen = $state(false);
+	let overwriteTranslationOpen = $state(false);
+	let translationTarget = $state('fr');
+	let aiOperation = $state<'cleanup' | 'translation'>('cleanup');
+	let targetLanguages = $derived(
+		translationLanguages.filter(({ id }) => id !== selectedLanguage.toLowerCase())
+	);
+	let translationSourceLabel = $derived.by(() => {
+		const page = displayedPages.find(
+			(page) => page.comic === $selectedComic && page.language === selectedLanguage
+		);
+		if (!page) return '(Unknown)';
+		const source = resolveSourceLanguage(selectedLanguage, [
+			{
+				bubbles: page.bubbles,
+				declaredLanguage: page.comic.sourceLanguage(selectedLanguage)
+			}
+		]);
+		return source === 'und' ? '(Unknown)' : languageLabel(source);
+	});
 	let cleaning = $state(false);
 	let cleanupMessage = $state('');
+	let cleanupWarning = $state('');
 	let cleanupError = $state('');
 	let cleanupController: AbortController | undefined;
 
@@ -69,45 +98,87 @@
 		)
 			return;
 		cleanupError = '';
+		cleanupWarning = '';
 		cleanupMessage = '';
 		cleanupOpen = true;
 	}
 
-	async function cleanText() {
+	function openTranslation() {
+		if (
+			!$selectedComic ||
+			cleaning ||
+			scanning ||
+			loadingPages ||
+			!editable ||
+			selectedLanguage === 'org'
+		)
+			return;
+		if (!targetLanguages.some(({ id }) => id === translationTarget))
+			translationTarget =
+				targetLanguages.find(({ id }) => id === 'en')?.id ?? targetLanguages[0].id;
+		translationOpen = true;
+	}
+
+	function submitTranslation(confirmed = false) {
+		const comic = $selectedComic;
+		if (!comic || !targetLanguages.some(({ id }) => id === translationTarget)) return;
+		const existing = comic.languages.find(
+			(lang) => lang.toLowerCase() === translationTarget.toLowerCase()
+		);
+		translationOpen = false;
+		if (existing && !confirmed) {
+			overwriteTranslationOpen = true;
+			return;
+		}
+		overwriteTranslationOpen = false;
+		void cleanText(existing ?? translationTarget);
+	}
+
+	async function cleanText(targetLanguage?: string) {
 		const comic = $selectedComic;
 		const language = selectedLanguage;
+		const translating = targetLanguage !== undefined;
+		const action = translating ? 'Translation' : 'Cleanup';
 		if (!comic || cleaning || scanning || !editable || language === 'org') return;
 		if (!ai.url.trim() || !ai.model.trim()) {
 			cleanupOpen = false;
+			translationOpen = false;
 			settingsTab = 'ai';
 			ocrSettingsOpen = true;
 			return;
 		}
 		const pages = [...albumPages];
-		const selected = cleanupScope === 'album' ? pages : [comic];
+		const selected = !translating && cleanupScope === 'album' ? pages : [comic];
+		const outputLanguage = targetLanguage ?? language;
+		aiOperation = translating ? 'translation' : 'cleanup';
 		cleanupOpen = false;
 		cleaning = true;
 		cleanupError = '';
-		cleanupMessage = 'Cleaning text…';
+		cleanupWarning = '';
+		cleanupMessage = translating ? 'Translating page…' : 'Cleaning text…';
 		const controller = new AbortController();
 		cleanupController = controller;
 		const timeout = window.setTimeout(() => controller.abort('timeout'), 180000);
 		try {
-			const job = await prepareCleanup(pages, selected, language);
+			const job = await prepareCleanup(pages, selected, language, outputLanguage);
 			if (!job.document.items.some((item) => item.text.trim()))
-				throw new Error('No bubble text to clean in this overlay.');
+				throw new Error('No bubble text in this overlay.');
 			controller.signal.throwIfAborted();
-			const result = await requestCleanup(job.document, { ...ai }, controller.signal);
+			const result = await (translating ? requestTranslation : requestCleanup)(
+				job.document,
+				{ ...ai },
+				controller.signal
+			);
 			controller.signal.throwIfAborted();
-			const changed = await job.apply(
+			const { changed, missingIds } = await job.apply(
 				result,
 				(page) => folders.some((folder) => folder.comics.includes(page)),
 				controller.signal
 			);
 			const refreshed = await Promise.all(
 				displayedPages.map(async (page) =>
-					page.language === language && selected.includes(page.comic)
-						? { ...page, bubbles: await page.comic.getBubbles(language) }
+					page.language === outputLanguage && selected.includes(page.comic)
+						? { ...page, bubbles: await page.comic.getBubbles(outputLanguage) }
 						: page
 				)
 			);
@@ -117,14 +188,25 @@
 				);
 				return updated ? { ...page, bubbles: updated.bubbles } : page;
 			});
-			cleanupMessage = `${changed} bubble text${changed === 1 ? '' : 's'} updated. Use Save Changes to write them to disk.`;
+			if (translating) {
+				comics.update((values) => [...values]);
+				if ($selectedComic === comic && comic.languages.includes(outputLanguage)) {
+					selectLanguage(outputLanguage);
+					showBubbles = true;
+				}
+			}
+			cleanupMessage = translating
+				? `${job.document.items.length - missingIds.length} bubbles translated to ${outputLanguage.toUpperCase()}.${job.document.items.length > missingIds.length ? ' Use Save Changes to write the translation to disk.' : ''}`
+				: `${changed} bubble text${changed === 1 ? '' : 's'} updated.${changed ? ' Use Save Changes to write them to disk.' : ''}`;
+			if (missingIds.length)
+				cleanupWarning = `AI omitted ${missingIds.length} bubble${missingIds.length === 1 ? '' : 's'}. ${translating ? 'Existing target bubbles were kept where available; otherwise source text was kept. An empty result leaves the target unchanged.' : 'Their text was left unchanged.'}`;
 		} catch (error) {
 			cleanupMessage = '';
 			cleanupError = controller.signal.aborted
 				? controller.signal.reason === 'timeout'
-					? 'Cleanup timed out. No text was replaced.'
-					: 'Cleanup cancelled. No text was replaced.'
-				: 'Cleanup failed: ' + (error instanceof Error ? error.message : String(error));
+					? `${action} timed out. No text was replaced.`
+					: `${action} cancelled. No text was replaced.`
+				: `${action} failed: ` + (error instanceof Error ? error.message : String(error));
 		} finally {
 			window.clearTimeout(timeout);
 			cleaning = false;
@@ -214,6 +296,8 @@
 				: undefined;
 			await comic.editBubbles(ocrLanguage, result.bubbles);
 			if (merged) await comic.editBubbles(mergedLanguage, merged);
+			comic.setSourceLanguage(ocrLanguage, result.lang);
+			if (merged) comic.setSourceLanguage(mergedLanguage, result.lang);
 			comic.setBubbles(ocrLanguage, result.bubbles);
 			if (merged) comic.setBubbles(mergedLanguage, merged);
 			comic.languages = [
@@ -685,6 +769,8 @@
 			disconnectOpen ||
 			ocrSettingsOpen ||
 			cleanupOpen ||
+			translationOpen ||
+			overwriteTranslationOpen ||
 			overwriteOcrOpen ||
 			event.defaultPrevented ||
 			event.isComposing ||
@@ -733,6 +819,8 @@
 			!disconnectOpen &&
 			!ocrSettingsOpen &&
 			!cleanupOpen &&
+			!translationOpen &&
+			!overwriteTranslationOpen &&
 			!overwriteOcrOpen &&
 			!event.defaultPrevented &&
 			!event.isComposing &&
@@ -753,6 +841,8 @@
 			disconnectOpen ||
 			ocrSettingsOpen ||
 			cleanupOpen ||
+			translationOpen ||
+			overwriteTranslationOpen ||
 			overwriteOcrOpen ||
 			(event.key !== 'PageUp' && event.key !== 'PageDown') ||
 			event.defaultPrevented ||
@@ -1150,7 +1240,13 @@
 							type="button"
 							class="toolbar-button"
 							aria-label="Translate"
-							title="Translate (T)"><ToolbarIcon name="globe" /></button
+							title="Translate"
+							disabled={!$selectedComic ||
+								loadingPages ||
+								scanning ||
+								cleaning ||
+								selectedLanguage === 'org'}
+							onclick={openTranslation}><ToolbarIcon name="globe" /></button
 						>
 					</div>
 				</li>
@@ -1320,6 +1416,57 @@
 	</Modal>
 
 	<Modal
+		bind:open={translationOpen}
+		modalHeading="Translate page"
+		primaryButtonText="OK"
+		secondaryButtonText="Cancel"
+		primaryButtonDisabled={!translationTarget}
+		size="sm"
+		shouldSubmitOnEnter={false}
+		on:submit={() => submitTranslation()}
+		on:click:button--secondary={() => (translationOpen = false)}
+	>
+		<p>Translate the selected page's bubble text from {translationSourceLabel} into:</p>
+		<Dropdown
+			id="translation-language"
+			labelText="Target language"
+			label="Choose a language"
+			items={targetLanguages}
+			bind:selectedId={translationTarget}
+		>
+			<svelte:fragment slot="icon" let:item
+				><img src={flag(item.id)} alt="" width="24" height="18" /></svelte:fragment
+			>
+		</Dropdown>
+		<p>Text is sent to your configured AI provider. The source overlay stays unchanged.</p>
+		<button
+			type="button"
+			onclick={() => {
+				translationOpen = false;
+				settingsTab = 'ai';
+				scanAfterSettings = false;
+				ocrSettingsOpen = true;
+			}}>Configure AI provider</button
+		>
+	</Modal>
+
+	<Modal
+		bind:open={overwriteTranslationOpen}
+		modalHeading="Overwrite translation?"
+		primaryButtonText="Overwrite and translate"
+		secondaryButtonText="Cancel"
+		size="sm"
+		shouldSubmitOnEnter={false}
+		on:submit={() => submitTranslation(true)}
+		on:click:button--secondary={() => (overwriteTranslationOpen = false)}
+	>
+		<p>
+			The selected page already has a {translationTarget.toUpperCase()} translation. Replace its text
+			and bubble shapes with a translation of the current overlay?
+		</p>
+	</Modal>
+
+	<Modal
 		bind:open={overwriteOcrOpen}
 		modalHeading="Overwrite OCR and MRG overlays?"
 		primaryButtonText="Overwrite and scan"
@@ -1373,18 +1520,24 @@
 		{#if !fullscreen}
 			{#if backupError || changesError}<p role="alert">{changesError || backupError}</p>{/if}
 			{#if changesMessage}<p role="status">{changesMessage}</p>{/if}
-			{#if cleanupError || cleanupMessage}
+			{#if cleanupError || cleanupMessage || cleanupWarning}
 				<div class="scan-feedback">
 					{#if cleanupError}<p role="alert">{cleanupError}</p>{/if}
+					{#if cleanupWarning}<p role="alert">{cleanupWarning}</p>{/if}
 					{#if cleanupMessage}<p role="status">{cleanupMessage}</p>{/if}
 					{#if cleaning}
-						<button type="button" onclick={() => cleanupController?.abort()}>Cancel cleanup</button>
+						<button type="button" onclick={() => cleanupController?.abort()}
+							>{aiOperation === 'translation' ? 'Cancel translation' : 'Cancel cleanup'}</button
+						>
 					{:else}
 						<button
 							type="button"
-							aria-label="Dismiss cleanup notification"
+							aria-label={aiOperation === 'translation'
+								? 'Dismiss translation notification'
+								: 'Dismiss cleanup notification'}
 							onclick={() => {
 								cleanupMessage = '';
+								cleanupWarning = '';
 								cleanupError = '';
 							}}>×</button
 						>

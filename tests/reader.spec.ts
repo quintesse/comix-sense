@@ -31,7 +31,8 @@ async function mockDirectory(
 		browserLanguages?: string[];
 		pageCount?: number;
 		mixedSizes?: boolean;
-		overlays?: 'none' | 'ocr';
+		overlays?: 'none' | 'ocr' | 'mrg';
+		overlayLanguage?: string;
 		delayedImage?: string;
 	} = {}
 ) {
@@ -44,7 +45,8 @@ async function mockDirectory(
 			pageCount,
 			mixedSizes,
 			delayedImage,
-			overlays
+			overlays,
+			overlayLanguage
 		}) => {
 			Object.defineProperty(navigator, 'languages', { value: browserLanguages ?? ['zz'] });
 			window.__filesRead = [];
@@ -96,9 +98,10 @@ async function mockDirectory(
 
 			if (overlays) {
 				for (const name of Object.keys(contents)) if (name.endsWith('.bbl')) delete contents[name];
-				if (overlays === 'ocr')
-					contents['album/01.OCR.bbl'] = JSON.stringify({
-						pages: [{ bubbles: [bubble('Old OCR')] }]
+				if (overlays === 'ocr' || overlays === 'mrg')
+					contents[`album/01.${overlays.toUpperCase()}.bbl`] = JSON.stringify({
+						lang: overlayLanguage,
+						pages: [{ bubbles: [bubble(`Old ${overlays.toUpperCase()}`)] }]
 					});
 			}
 
@@ -204,7 +207,15 @@ async function selectMenu(page: Page, name: string, option: string) {
 		return;
 	}
 	await page.getByRole('menuitem', { name, exact: true }).click();
-	await page.getByRole('menu', { name, exact: true }).getByText(option, { exact: true }).click();
+	await page
+		.getByRole('menu', { name, exact: true })
+		.getByText(
+			({ EN: 'English (EN)', NL: 'Dutch (NL)', FR: 'French (FR)' } as Record<string, string>)[
+				option
+			] ?? option,
+			{ exact: true }
+		)
+		.click();
 	const newName = name.startsWith('EDIT:') ? 'EDIT: ' + option.toUpperCase() : option.toUpperCase();
 	await expect(page.getByRole('menuitem', { name: newName, exact: true })).toBeVisible();
 	if (await page.getByRole('menu', { name: newName, exact: true }).isVisible()) {
@@ -228,7 +239,7 @@ test('browse pages and switch language overlays', async ({ page }) => {
 	);
 	await page.getByRole('menuitem', { name: 'EN', exact: true }).press('ArrowDown');
 	await expect(
-		page.getByRole('menuitemradio', { name: 'NL', exact: true }).locator('img')
+		page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).locator('img')
 	).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeFocused();
@@ -515,7 +526,7 @@ test('context menu choices update the reader and save zoom', async ({ page }) =>
 	await page.keyboard.press('Escape');
 	await image.click({ button: 'right', position: { x: 10, y: 10 } });
 	await page.getByRole('menuitem', { name: 'Language', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'NL', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hallo');
 	await expect
 		.poll(() => page.evaluate(() => localStorage.getItem('comix-sense.zoom')))
@@ -1806,6 +1817,8 @@ for (const scope of ['page', 'album']) {
 			expect(route.request().headers().authorization).toBe('Bearer session-secret');
 			const body = route.request().postDataJSON();
 			expect(body.model).toBe('cleanup-model');
+			expect(body.response_format.type).toBe('json_schema');
+			expect(body.response_format.json_schema.strict).toBe(true);
 			const document = JSON.parse(body.messages[1].content);
 			expect(document.sourceLanguage).toBe('en');
 			expect(document.targetLanguage).toBe('en');
@@ -1815,6 +1828,7 @@ for (const scope of ['page', 'album']) {
 			document.items.forEach((item: { text: string }) => {
 				item.text += '!';
 			});
+			document.items.reverse();
 			await route.fulfill({
 				json: {
 					choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }]
@@ -1834,10 +1848,10 @@ for (const scope of ['page', 'album']) {
 				.apiKey
 		).toBe('');
 		await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
-		await page.getByRole('menuitemradio', { name: 'NL', exact: true }).press('Enter');
+		await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).press('Enter');
 		await expect(page.locator('foreignObject')).toHaveText('Hallo');
 		await page.getByRole('menuitem', { name: 'NL', exact: true }).click();
-		await page.getByRole('menuitemradio', { name: 'EN', exact: true }).press('Enter');
+		await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).press('Enter');
 		await page.getByRole('button', { name: 'Next Page', exact: true }).click();
 		await expect(page.locator('foreignObject')).toHaveText(
 			scope === 'page' ? 'Second page' : 'Second page!'
@@ -1926,5 +1940,207 @@ for (const failure of ['invalid JSON', 'concurrent edit', 'cancel']) {
 			failure === 'concurrent edit' ? 'Manual edit' : 'Hello'
 		);
 		await expect(page.getByRole('button', { name: 'Cleanup Text', exact: true })).toBeEnabled();
+	});
+}
+
+for (const allOmitted of [false, true]) {
+	test(`AI partial cleanup warns and preserves omitted bubbles (${allOmitted ? 'all' : 'some'})`, async ({
+		page
+	}) => {
+		await mockDirectory(page);
+		await page.addInitScript(() =>
+			localStorage.setItem(
+				'comix-sense.ai-settings',
+				JSON.stringify({ url: 'https://ai.example/v1', model: 'test', apiKey: '' })
+			)
+		);
+		await openComic(page);
+		await selectMenu(page, 'ORG', 'EN');
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await page.route('https://ai.example/v1/chat/completions', async (route) => {
+			const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+			document.items = allOmitted ? [] : [{ id: '/pages/1/bubbles/0', text: 'Second corrected' }];
+			await route.fulfill({
+				json: {
+					choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }]
+				}
+			});
+		});
+		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
+		await page.getByLabel('Scope', { exact: true }).selectOption('album');
+		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
+		await expect(page.getByRole('alert').filter({ hasText: 'AI omitted' })).toHaveText(
+			`AI omitted ${allOmitted ? '2 bubbles' : '1 bubble'}. Their text was left unchanged.`
+		);
+		await expect(page.getByRole('status').filter({ hasText: 'bubble text' })).toContainText(
+			allOmitted ? '0 bubble texts updated' : '1 bubble text updated'
+		);
+		await expect(page.locator('foreignObject')).toHaveText('Hello');
+		await page.getByRole('button', { name: 'Next Page', exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText(
+			allOmitted ? 'Second page' : 'Second corrected'
+		);
+		await page.getByRole('button', { name: 'Dismiss cleanup notification', exact: true }).click();
+		await expect(page.getByRole('alert').filter({ hasText: 'AI omitted' })).toHaveCount(0);
+	});
+}
+
+async function setupAiTranslation(page: Page, mode = '1P') {
+	await mockDirectory(page);
+	await page.addInitScript(() =>
+		localStorage.setItem(
+			'comix-sense.ai-settings',
+			JSON.stringify({ url: 'https://ai.example/v1', model: 'test-translator', apiKey: '' })
+		)
+	);
+	await openComic(page, mode);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
+	await selectMenu(page, 'ORG', 'EN');
+}
+
+async function chooseTranslationLanguage(page: Page, language: string) {
+	await page.getByRole('button', { name: 'Translate', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Translate page', exact: true })).toContainText(
+		"Translate the selected page's bubble text from English (EN) into:"
+	);
+	await page.getByRole('combobox', { name: 'Target language', exact: true }).click();
+	const option = page.getByRole('option', {
+		name: ({ FR: 'French (FR)', NL: 'Dutch (NL)' } as Record<string, string>)[language] ?? language,
+		exact: true
+	});
+	await expect(option.locator('img')).toBeVisible();
+	await option.click();
+	await page
+		.getByRole('dialog', { name: 'Translate page', exact: true })
+		.getByRole('button', { name: 'OK', exact: true })
+		.click();
+}
+
+test('AI translation creates a new page overlay using flags, schema and the translation prompt', async ({
+	page
+}) => {
+	await setupAiTranslation(page, '2P');
+	await page.route('https://ai.example/v1/chat/completions', async (route) => {
+		const body = route.request().postDataJSON();
+		expect(body.messages[0].content).toContain('translate comic lettering');
+		expect(body.response_format.json_schema.strict).toBe(true);
+		const document = JSON.parse(body.messages[1].content);
+		expect(document).toEqual({
+			sourceLanguage: 'en',
+			targetLanguage: 'fr',
+			items: [{ id: '/pages/0/bubbles/0', text: 'Hello' }]
+		});
+		document.items[0].text = 'Bonjour !';
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	await chooseTranslationLanguage(page, 'FR');
+	await expect(page.locator('foreignObject')).toHaveText('Bonjour !');
+	await expect(page.getByRole('menuitem', { name: 'FR', exact: true })).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: 'translated to FR' })).toBeVisible();
+	await page.getByRole('menuitem', { name: 'FR', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).press('Enter');
+	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'Second page']);
+});
+
+test('AI translation confirms existing target overwrite before contacting the provider', async ({
+	page
+}) => {
+	await setupAiTranslation(page);
+	let requests = 0;
+	await page.route('https://ai.example/v1/chat/completions', async (route) => {
+		requests++;
+		const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+		expect(document.targetLanguage).toBe('nl');
+		document.items[0].text = 'Goedendag';
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	await chooseTranslationLanguage(page, 'NL');
+	const confirmation = page.getByRole('dialog', { name: 'Overwrite translation?', exact: true });
+	await expect(confirmation).toBeVisible();
+	expect(requests).toBe(0);
+	await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+	expect(requests).toBe(0);
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await chooseTranslationLanguage(page, 'NL');
+	await confirmation.getByRole('button', { name: 'Overwrite and translate', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Goedendag');
+	expect(requests).toBe(1);
+	await page.getByRole('button', { name: 'Next Page', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Tweede pagina');
+});
+
+test('late AI translation stays with its source page and does not change the current page language', async ({
+	page
+}) => {
+	await setupAiTranslation(page);
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let received!: () => void;
+	const started = new Promise<void>((resolve) => {
+		received = resolve;
+	});
+	await page.route('https://ai.example/v1/chat/completions', async (route) => {
+		const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+		received();
+		await gate;
+		document.items[0].text = 'Bonjour';
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	await chooseTranslationLanguage(page, 'FR');
+	await started;
+	await page.getByRole('button', { name: 'Next Page', exact: true }).click();
+	release();
+	await expect(page.getByRole('status').filter({ hasText: 'translated to FR' })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Previous Page', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'French (FR)', exact: true }).press('Enter');
+	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
+});
+
+test('failed AI translation leaves the source and language list intact', async ({ page }) => {
+	await setupAiTranslation(page);
+	await page.route('https://ai.example/v1/chat/completions', (route) =>
+		route.fulfill({ status: 400, json: {} })
+	);
+	await chooseTranslationLanguage(page, 'FR');
+	await expect(page.getByRole('alert').filter({ hasText: 'Translation failed' })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
+	await expect(page.getByRole('menuitemradio', { name: 'French (FR)', exact: true })).toHaveCount(
+		0
+	);
+});
+
+for (const [overlay, declared, expected] of [
+	['OCR', 'nl', 'Dutch (NL)'],
+	['MRG', 'nl', 'Dutch (NL)'],
+	['OCR', undefined, '(Unknown)'],
+	['MRG', 'und', '(Unknown)']
+] as const) {
+	test(`translation dialog resolves ${overlay} source language ${declared ?? 'missing'} from BBL`, async ({
+		page
+	}) => {
+		await mockDirectory(page, {
+			overlays: overlay === 'OCR' ? 'ocr' : 'mrg',
+			overlayLanguage: declared
+		});
+		await openComic(page);
+		await selectMenu(page, 'ORG', overlay);
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await page.getByRole('button', { name: 'Translate', exact: true }).click();
+		await expect(page.getByRole('dialog', { name: 'Translate page', exact: true })).toContainText(
+			`Translate the selected page's bubble text from ${expected} into:`
+		);
 	});
 }

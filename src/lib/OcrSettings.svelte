@@ -120,7 +120,7 @@
 
 <Modal
 	bind:open
-	modalHeading={tab === 'ai' ? 'AI text cleanup' : 'Google Vision OCR'}
+	modalHeading={tab === 'ai' ? 'AI text tools' : 'Google Vision OCR'}
 	passiveModal={tab === 'ocr' && externallyConfigured}
 	primaryButtonText={tab === 'ai' ? 'Save settings' : 'Use key'}
 	secondaryButtonText="Cancel"
@@ -158,8 +158,9 @@
 	{#if tab === 'ai'}
 		<div role="tabpanel" id="ai-panel" aria-labelledby="ai-tab">
 			<p>
-				Cleanup sends bubble text to an OpenAI-compatible Chat Completions provider. The provider
-				must allow requests from this browser (CORS).
+				Cleanup and translation send bubble text to an OpenAI-compatible Chat Completions provider.
+				The provider and model must support strict JSON Schema output. The provider must allow
+				requests from this browser (CORS).
 			</p>
 			<label for="ai-url">Provider URL</label>
 			<input

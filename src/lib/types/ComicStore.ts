@@ -247,6 +247,7 @@ export class DirectoryComicStore implements ComicStore {
 		if (!entry) return [];
 		const lang = language ?? comic.languages[0] ?? '';
 		const overlay = await entry.album.overlay(entry.filename, lang);
+		comic.setSourceLanguage(lang, overlay.sourceLanguage);
 		comic.setSourceDocument(
 			lang,
 			overlay.document?.path,
