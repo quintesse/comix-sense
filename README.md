@@ -110,6 +110,52 @@ A rescan with text replaces both overlays; other languages remain unchanged.
 Results and edits are backed up in the browser and can be written to disk with
 **Save Changes**. In side-by-side mode, only the selected page is scanned.
 
+### AI text cleanup
+
+In Edit Mode, choose a text overlay and click **Cleanup Text** (the spell-check
+icon). Select **Current page** or **Entire album**, then **Clean text**. In
+side-by-side mode, current page means the selected page. Album cleanup includes
+only pages with the selected overlay. ORG has no bubble text to clean.
+
+Open **OCR Settings → AI provider** to set the provider URL, model and API key.
+The URL can be a base URL such as `https://api.openai.com/v1` or a complete
+`/chat/completions` endpoint. Providers must support the OpenAI-compatible Chat
+Completions request/response format and allow browser requests through CORS.
+The key is optional for local providers without authentication. URL and model are
+remembered; the key stays in memory unless **Remember on this browser** is checked.
+**Forget key** clears the active and stored AI key independently of Google Vision.
+Remembered keys are stored without encryption in browser localStorage.
+
+Cleanup sends only bubble text in a JSON object with `sourceLanguage`, identical
+`targetLanguage`, and ordered `items` containing `id` and `text`. IDs use
+`/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR/MRG
+language labels use bubble language metadata when unambiguous, otherwise `und`.
+The hard-coded prompt conservatively corrects OCR, spelling and punctuation while
+preserving meaning, voice, names, capitalization and line breaks. No images are
+sent, so uncertain OCR readings are left unchanged.
+
+The entire selected scope is sent in one request for context. Choose page cleanup
+if the album exceeds your model's context/output limits. Only text is replaced;
+geometry and metadata stay unchanged. Invalid JSON, changed IDs/languages/order,
+truncated responses, or edits/disconnection during the request abort replacement.
+Requests can be cancelled and time out after three minutes. Cleanup results enter
+the same browser backup and Save/Discard workflow as manual edits. Use **Save Changes**
+to write each affected document to disk. This feature uses a small HTTP adapter
+without LangChain or an SDK.
+
+To extract the same cleanup JSON from a `.bbl` file without calling a provider:
+
+```sh
+jbang tools/bubbletext.java album.en.bbl > cleanup.json
+```
+
+The script prints only `sourceLanguage`, `targetLanguage`, and the ordered `items`
+with bubble paths and text, including empty strings. Page indexes start at zero
+within the supplied file. Conventional language suffixes take precedence over
+the document's `lang`; OCR/MRG use bubble language metadata, or `und` when ambiguous.
+Without a language suffix, the document's `lang` is used, falling back to bubble
+language metadata. The input file is never modified.
+
 ### Bubble file format (`.bbl`)
 
 **Design decision: one translation language per `.bbl` file, always.** A document

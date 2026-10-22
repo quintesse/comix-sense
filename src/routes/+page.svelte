@@ -43,10 +43,94 @@
 	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
 	import LanguageMenu from '#lib/LanguageMenu.svelte';
 	import OcrSettings from '#lib/OcrSettings.svelte';
+	import { prepareCleanup, requestCleanup, type AiSettings } from '#lib/textCleanup.js';
 	import { scanImage } from '#lib/ocr.js';
 	import { mergeBubbles } from '#lib/mergeBubbles.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
+
+	let ai = $state<AiSettings>({ url: 'https://api.openai.com/v1', model: '', apiKey: '' });
+	let settingsTab = $state('ocr');
+	let cleanupOpen = $state(false);
+	let cleanupScope = $state('page');
+	let cleaning = $state(false);
+	let cleanupMessage = $state('');
+	let cleanupError = $state('');
+	let cleanupController: AbortController | undefined;
+
+	function openCleanup() {
+		if (
+			!$selectedComic ||
+			cleaning ||
+			scanning ||
+			loadingPages ||
+			!editable ||
+			selectedLanguage === 'org'
+		)
+			return;
+		cleanupError = '';
+		cleanupMessage = '';
+		cleanupOpen = true;
+	}
+
+	async function cleanText() {
+		const comic = $selectedComic;
+		const language = selectedLanguage;
+		if (!comic || cleaning || scanning || !editable || language === 'org') return;
+		if (!ai.url.trim() || !ai.model.trim()) {
+			cleanupOpen = false;
+			settingsTab = 'ai';
+			ocrSettingsOpen = true;
+			return;
+		}
+		const pages = [...albumPages];
+		const selected = cleanupScope === 'album' ? pages : [comic];
+		cleanupOpen = false;
+		cleaning = true;
+		cleanupError = '';
+		cleanupMessage = 'Cleaning text…';
+		const controller = new AbortController();
+		cleanupController = controller;
+		const timeout = window.setTimeout(() => controller.abort('timeout'), 180000);
+		try {
+			const job = await prepareCleanup(pages, selected, language);
+			if (!job.document.items.some((item) => item.text.trim()))
+				throw new Error('No bubble text to clean in this overlay.');
+			controller.signal.throwIfAborted();
+			const result = await requestCleanup(job.document, { ...ai }, controller.signal);
+			controller.signal.throwIfAborted();
+			const changed = await job.apply(
+				result,
+				(page) => folders.some((folder) => folder.comics.includes(page)),
+				controller.signal
+			);
+			const refreshed = await Promise.all(
+				displayedPages.map(async (page) =>
+					page.language === language && selected.includes(page.comic)
+						? { ...page, bubbles: await page.comic.getBubbles(language) }
+						: page
+				)
+			);
+			displayedPages = displayedPages.map((page) => {
+				const updated = refreshed.find(
+					(candidate) => candidate.comic === page.comic && candidate.language === page.language
+				);
+				return updated ? { ...page, bubbles: updated.bubbles } : page;
+			});
+			cleanupMessage = `${changed} bubble text${changed === 1 ? '' : 's'} updated. Use Save Changes to write them to disk.`;
+		} catch (error) {
+			cleanupMessage = '';
+			cleanupError = controller.signal.aborted
+				? controller.signal.reason === 'timeout'
+					? 'Cleanup timed out. No text was replaced.'
+					: 'Cleanup cancelled. No text was replaced.'
+				: 'Cleanup failed: ' + (error instanceof Error ? error.message : String(error));
+		} finally {
+			window.clearTimeout(timeout);
+			cleaning = false;
+			cleanupController = undefined;
+		}
+	}
 
 	let ocrKey = $state('');
 	const externalVisionKey = import.meta.env.GOOGLE_VISION_KEY;
@@ -75,6 +159,7 @@
 	function requestScan() {
 		if (!effectiveOcrKey) {
 			scanAfterSettings = true;
+			settingsTab = 'ocr';
 			ocrSettingsOpen = true;
 		} else void scanPage();
 	}
@@ -88,7 +173,7 @@
 
 	async function scanPage(confirmedComic?: Comic) {
 		const comic = $selectedComic;
-		if (!comic || scanning || !editable || loadingPages) return;
+		if (!comic || scanning || cleaning || !editable || loadingPages) return;
 		const key = effectiveOcrKey;
 		const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
 		const mergedLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'mrg') ?? 'MRG';
@@ -214,6 +299,7 @@
 
 	onDestroy(() => {
 		scanController?.abort();
+		cleanupController?.abort();
 		pageImages.retain([]);
 		for (const folder of folders) folder.store.dispose();
 	});
@@ -333,7 +419,7 @@
 	async function saveChanges() {
 		const folder = activeFolder;
 		const document = currentDocument;
-		if (!folder || !document || changesBusy || scanning) return;
+		if (!folder || !document || changesBusy || scanning || cleaning) return;
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
@@ -598,6 +684,7 @@
 		if (
 			disconnectOpen ||
 			ocrSettingsOpen ||
+			cleanupOpen ||
 			overwriteOcrOpen ||
 			event.defaultPrevented ||
 			event.isComposing ||
@@ -645,6 +732,7 @@
 			) &&
 			!disconnectOpen &&
 			!ocrSettingsOpen &&
+			!cleanupOpen &&
 			!overwriteOcrOpen &&
 			!event.defaultPrevented &&
 			!event.isComposing &&
@@ -664,6 +752,7 @@
 		if (
 			disconnectOpen ||
 			ocrSettingsOpen ||
+			cleanupOpen ||
 			overwriteOcrOpen ||
 			(event.key !== 'PageUp' && event.key !== 'PageDown') ||
 			event.defaultPrevented ||
@@ -1037,7 +1126,7 @@
 							class="toolbar-button scan-button"
 							aria-label="Scan Full Page"
 							title="Scan Full Page"
-							disabled={!$selectedComic || loadingPages || scanning}
+							disabled={!$selectedComic || loadingPages || scanning || cleaning}
 							aria-busy={scanning}
 							onclick={requestScan}
 						>
@@ -1048,7 +1137,14 @@
 							type="button"
 							class="toolbar-button"
 							aria-label="Cleanup Text"
-							title="Cleanup Text (C)"><ToolbarIcon name="spell-check" /></button
+							title="Cleanup Text"
+							disabled={!$selectedComic ||
+								loadingPages ||
+								scanning ||
+								cleaning ||
+								selectedLanguage === 'org'}
+							aria-busy={cleaning}
+							onclick={openCleanup}><ToolbarIcon name="spell-check" /></button
 						>
 						<button
 							type="button"
@@ -1087,7 +1183,7 @@
 							class="toolbar-button"
 							aria-label="Save Changes"
 							title={currentDocument ? `Save changes to ${currentDocument}` : 'Save Changes'}
-							disabled={!documentDirty || changesBusy || scanning || loadingPages}
+							disabled={!documentDirty || changesBusy || scanning || cleaning || loadingPages}
 							onclick={saveChanges}><ToolbarIcon name="save" /></button
 						>
 						<button
@@ -1095,7 +1191,7 @@
 							class="toolbar-button"
 							aria-label="Discard Changes"
 							title={currentDocument ? `Discard changes to ${currentDocument}` : 'Discard Changes'}
-							disabled={!documentDirty || changesBusy || scanning || loadingPages}
+							disabled={!documentDirty || changesBusy || scanning || cleaning || loadingPages}
 							onclick={() => {
 								discardFolder = activeFolder;
 								discardDocument = currentDocument ?? '';
@@ -1112,6 +1208,7 @@
 						title="OCR Settings"
 						onclick={() => {
 							scanAfterSettings = false;
+							settingsTab = 'ocr';
 							ocrSettingsOpen = true;
 						}}><ToolbarIcon name="settings" /></button
 					>
@@ -1178,16 +1275,49 @@
 	</SideNav>
 
 	<OcrSettings
+		bind:ai
+		bind:tab={settingsTab}
 		externallyConfigured={!!externalVisionKey}
 		bind:open={ocrSettingsOpen}
 		bind:apiKey={ocrKey}
 		onsaved={() => {
-			if (scanAfterSettings) {
+			if (scanAfterSettings && settingsTab === 'ocr') {
 				scanAfterSettings = false;
 				void scanPage();
 			}
 		}}
 	/>
+
+	<Modal
+		bind:open={cleanupOpen}
+		modalHeading="Clean up bubble text"
+		primaryButtonText="Clean text"
+		secondaryButtonText="Cancel"
+		size="sm"
+		shouldSubmitOnEnter={false}
+		on:submit={() => void cleanText()}
+		on:click:button--secondary={() => (cleanupOpen = false)}
+	>
+		<p>
+			Send text from the {selectedLanguage} overlay to your AI provider and replace it with corrected
+			text. Use Save Changes to write them to disk.
+		</p>
+		<label for="cleanup-scope">Scope</label>
+		<select id="cleanup-scope" bind:value={cleanupScope}>
+			<option value="page">Current page</option>
+			<option value="album">Entire album ({albumPages.length} pages)</option>
+		</select>
+		<p>Album cleanup includes pages with this overlay; pages without it are skipped.</p>
+		<button
+			type="button"
+			onclick={() => {
+				cleanupOpen = false;
+				settingsTab = 'ai';
+				scanAfterSettings = false;
+				ocrSettingsOpen = true;
+			}}>Configure AI provider</button
+		>
+	</Modal>
 
 	<Modal
 		bind:open={overwriteOcrOpen}
@@ -1243,6 +1373,24 @@
 		{#if !fullscreen}
 			{#if backupError || changesError}<p role="alert">{changesError || backupError}</p>{/if}
 			{#if changesMessage}<p role="status">{changesMessage}</p>{/if}
+			{#if cleanupError || cleanupMessage}
+				<div class="scan-feedback">
+					{#if cleanupError}<p role="alert">{cleanupError}</p>{/if}
+					{#if cleanupMessage}<p role="status">{cleanupMessage}</p>{/if}
+					{#if cleaning}
+						<button type="button" onclick={() => cleanupController?.abort()}>Cancel cleanup</button>
+					{:else}
+						<button
+							type="button"
+							aria-label="Dismiss cleanup notification"
+							onclick={() => {
+								cleanupMessage = '';
+								cleanupError = '';
+							}}>×</button
+						>
+					{/if}
+				</div>
+			{/if}
 			{#if scanError || scanMessage}
 				<div class="scan-feedback">
 					{#if scanError}<p role="alert">{scanError}</p>{/if}

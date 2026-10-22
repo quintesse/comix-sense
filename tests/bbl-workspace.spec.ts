@@ -911,3 +911,62 @@ test('new archive overlays use the image stem and language in a companion direct
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Nuevo');
 });
+
+test('AI album cleanup participates in browser backup, save and discard for every page', async ({
+	page
+}) => {
+	await setup(page);
+	await page.evaluate(() =>
+		localStorage.setItem(
+			'comix-sense.ai-settings',
+			JSON.stringify({ url: 'https://ai.example/v1', model: 'test', apiKey: '' })
+		)
+	);
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.route('https://ai.example/v1/chat/completions', async (route) => {
+		const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+		expect(document.items).toHaveLength(2);
+		document.items.forEach((item: { text: string }) => {
+			item.text += '!';
+		});
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	async function cleanup() {
+		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
+		await page.getByLabel('Scope', { exact: true }).selectOption('album');
+		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
+		await expect(
+			page.getByRole('status').filter({ hasText: '2 bubble texts updated' })
+		).toBeVisible();
+	}
+	await cleanup();
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeEnabled();
+	await expect
+		.poll(async () =>
+			(await backups(page))['album/album.en.bbl']?.pages.map((p: any) => p.bubbles[0].text)
+		)
+		.toEqual(['Original!', 'Untouched!']);
+	expect(await disk(page)).toEqual(original);
+	await confirmDiscard(page);
+	await expect(page.getByRole('status').filter({ hasText: 'discarded' })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveText('Original');
+	await cleanup();
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	const expected = {
+		...structuredClone(original),
+		pages: original.pages.map((p) => ({
+			...structuredClone(p),
+			bubbles: p.bubbles.map((b) => ({ ...structuredClone(b), font: {} }))
+		}))
+	};
+	expected.pages.forEach((p) => {
+		p.bubbles[0].text += '!';
+	});
+	expect(await disk(page)).toEqual(expected);
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+});

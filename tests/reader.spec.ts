@@ -1787,3 +1787,144 @@ test('a scan with no text creates OCR without creating or selecting MRG', async 
 	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('menuitemradio', { name: 'OCR', exact: true })).toBeVisible();
 });
+
+for (const scope of ['page', 'album']) {
+	test(`AI cleanup replaces only the selected overlay for ${scope}`, async ({ page }) => {
+		await mockDirectory(page);
+		await openComic(page);
+		await selectMenu(page, 'ORG', 'EN');
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+		await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
+		await page.getByLabel('Provider URL', { exact: true }).fill('https://ai.example/v1');
+		await page.getByLabel('Model', { exact: true }).fill('cleanup-model');
+		await page.getByLabel('AI API key', { exact: true }).fill('session-secret');
+		await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+		let requests = 0;
+		await page.route('https://ai.example/v1/chat/completions', async (route) => {
+			requests++;
+			expect(route.request().headers().authorization).toBe('Bearer session-secret');
+			const body = route.request().postDataJSON();
+			expect(body.model).toBe('cleanup-model');
+			const document = JSON.parse(body.messages[1].content);
+			expect(document.sourceLanguage).toBe('en');
+			expect(document.targetLanguage).toBe('en');
+			expect(document.items.map((item: { id: string }) => item.id)).toEqual(
+				scope === 'page' ? ['/pages/0/bubbles/0'] : ['/pages/0/bubbles/0', '/pages/1/bubbles/0']
+			);
+			document.items.forEach((item: { text: string }) => {
+				item.text += '!';
+			});
+			await route.fulfill({
+				json: {
+					choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }]
+				}
+			});
+		});
+		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
+		await page.getByLabel('Scope', { exact: true }).selectOption(scope);
+		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText('Hello!');
+		await expect(page.getByRole('status').filter({ hasText: 'bubble text' })).toContainText(
+			scope === 'page' ? '1 bubble text' : '2 bubble texts'
+		);
+		expect(requests).toBe(1);
+		expect(
+			JSON.parse((await page.evaluate(() => localStorage.getItem('comix-sense.ai-settings')))!)
+				.apiKey
+		).toBe('');
+		await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
+		await page.getByRole('menuitemradio', { name: 'NL', exact: true }).press('Enter');
+		await expect(page.locator('foreignObject')).toHaveText('Hallo');
+		await page.getByRole('menuitem', { name: 'NL', exact: true }).click();
+		await page.getByRole('menuitemradio', { name: 'EN', exact: true }).press('Enter');
+		await page.getByRole('button', { name: 'Next Page', exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText(
+			scope === 'page' ? 'Second page' : 'Second page!'
+		);
+	});
+}
+
+test('AI settings remember and forget the key independently of Google Vision', async ({ page }) => {
+	await mockDirectory(page);
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
+	await page.getByLabel('Model', { exact: true }).fill('test-model');
+	await page.getByLabel('AI API key', { exact: true }).fill('remembered-secret');
+	await page.getByLabel('Remember on this browser').check();
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	expect(
+		JSON.parse((await page.evaluate(() => localStorage.getItem('comix-sense.ai-settings')))!).apiKey
+	).toBe('remembered-secret');
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
+	await expect(page.getByLabel('AI API key', { exact: true })).toHaveValue('remembered-secret');
+	await page.getByRole('button', { name: 'Forget key', exact: true }).click();
+	await expect(page.getByLabel('AI API key', { exact: true })).toHaveValue('');
+	expect(
+		JSON.parse((await page.evaluate(() => localStorage.getItem('comix-sense.ai-settings')))!).apiKey
+	).toBe('');
+	await page.getByRole('tab', { name: 'Google Vision OCR', exact: true }).click();
+	await expect(
+		page.getByText('Full-page scans send the selected page image to Google Cloud Vision.')
+	).toBeVisible();
+});
+
+for (const failure of ['invalid JSON', 'concurrent edit', 'cancel']) {
+	test(`AI cleanup preserves text after ${failure}`, async ({ page }) => {
+		await mockDirectory(page);
+		await page.addInitScript(() =>
+			localStorage.setItem(
+				'comix-sense.ai-settings',
+				JSON.stringify({ url: 'https://ai.example/v1', model: 'test', apiKey: '' })
+			)
+		);
+		await openComic(page);
+		await selectMenu(page, 'ORG', 'EN');
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let received!: () => void;
+		const started = new Promise<void>((resolve) => {
+			received = resolve;
+		});
+		await page.route('https://ai.example/v1/chat/completions', async (route) => {
+			const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+			received();
+			await gate;
+			document.items[0].text = 'AI replacement';
+			await route.fulfill({
+				json: {
+					choices: [
+						{
+							finish_reason: 'stop',
+							message: { content: failure === 'invalid JSON' ? 'oops' : JSON.stringify(document) }
+						}
+					]
+				}
+			});
+		});
+		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
+		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
+		await started;
+		if (failure === 'concurrent edit') await page.getByRole('textbox').fill('Manual edit');
+		if (failure === 'cancel')
+			await page.getByRole('button', { name: 'Cancel cleanup', exact: true }).click();
+		release();
+		await expect(page.getByRole('alert').filter({ hasText: /Cleanup/ })).toContainText(
+			failure === 'invalid JSON'
+				? 'valid JSON'
+				: failure === 'cancel'
+					? 'cancelled'
+					: 'text changed'
+		);
+		await expect(page.locator('foreignObject')).toHaveText(
+			failure === 'concurrent edit' ? 'Manual edit' : 'Hello'
+		);
+		await expect(page.getByRole('button', { name: 'Cleanup Text', exact: true })).toBeEnabled();
+	});
+}
