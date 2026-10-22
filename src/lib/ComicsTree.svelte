@@ -1,14 +1,17 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { TreeView } from 'carbon-components-svelte';
 	import type { TreeNode } from 'carbon-components-svelte/src/TreeView/TreeView.svelte';
 	import type { Comic } from './types/Comic';
 	import AlbumIcon from './icons/AlbumIcon.svelte';
+	import UnsavedAlbumIcon from './icons/UnsavedAlbumIcon.svelte';
 	import CollectionIcon from './icons/CollectionIcon.svelte';
+	import UnsavedCollectionIcon from './icons/UnsavedCollectionIcon.svelte';
 	import PageIcon from './icons/PageIcon.svelte';
 	import ToolbarIcon from './icons/ToolbarIcon.svelte';
 	import { flag } from './languageFlags';
 	import HardDriveIcon from './icons/HardDriveIcon.svelte';
+	import UnsavedHardDriveIcon from './icons/UnsavedHardDriveIcon.svelte';
 	import { comicNodeId, type ComicFolder } from './types/ComicFolder';
 	import DisconnectIcon from './icons/DisconnectIcon.svelte';
 
@@ -33,6 +36,17 @@
 	}: Props = $props();
 	let activeId = $derived(selectedComic ? idForComic(selectedComic) : '');
 	let tree: HTMLDivElement;
+	let dirtyPages = $state.raw<Record<string, ReadonlySet<string>>>({});
+
+	$effect(() => {
+		untrack(() => (dirtyPages = {}));
+		const subscriptions = folders.map((folder) =>
+			folder.store.workspace.pendingPages.subscribe((pages) =>
+				untrack(() => (dirtyPages = { ...dirtyPages, [folder.id]: pages }))
+			)
+		);
+		return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+	});
 
 	export async function locate() {
 		if (!selectedComic) return;
@@ -108,7 +122,7 @@
 		};
 	}
 
-	type TreeChild = TreeNode & { fullName?: string; page?: Comic };
+	type TreeChild = TreeNode & { fullName?: string; page?: Comic; unsaved?: boolean };
 
 	function comicsChildren(
 		folder: ComicFolder,
@@ -122,6 +136,13 @@
 			if (!c.path.startsWith(prefix)) {
 				break;
 			}
+			const dirty = dirtyPages[folder.id] ?? new Set<string>();
+			const unsaved =
+				c.kind === 'page'
+					? dirty.has(c.path)
+					: [...dirty].some((path) =>
+							path.startsWith(c.kind === 'archive' ? c.path + '/' : c.path)
+						);
 			let tc: TreeChild = {
 				id: comicNodeId(folder, c),
 				text:
@@ -130,12 +151,17 @@
 					(c.kind === 'collection' ? '/' : ''),
 				fullName: c.entryPath ?? c.fileName,
 				page: c.kind === 'page' ? c : undefined,
+				unsaved,
 
 				icon:
 					c.kind === 'album' || c.kind === 'archive'
-						? AlbumIcon
+						? unsaved
+							? UnsavedAlbumIcon
+							: AlbumIcon
 						: c.kind === 'collection'
-							? CollectionIcon
+							? unsaved
+								? UnsavedCollectionIcon
+								: CollectionIcon
 							: undefined
 			};
 			idx[0] = idx[0] + 1;
@@ -178,7 +204,7 @@
 		nodes={folders.map((folder) => ({
 			id: folder.id,
 			text: folder.directory.name + '/',
-			icon: HardDriveIcon,
+			icon: dirtyPages[folder.id]?.size ? UnsavedHardDriveIcon : HardDriveIcon,
 			nodes: comicsChildren(folder)
 		}))}
 		bind:activeId
@@ -201,7 +227,11 @@
 		{@const folder = folders.find((folder) => folder.id === node.id)}
 		{#if folder}
 			<span class="root-row" data-folder-id={folder.id} use:rootLabel={folder.id}>
-				<span class="folder-name" id={`folder-label-${folder.id}`}>{node.text}</span>
+				<span
+					class="folder-name"
+					class:unsaved={!!dirtyPages[folder.id]?.size}
+					id={`folder-label-${folder.id}`}>{node.text}</span
+				>
 				<button
 					class="disconnect"
 					title="Remove folder"
@@ -217,9 +247,12 @@
 			{@const page = (node as TreeChild).page!}
 			{@const translated = selectedLanguage !== 'org' && page.languages.includes(selectedLanguage)}
 			{@const flagUrl = translated ? flag(selectedLanguage) : undefined}
+			{@const unsaved = (node as TreeChild).unsaved}
 			<span class="page-row" data-page-id={node.id}>
 				<span class="page-icon bx--tree-node__icon" aria-hidden="true">
-					{#if translated && selectedLanguage.toLowerCase() === 'ocr'}
+					{#if unsaved}
+						<PageIcon regular />
+					{:else if translated && selectedLanguage.toLowerCase() === 'ocr'}
 						<ToolbarIcon name="video" />
 					{:else if flagUrl}
 						<img src={flagUrl} alt="" width="16" height="16" />
@@ -227,15 +260,20 @@
 						<PageIcon />
 					{/if}
 				</span>
-				<span title={(node as TreeChild).fullName}>{node.text}</span>
+				<span class:unsaved title={(node as TreeChild).fullName}>{node.text}</span>
 			</span>
 		{:else}
-			<span title={(node as TreeChild).fullName}>{node.text}</span>
+			<span class:unsaved={(node as TreeChild).unsaved} title={(node as TreeChild).fullName}
+				>{node.text}</span
+			>
 		{/if}
 	</TreeView>
 </div>
 
 <style>
+	.unsaved {
+		font-weight: 700;
+	}
 	.page-row {
 		display: inline-flex;
 		align-items: center;

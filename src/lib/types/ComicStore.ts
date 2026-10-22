@@ -1,4 +1,5 @@
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
+import { BblWorkspace } from '../bbl/BblWorkspace';
 import { Diagnostics, matchDocument } from '../bbl/metadata';
 import { ArchiveComicStore } from '../archives/ArchiveComicStore';
 import type { ArchivePriority } from '../archives/ArchiveReader';
@@ -17,6 +18,7 @@ export interface ComicStore {
 	getImageUrl(c: Comic, priority?: ArchivePriority): Promise<string>;
 	protectImage?(c: Comic): () => void;
 	getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
+	editBubbles?(c: Comic, language: string, bubbles: Bubble[]): Promise<void>;
 }
 
 export interface UpdatableComicStore extends ComicStore {
@@ -33,17 +35,30 @@ export class DirectoryComicStore implements ComicStore {
 	private pageSidecars = new Set<string>();
 	private adjacent = new Map<string, Source[]>();
 	private diagnostics = new Diagnostics();
-	constructor(private readonly dir: FileSystemDirectoryHandle) {}
+	readonly workspace: BblWorkspace;
+	constructor(private readonly dir: FileSystemDirectoryHandle) {
+		this.workspace = new BblWorkspace(dir);
+	}
 
 	archive(path: string): ArchiveComicStore {
 		if (this.disposed) throw new Error('Directory disconnected');
 		let store = this.archives.get(path);
 		if (!store) {
+			const paths = new Set([...this.files, ...this.workspace.paths()]);
+			const overrides = [...paths]
+				.filter((name) => name.startsWith(path + '.bbl/') && name.endsWith('.bbl'))
+				.map((name) => ({
+					path: name,
+					language: '',
+					read: async () => (await (await resolveFile(this.dir, name)).getFile()).text()
+				}));
 			store = new ArchiveComicStore(
 				path,
 				async () => (await resolveFile(this.dir, path)).getFile(),
 				path.split('/').at(-2) ?? this.dir.name,
-				this.adjacent.get(path) ?? []
+				this.adjacent.get(path) ?? [],
+				this.workspace,
+				overrides
 			);
 			this.archives.set(path, store);
 		}
@@ -53,6 +68,7 @@ export class DirectoryComicStore implements ComicStore {
 		for (const [path, store] of this.archives) if (path !== except) store.cancel();
 	}
 	dispose() {
+		this.workspace.dispose();
 		this.disposed = true;
 		for (const store of this.archives.values()) store.dispose();
 		this.archives.clear();
@@ -61,6 +77,7 @@ export class DirectoryComicStore implements ComicStore {
 		this.pageMetadata.clear();
 	}
 	async list(): Promise<Comic[]> {
+		await this.workspace.restore();
 		const comics: Comic[] = [];
 		await this.listDirectory(this.dir, '', comics);
 		await this.discoverMetadata(comics);
@@ -86,6 +103,11 @@ export class DirectoryComicStore implements ComicStore {
 		for (const entry of entries) {
 			const path = prefix + entry.name;
 			if (entry.kind === 'directory') {
+				// Archive override folders contain metadata, not a second visible collection.
+				if (/\.(cbz|zip|cbr)\.bbl$/i.test(entry.name) && this.files.has(path.slice(0, -4))) {
+					await this.listDirectory(entry, path + '/', [], dir.name);
+					continue;
+				}
 				const children: Comic[] = [];
 				await this.listDirectory(entry, path + '/', children, dir.name);
 				// Groups (including mixed folders) are collections; page-only folders are albums.
@@ -125,6 +147,13 @@ export class DirectoryComicStore implements ComicStore {
 
 	private async discoverMetadata(comics: Comic[]) {
 		const read = async (path: string) => (await resolveFile(this.dir, path)).getFile();
+		// Browser documents participate in the same discovery and precedence as disk files.
+		for (const path of this.workspace.paths()) {
+			const slash = path.lastIndexOf('/') + 1;
+			const names = this.directories.get(path.slice(0, slash));
+			if (names && !names.includes(path.slice(slash))) names.push(path.slice(slash));
+			if (names) this.files.add(path);
+		}
 		for (const [prefix, names] of this.directories) {
 			const targets = comics
 				.filter(
@@ -175,7 +204,12 @@ export class DirectoryComicStore implements ComicStore {
 		}
 		for (const [root, pages] of groups) {
 			if (this.disposed) throw new Error('Directory disconnected');
-			const album = new AlbumMetadata((path) => read(root + path), this.diagnostics, root);
+			const album = new AlbumMetadata(
+				(path) => read(root + path),
+				this.diagnostics,
+				root,
+				this.workspace
+			);
 			this.metadata.set(root, album);
 			const paths = [...this.directories]
 				.filter(([prefix]) => prefix.startsWith(root))
@@ -213,7 +247,23 @@ export class DirectoryComicStore implements ComicStore {
 		if (!entry) return [];
 		const lang = language ?? comic.languages[0] ?? '';
 		const overlay = await entry.album.overlay(entry.filename, lang);
+		comic.setSourceDocument(
+			lang,
+			overlay.document?.path,
+			overlay.document && entry.album.writePath(overlay.document.path)
+		);
 		await comic.prepareTypography(lang, overlay, entry.album.fonts);
 		return overlay.bubbles;
+	}
+
+	async editBubbles(comic: Comic, language: string, bubbles: Bubble[]) {
+		const entry = this.pageMetadata.get(comic.path);
+		try {
+			const document = await entry?.album.edit(entry.filename, language, bubbles);
+			comic.setSourceDocument(language, document?.source, document?.path);
+		} catch (error) {
+			this.workspace.error.set('Could not retain edits: ' + String(error));
+			throw error;
+		}
 	}
 }

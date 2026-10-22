@@ -2,6 +2,15 @@
 
 A local comic reader and speech-bubble overlay editor, built with Svelte 5 and SvelteKit.
 
+## Terminology
+
+- **Page**: an individual comic page, represented by an image and contained in an album.
+- **Album**: an ordered group of pages forming a comic, stored in a folder or a supported archive.
+- **Collection**: a group of albums stored together in a folder. Collections can also contain nested collections and loose pages.
+
+Use **page**, **album**, and **collection** when describing the comic hierarchy in
+the UI and documentation. Reserve **folder** and **directory** for filesystem details.
+
 ## Using the app
 
 Open the app in Chrome or Edge, choose **Select directory...**, expand a folder in the sidebar, and select a page. Supported image extensions are BMP, GIF, JPG, JPEG, PNG, and WebP. The browser reads files from the selected directory; no server upload is involved.
@@ -19,11 +28,53 @@ repeated internal folders and filename prefixes. Non-shared path portions and
 extensions remain visible. Actual filenames, paths and overlay associations
 remain unchanged.
 
-Choose **ORG** to see the original page, or select a language to show its speech-bubble overlays. For `page01.png`, prefer `page01.png.en.bbl` for the English overlay; unambiguous `page01.en.bbl` shorthand is also accepted. An overlay without a language suffix, `page01.bbl`, is also discovered. The filename determines the language option; the reader does not use JSON `lang` values to select it.
+Choose **ORG** to see the original page, or select a language to show its speech-bubble overlays. For `page01.png`, new English overlays use `page01.en.bbl`. Existing full-image-name files such as `page01.png.en.bbl` are also supported. An overlay without a language suffix, `page01.bbl`, is also discovered. The filename determines the language option; the reader does not use JSON `lang` values to select it.
 
 Enable **EDIT: YES** to edit text or drag a bubble's handles. For a new box, click two opposite corners. For a polygon, click its vertices and then click near the first vertex to close it. Escape cancels a drawing; Backspace removes the last vertex or cancels a box. Right-click bubble text to convert its shape or delete it. The zoom menu supports fit, width, and percentage scales.
 
-Edits to language overlays are retained while switching pages in the current session. **Saving/exporting is not implemented**, so reloading the app loses edits. Region-scanning context-menu actions and drag-and-drop import are still placeholders; automatic translation is not implemented.
+Edits to language overlays and new OCR/MRG overlays are backed up in this browser
+after a short pause (750 ms). Backups are serialized `.bbl` documents in IndexedDB,
+matched to the original directory handle and document path. Reopening a collection
+prefers its browser copies, using the same `.bbl` parser and rendering pipeline.
+The last few edits can be lost if the browser closes before a backup completes;
+clearing site data removes browser backups. Backup failures are shown in the reader.
+
+**Save Changes** saves the `.bbl` document supplying the selected page and language,
+requesting write permission if needed. It writes back to the same file it was read
+from, preserving its name, metadata, and other pages. If that document covers several
+pages, their pending edits are saved together. Other documents—including other
+languages' files—remain unsaved. **Discard Changes** asks for confirmation, then
+removes only that document's browser backup and reloads its original content.
+There are no Save All or Discard All actions.
+
+Completely new overlays are always saved per page and per language, using the image
+filename **without its extension** plus `.<lang_code>.bbl`, for example `01.OCR.bbl`.
+For loose images, the new document is saved beside its image.
+Unsaved scan overlays disappear when discarded. Removing a top-level album or collection
+from the sidebar keeps its browser backups for the next time it is added.
+
+Pages with unsaved edits have outline icons and bold names in the comics tree;
+their albums and all parent collections use the same indicators, up to the top-level item.
+These markers apply across languages and
+remain after browser backup or reload, until the edits are saved to disk or discarded.
+Editing one page in a shared album document leaves its other pages unmarked.
+The language dropdown uses bold text for the selected page's unsaved languages,
+including OCR and MRG. Browser backup does not clear these indicators; disk saving
+or confirmed discard clears the indicators belonging to that document.
+
+For archive pages, new overlays go into a companion directory named after the
+archive plus `.bbl`, created when needed: `book.cbz.bbl/pages/01.en.bbl` for a new
+English overlay of `pages/01.png` in `book.cbz`. Internal subdirectories are preserved.
+Existing `.bbl` documents read from inside an archive retain their document names
+and scope in that companion directory: `album.en.bbl` becomes
+`book.cbz.bbl/album.en.bbl`, and `pages/01.png.en.bbl` becomes
+`book.cbz.bbl/pages/01.png.en.bbl`. Existing external documents keep their original paths.
+Companion documents take precedence over documents inside the archive. Archives
+themselves are not rewritten. Companion directories are hidden from the comics tree,
+and embedded font resources still resolve within the archive.
+
+Region-scanning context-menu actions and drag-and-drop import are still placeholders;
+automatic translation is not implemented.
 
 ### Full-page OCR
 
@@ -56,10 +107,16 @@ Scans without text select OCR and leave any existing MRG overlay unchanged.
 
 Rescanning a page with OCR or MRG asks for confirmation before sending a request.
 A rescan with text replaces both overlays; other languages remain unchanged.
-Results and edits exist only in memory and disappear on reload. In side-by-side
-mode, only the selected page is scanned.
+Results and edits are backed up in the browser and can be written to disk with
+**Save Changes**. In side-by-side mode, only the selected page is scanned.
 
 ### Bubble file format (`.bbl`)
+
+**Design decision: one translation language per `.bbl` file, always.** A document
+may cover one page or several pages of the same language. Different languages must
+use separate `.bbl` files; mixing languages in one document is intentionally unsupported.
+Keep this constraint in future proposals, and flag requests that suggest mixing languages.
+Per-bubble OCR locale metadata does not create additional translation languages.
 
 Each `.bbl` file is JSON with a `pages` array containing page objects with ordered `bubbles` arrays. The reader preserves file/page metadata and matches album-index pages by their `filename`; legacy single-page sidecars may omit it. The shape-based format is illustrated below:
 
@@ -243,9 +300,9 @@ A directory's full name already lacks an archive extension. If both
 `mycomics/` and `mycomics.cbr` exist, `mycomics.en.bbl` matches the directory
 exactly; use `mycomics.cbr.en.bbl` for the archive. If `comic-page.jpg` and
 `comic-page.webp` coexist, `comic-page.bbl` is ambiguous: use
-`comic-page.jpg.bbl` and/or `comic-page.webp.bbl` instead. New sidecars should
-use full target filenames; reading unambiguous shorthand preserves compatibility
-with existing collections.
+`comic-page.jpg.bbl` and/or `comic-page.webp.bbl` instead. Existing exact-name
+documents keep those names when saved. New overlays use the image stem plus
+`.<language>.bbl`, as described above; image stems should be unique within an album.
 
 When several documents describe the same image and language, precedence is:
 
@@ -416,8 +473,9 @@ text in the tree. Images in internal subdirectories form one album, ordered
 naturally by their full normalized paths (`2.png` before `10.png`). Existing
 page modes, zoom, overlays, editing and reading history also work in archives.
 Page sidecars such as `page.png.en.bbl` (or unambiguous `page.en.bbl`) are
-discovered beside images; internal/adjacent album indexes can cover nested paths. Nothing is written
-back. Nested archives and standalone/drag-and-drop import are not implemented.
+discovered beside images; internal/adjacent album indexes can cover nested paths.
+Saved companion sidecars (described above) take precedence over embedded sidecars.
+Nested archives and standalone/drag-and-drop import are not implemented.
 
 ZIP/CBZ supports stored and deflated entries using **@zip.js/zip.js 2.24.0**,
 `BlobReader`, and browser compression streams. The ZIP is not copied into a

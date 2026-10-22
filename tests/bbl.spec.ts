@@ -289,7 +289,10 @@ test('failed and timed-out fonts skip installed family, warn once, and cannot re
 		const { Diagnostics } = await import(/* @vite-ignore */ metadataPath);
 		const resources = new FontResources(new Diagnostics(), 30);
 		let release!: (blob: Blob) => void;
-		const baseline = document.fonts.size;
+		// Ignore stylesheet fonts that may arrive while the app is still mounting.
+		const registered = () =>
+			[...document.fonts].filter((face) => face.family.startsWith('bbl-face-')).length;
+		const baseline = registered();
 		const faces = [
 			{
 				family: 'Arial',
@@ -316,7 +319,7 @@ test('failed and timed-out fonts skip installed family, warn once, and cannot re
 		const second = await resources.resolve(font, faces);
 		release(new Blob([new Uint8Array(bytes)]));
 		await new Promise((r) => setTimeout(r, 50));
-		const late = document.fonts.size - baseline;
+		const late = registered() - baseline;
 		resources.dispose();
 		return { first, second, late };
 	}, fixtureFont);

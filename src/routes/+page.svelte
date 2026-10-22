@@ -127,6 +127,8 @@
 			const merged = result.bubbles.some((bubble) => bubble.text.trim())
 				? mergeBubbles(result.bubbles)
 				: undefined;
+			await comic.editBubbles(ocrLanguage, result.bubbles);
+			if (merged) await comic.editBubbles(mergedLanguage, merged);
 			comic.setBubbles(ocrLanguage, result.bubbles);
 			if (merged) comic.setBubbles(mergedLanguage, merged);
 			comic.languages = [
@@ -145,7 +147,7 @@
 				);
 			}
 			scanMessage = merged
-				? `${comic.displayName}: ${result.bubbles.length} words recognized, ${merged.length} merged regions. OCR and MRG results are kept in memory.`
+				? `${comic.displayName}: ${result.bubbles.length} words recognized, ${merged.length} merged regions. Browser backup scheduled.`
 				: `${comic.displayName}: No text recognized. No MRG overlay was created.`;
 		} catch (error) {
 			if (!controller.signal.aborted)
@@ -272,6 +274,97 @@
 	let savingReadingHistory = Promise.resolve();
 	let disconnectFolder = $state.raw<ComicFolder>();
 	let disconnectOpen = $state(false);
+	let activeFolder = $derived(folders.find((folder) => folder.id === activeDirectoryId));
+	let pendingChanges = $state(0);
+	let pendingLanguages = $state.raw<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
+	let documentTargets = $state.raw<ReadonlyMap<string, string>>(new Map());
+	let unsavedLanguages = $derived(
+		pendingLanguages.get($selectedComic?.path ?? '') ?? new Set<string>()
+	);
+	let backupError = $state('');
+	let changesBusy = $state(false);
+	let changesMessage = $state('');
+	let changesError = $state('');
+	let discardFolder = $state.raw<ComicFolder>();
+	let discardDocument = $state('');
+	let discardOpen = $state(false);
+
+	$effect(() => {
+		const workspace = activeFolder?.store.workspace;
+		pendingChanges = 0;
+		pendingLanguages = new Map();
+		backupError = '';
+		const pending = workspace?.pending.subscribe((value) => (pendingChanges = value));
+		const error = workspace?.error.subscribe((value) => (backupError = value));
+		const languages = workspace?.pendingLanguages.subscribe((value) => (pendingLanguages = value));
+		return () => {
+			pending?.();
+			error?.();
+			languages?.();
+		};
+	});
+	$effect(() => {
+		documentTargets = new Map();
+		return $selectedComic?.documentTargets.subscribe((value) => (documentTargets = value));
+	});
+
+	async function reloadFolder(folder: ComicFolder) {
+		const store = new DirectoryComicStore(folder.directory);
+		const nextComics = await store.list();
+		const selectedPath = $selectedComic?.path;
+		const archive = nextComics.find(
+			(comic) => comic.kind === 'archive' && selectedPath?.startsWith(comic.path + '/')
+		);
+		if (archive) {
+			const pages = await store.archive(archive.path).list();
+			nextComics.splice(nextComics.indexOf(archive) + 1, 0, ...pages);
+		}
+		const replacement = { ...folder, store, comics: nextComics };
+		folders = folders.map((entry) => (entry === folder ? replacement : entry));
+		if (activeDirectoryId === folder.id)
+			activateFolder(
+				replacement,
+				nextComics.find((comic) => comic.path === selectedPath)
+			);
+		await tick();
+		folder.store.dispose();
+	}
+
+	async function saveChanges() {
+		const folder = activeFolder;
+		const document = currentDocument;
+		if (!folder || !document || changesBusy || scanning) return;
+		changesBusy = true;
+		changesMessage = changesError = '';
+		try {
+			await folder.store.workspace.save(document);
+			await reloadFolder(folder);
+			changesMessage = `Saved changes to “${document}”.`;
+		} catch (error) {
+			changesError = 'Could not save changes: ' + String(error);
+		} finally {
+			changesBusy = false;
+		}
+	}
+
+	async function discardChanges() {
+		const folder = discardFolder;
+		const document = discardDocument;
+		discardOpen = false;
+		discardFolder = undefined;
+		if (!folder || !document || changesBusy) return;
+		changesBusy = true;
+		changesMessage = changesError = '';
+		try {
+			await folder.store.workspace.discard(document);
+			await reloadFolder(folder);
+			changesMessage = `Changes to “${document}” discarded.`;
+		} catch (error) {
+			changesError = 'Could not discard changes: ' + String(error);
+		} finally {
+			changesBusy = false;
+		}
+	}
 
 	function requestDisconnect(folder: ComicFolder) {
 		disconnectFolder = folder;
@@ -796,7 +889,7 @@
 		{ id: '50%', label: '50%' },
 		{ id: '25%', label: '25%' }
 	];
-	let editable = $derived(selectedEdit === 'yes' && !fullscreen);
+	let editable = $derived(selectedEdit === 'yes' && !fullscreen && !changesBusy && !discardOpen);
 	let albumPath = $derived($selectedComic?.albumPath ?? '');
 	let albumPages = $derived(
 		$comics.filter((comic) => comic.kind === 'page' && comic.albumPath === albumPath)
@@ -819,6 +912,12 @@
 	);
 	let selectedLanguage = $derived(
 		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
+	);
+	let currentDocument = $derived(
+		selectedLanguage === 'org' ? undefined : documentTargets.get(selectedLanguage)
+	);
+	let documentDirty = $derived(
+		!!currentDocument && pendingChanges > 0 && !!activeFolder?.store.workspace.has(currentDocument)
 	);
 </script>
 
@@ -890,7 +989,12 @@
 				</TileGroup>
 			</HeaderNavMenu>
 
-			<LanguageMenu selected={selectedLanguage || 'org'} {languages} onselect={selectLanguage} />
+			<LanguageMenu
+				selected={selectedLanguage || 'org'}
+				{languages}
+				{unsavedLanguages}
+				onselect={selectLanguage}
+			/>
 
 			<li role="none" class="toolbar-group">
 				<button
@@ -973,6 +1077,30 @@
 							aria-pressed={selectedShape === BblShapeType.poly}
 							onclick={() => (selectedShape = BblShapeType.poly)}
 							><ToolbarIcon name="star" /></button
+						>
+					</div>
+				</li>
+				<li role="none" class="toolbar-group">
+					<div role="group" aria-label="Document changes">
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Save Changes"
+							title={currentDocument ? `Save changes to ${currentDocument}` : 'Save Changes'}
+							disabled={!documentDirty || changesBusy || scanning || loadingPages}
+							onclick={saveChanges}><ToolbarIcon name="save" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Discard Changes"
+							title={currentDocument ? `Discard changes to ${currentDocument}` : 'Discard Changes'}
+							disabled={!documentDirty || changesBusy || scanning || loadingPages}
+							onclick={() => {
+								discardFolder = activeFolder;
+								discardDocument = currentDocument ?? '';
+								discardOpen = true;
+							}}><ToolbarIcon name="recycle" /></button
 						>
 					</div>
 				</li>
@@ -1090,11 +1218,31 @@
 		<p>Do you really want to remove “{disconnectFolder?.directory.name}” from your folders?</p>
 	</Modal>
 
+	<Modal
+		bind:open={discardOpen}
+		modalHeading="Discard Changes?"
+		primaryButtonText="Discard Changes"
+		secondaryButtonText="Cancel"
+		danger
+		size="xs"
+		shouldSubmitOnEnter={false}
+		on:submit={discardChanges}
+		on:click:button--secondary={() => (discardOpen = false)}
+	>
+		<p>
+			Discard all unsaved changes in “{discardDocument}”? This includes all edited pages stored in
+			this document. Its browser backup will be removed and its original content reloaded. This
+			cannot be undone.
+		</p>
+	</Modal>
+
 	<Content
 		style={fullscreen ? 'padding: 0; margin: 0; min-height: 0' : 'padding: 0'}
 		class={displayedPages.length === 0 ? 'fullsize empty-reader' : 'fullsize'}
 	>
 		{#if !fullscreen}
+			{#if backupError || changesError}<p role="alert">{changesError || backupError}</p>{/if}
+			{#if changesMessage}<p role="status">{changesMessage}</p>{/if}
 			{#if scanError || scanMessage}
 				<div class="scan-feedback">
 					{#if scanError}<p role="alert">{scanError}</p>{/if}
