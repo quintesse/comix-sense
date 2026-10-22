@@ -373,7 +373,8 @@ test('scan restores OCR and MRG and saves only the selected language document', 
 	);
 	await page.getByRole('menuitemradio', { name: 'MRG', exact: true }).click();
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect.poll(() => disk(page, 'album/01.MRG.bbl')).not.toBeNull();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect(await disk(page, 'album/01.MRG.bbl')).not.toBeNull();
 	expect((await disk(page, 'album/01.MRG.bbl')).pages[0].bubbles[0].text).toBe('Hello world');
 	expect(await backups(page)).toEqual({});
 });
@@ -761,9 +762,8 @@ test('Save and Discard affect only the selected page-language source file', asyn
 		'Save changes to album/01.png.nl.bbl'
 	);
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect
-		.poll(async () => (await disk(page, 'album/01.png.nl.bbl')).pages[0].bubbles[0].text)
-		.toBe('Dutch edit');
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect((await disk(page, 'album/01.png.nl.bbl')).pages[0].bubbles[0].text).toBe('Dutch edit');
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 	expect((await disk(page, 'album/01.png.en.bbl')).pages[0].bubbles[0].text).toBe('Original');
 	expect((await disk(page, 'album/02.png.en.bbl')).pages[0].bubbles[0].text).toBe('Untouched');
@@ -830,7 +830,8 @@ test('an embedded album index saves as a companion index with the same name and 
 		'Save changes to book.cbz.bbl/album.en.bbl'
 	);
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect.poll(() => disk(page, 'book.cbz.bbl/album.en.bbl')).not.toBeNull();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect(await disk(page, 'book.cbz.bbl/album.en.bbl')).not.toBeNull();
 	const saved = await disk(page, 'book.cbz.bbl/album.en.bbl');
 	expect(saved.pages.map((p: any) => p.bubbles[0].text)).toEqual([
 		'First archive edit',
@@ -858,9 +859,10 @@ test('companion indexes override embedded sidecars and retain their own path whe
 	await expect(page.getByRole('textbox')).toHaveText('Companion wins');
 	await page.getByRole('textbox').fill('Companion edited');
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect
-		.poll(async () => (await disk(page, 'book.cbz.bbl/album.en.bbl')).pages[0].bubbles[0].text)
-		.toBe('Companion edited');
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect((await disk(page, 'book.cbz.bbl/album.en.bbl')).pages[0].bubbles[0].text).toBe(
+		'Companion edited'
+	);
 	expect(await disk(page, 'book.cbz.bbl/pages/01.png.en.bbl')).toBeNull();
 });
 
@@ -900,7 +902,8 @@ test('new archive overlays use the image stem and language in a companion direct
 	await selectLanguage(page, 'ORG', 'ES');
 	await expect(page.locator('foreignObject')).toHaveText('Nuevo');
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect.poll(() => disk(page, 'book.cbz.bbl/pages/01.es.bbl')).not.toBeNull();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect(await disk(page, 'book.cbz.bbl/pages/01.es.bbl')).not.toBeNull();
 	expect((await disk(page, 'book.cbz.bbl/pages/01.es.bbl')).pages[0].filename).toBe('pages/01.png');
 	expect(await disk(page, 'book.cbz.bbl/pages/01.png.es.bbl')).toBeNull();
 	await page.reload();
