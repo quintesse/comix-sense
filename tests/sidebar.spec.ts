@@ -446,7 +446,10 @@ async function chooseLanguage(page: Page, current: string, language: string) {
 	await page.getByRole('menuitem', { name: current, exact: true }).click();
 	await page
 		.getByRole('menu', { name: current, exact: true })
-		.getByText(language, { exact: true })
+		.getByText(
+			({ EN: 'English (EN)', NL: 'Dutch (NL)' } as Record<string, string>)[language] ?? language,
+			{ exact: true }
+		)
 		.click();
 	await page.getByRole('menuitem', { name: language, exact: true }).click();
 }
@@ -479,7 +482,15 @@ test('tree page icons follow translation availability for flags, OCR and origina
 
 	async function select(current: string, next: string) {
 		await page.getByRole('menuitem', { name: current, exact: true }).click();
-		await page.getByRole('menuitemradio', { name: next, exact: true }).click();
+		await page
+			.getByRole('menuitemradio', {
+				name:
+					({ EN: 'English (EN)', NL: 'Dutch (NL)', ES: 'Spanish (ES)' } as Record<string, string>)[
+						next
+					] ?? next,
+				exact: true
+			})
+			.click();
 		await expect(second).toHaveAttribute('aria-current', 'true');
 		await expect(album).toHaveAttribute('aria-expanded', 'true');
 		await expect(other).toHaveAttribute('aria-expanded', 'true');

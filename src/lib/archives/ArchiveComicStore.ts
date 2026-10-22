@@ -129,6 +129,7 @@ export class ArchiveComicStore implements ComicStore {
 	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
 		const lang = language ?? comic.languages[0] ?? '';
 		const overlay = await this.metadata!.overlay(comic.entryPath!, lang);
+		comic.setSourceLanguage(lang, overlay.sourceLanguage);
 		comic.setSourceDocument(
 			lang,
 			overlay.document?.path,

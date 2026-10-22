@@ -148,6 +148,7 @@ export class AlbumMetadata {
 	async overlay(filename: string, language: string) {
 		filename = filename.normalize('NFC');
 		let bubbles: Bubble[] = [];
+		let sourceLanguage: string | undefined;
 		let font: Font = {};
 		const faces = new Map<string, ResourceFace>();
 		let document: { path: string; raw: Record<string, any>; pageIndex: number } | undefined;
@@ -173,6 +174,8 @@ export class AlbumMetadata {
 						(page.filename ? relativePath(p.filename) === page.filename : !p.filename)
 				);
 				document = { path: doc.path, raw, pageIndex };
+				const declared = raw.pages[pageIndex]?.lang ?? raw.lang;
+				sourceLanguage = typeof declared === 'string' ? declared : undefined;
 			}
 		};
 		for (const location of [this.internal, this.adjacent]) {
@@ -187,7 +190,7 @@ export class AlbumMetadata {
 			for (const doc of this.companion) if (doc.language === lang) apply(doc);
 		if (sidecar && companionSidecar)
 			apply({ ...sidecar, data: await this.load(sidecar, false) }, true);
-		return { bubbles, font, faces: [...faces.values()], document };
+		return { bubbles, font, faces: [...faces.values()], document, sourceLanguage };
 	}
 
 	writePath(source: string): string {

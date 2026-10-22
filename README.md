@@ -74,7 +74,7 @@ themselves are not rewritten. Companion directories are hidden from the comics t
 and embedded font resources still resolve within the archive.
 
 Region-scanning context-menu actions and drag-and-drop import are still placeholders;
-automatic translation is not implemented.
+AI translation is available through the Translate button.
 
 ### Full-page OCR
 
@@ -120,7 +120,14 @@ only pages with the selected overlay. ORG has no bubble text to clean.
 Open **OCR Settings → AI provider** to set the provider URL, model and API key.
 The URL can be a base URL such as `https://api.openai.com/v1` or a complete
 `/chat/completions` endpoint. Providers must support the OpenAI-compatible Chat
-Completions request/response format and allow browser requests through CORS.
+Completions request/response format with strict JSON Schema output
+(`response_format: { type: "json_schema", json_schema: { strict: true, ... } }`)
+and allow browser requests through CORS. Requests include a schema requiring the
+original languages and string IDs/text, with no extra fields.
+Response items can be in any order; text is matched to bubbles by ID. The app
+also validates returned IDs and empty fields before replacing text. Missing items
+leave their bubbles unchanged and produce a warning; other valid items are applied. Providers
+or models without schema support fail without retrying in a weaker output mode.
 The key is optional for local providers without authentication. URL and model are
 remembered; the key stays in memory unless **Remember on this browser** is checked.
 **Forget key** clears the active and stored AI key independently of Google Vision.
@@ -129,14 +136,19 @@ Remembered keys are stored without encryption in browser localStorage.
 Cleanup sends only bubble text in a JSON object with `sourceLanguage`, identical
 `targetLanguage`, and ordered `items` containing `id` and `text`. IDs use
 `/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR/MRG
-language labels use bubble language metadata when unambiguous, otherwise `und`.
+language labels use the `.bbl` page/document's `lang` when available, then
+unambiguous bubble language metadata, otherwise `und`.
 The hard-coded prompt conservatively corrects OCR, spelling and punctuation while
 preserving meaning, voice, names, capitalization and line breaks. No images are
 sent, so uncertain OCR readings are left unchanged.
+Both prompts support `{sourceLanguage}` and `{targetLanguage}` placeholders,
+replaced with the request's actual language codes before sending the system
+message. Cleanup explicitly names its source language; translation names both.
+Bubble text is never interpolated.
 
 The entire selected scope is sent in one request for context. Choose page cleanup
 if the album exceeds your model's context/output limits. Only text is replaced;
-geometry and metadata stay unchanged. Invalid JSON, changed IDs/languages/order,
+geometry and metadata stay unchanged. Invalid JSON, changed IDs/languages,
 truncated responses, or edits/disconnection during the request abort replacement.
 Requests can be cancelled and time out after three minutes. Cleanup results enter
 the same browser backup and Save/Discard workflow as manual edits. Use **Save Changes**
@@ -155,6 +167,35 @@ within the supplied file. Conventional language suffixes take precedence over
 the document's `lang`; OCR/MRG use bubble language metadata, or `und` when ambiguous.
 Without a language suffix, the document's `lang` is used, falling back to bubble
 language metadata. The input file is never modified.
+
+### AI page translation
+
+In Edit Mode, select the source text overlay and click **Translate**. Choose a
+language from the dropdown, then click **OK**. Both language dropdowns show
+Flagpack icons and English language names with codes, such as **Dutch (NL)** and
+**French (FR)**. Names come from `Intl.DisplayNames`; unknown codes and the
+ORG/OCR/MRG overlays keep their code labels. The reader toolbar keeps a compact
+code with the full language label in its tooltip. Translation applies only to the
+selected page, including in side-by-side mode. ORG has no extracted text; scan it
+first or choose an existing text overlay.
+
+If the selected page already has that target language, confirm **Overwrite and
+translate** before any request is sent. Cancelling leaves the existing translation
+unchanged. The same AI provider settings and strict JSON Schema are used as for
+cleanup; the request sets `targetLanguage` to the chosen code and uses a translation
+prompt. Returned texts are matched by ID, regardless of order. Source text, shapes,
+and styles are copied into an independent target overlay; source edits remain
+unchanged. The dialog names the resolved source language (for example, Dutch (NL))
+or shows **(Unknown)** when no language can be resolved. The same resolved code is
+used in the AI request. The target overlay is selected when translation finishes on the current
+page and participates in browser backup, Save Changes and Discard Changes.
+
+Missing response items produce a warning. Existing target bubbles at omitted
+indexes are kept where available; otherwise source text is retained for those
+bubbles. An entirely empty result leaves the target unchanged. Concurrent edits
+to either source or target, removal of the folder, or invalid responses prevent
+replacement. Translating after navigating away still updates the original page
+without changing the current page's selected language.
 
 ### Bubble file format (`.bbl`)
 

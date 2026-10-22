@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ObjectGroupIcon from './icons/ObjectGroupIcon.svelte';
 	import ToolbarIcon from './icons/ToolbarIcon.svelte';
-	import { flag } from './languageFlags';
+	import { flag, languageLabel } from './languageFlags';
 
 	let {
 		selected,
@@ -71,6 +71,7 @@
 		type="button"
 		role="menuitem"
 		aria-label={selected.toUpperCase()}
+		title={languageLabel(selected)}
 		aria-haspopup="menu"
 		aria-expanded={open}
 		onclick={() => (open = !open)}
@@ -106,7 +107,7 @@
 								alt=""
 								width="24"
 								height="18"
-							/>{/if}{language.toUpperCase()}
+							/>{/if}{languageLabel(language)}
 					</button>
 				</li>
 			{/each}

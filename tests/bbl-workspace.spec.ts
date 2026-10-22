@@ -181,7 +181,15 @@ async function writeDocuments(page: Page, documents: Record<string, unknown>, re
 
 async function selectLanguage(page: Page, current: string, next: string) {
 	await page.getByRole('menuitem', { name: current, exact: true }).click();
-	await page.getByRole('menuitemradio', { name: next, exact: true }).click();
+	await page
+		.getByRole('menuitemradio', {
+			name:
+				({ EN: 'English (EN)', NL: 'Dutch (NL)', ES: 'Spanish (ES)' } as Record<string, string>)[
+					next
+				] ?? next,
+			exact: true
+		})
+		.click();
 }
 
 async function confirmDiscard(page: Page) {
@@ -622,7 +630,7 @@ test('unsaved pages and albums have outline icons and bold names until saved or 
 		'regular'
 	);
 	await page.getByRole('menuitem', { name: 'ORG', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'EN', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(albumIcon).toHaveAttribute('data-icon-style', 'solid');
 	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
@@ -634,7 +642,7 @@ test('unsaved pages and albums have outline icons and bold names until saved or 
 	await expect(firstName).not.toHaveCSS('font-weight', '700');
 	await expect(albumName).not.toHaveCSS('font-weight', '700');
 	await page.getByRole('menuitem', { name: 'ORG', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'EN', exact: true }).click();
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await page.getByRole('textbox').fill('Discard this edit');
 	await expect(albumName).toHaveCSS('font-weight', '700');
@@ -775,19 +783,18 @@ test('Save and Discard affect only the selected page-language source file', asyn
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'NL', exact: true }).click();
-	await expect(page.getByRole('menuitemradio', { name: 'EN', exact: true })).toHaveCSS(
+	await expect(page.getByRole('menuitemradio', { name: 'English (EN)', exact: true })).toHaveCSS(
 		'font-weight',
 		'700'
 	);
-	await expect(page.getByRole('menuitemradio', { name: 'NL', exact: true })).not.toHaveCSS(
+	await expect(page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true })).not.toHaveCSS(
 		'font-weight',
 		'700'
 	);
-	await expect(page.getByRole('menuitemradio', { name: 'ES', exact: true })).not.toHaveCSS(
-		'font-weight',
-		'700'
-	);
-	await page.getByRole('menuitemradio', { name: 'EN', exact: true }).click();
+	await expect(
+		page.getByRole('menuitemradio', { name: 'Spanish (ES)', exact: true })
+	).not.toHaveCSS('font-weight', '700');
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('English edit');
 	await confirmDiscard(page);
 	await expect(page.locator('foreignObject')).toHaveText('Original');
@@ -969,4 +976,48 @@ test('AI album cleanup participates in browser backup, save and discard for ever
 	});
 	expect(await disk(page)).toEqual(expected);
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+});
+
+test('AI page translation backs up and saves a new language without changing the source album document', async ({
+	page
+}) => {
+	await setup(page);
+	await page.evaluate(() =>
+		localStorage.setItem(
+			'comix-sense.ai-settings',
+			JSON.stringify({ url: 'https://ai.example/v1', model: 'test', apiKey: '' })
+		)
+	);
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.route('https://ai.example/v1/chat/completions', async (route) => {
+		const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+		document.items[0].text = 'Bonjour';
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	await page.getByRole('button', { name: 'Translate', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Translate page', exact: true })
+		.getByRole('button', { name: 'OK', exact: true })
+		.click();
+	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeEnabled();
+	await expect
+		.poll(async () => (await backups(page))['album/01.fr.bbl']?.pages[0].bubbles[0].text)
+		.toBe('Bonjour');
+	expect(await disk(page, 'album/01.fr.bbl')).toBeNull();
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	const translated = await disk(page, 'album/01.fr.bbl');
+	expect(translated.pages[0].bubbles[0]).toMatchObject({
+		text: 'Bonjour',
+		lang: 'fr',
+		shape: original.pages[0].bubbles[0].shape
+	});
+	expect(await disk(page)).toEqual(original);
+	await page.reload();
+	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
 });
