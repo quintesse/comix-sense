@@ -1,0 +1,1 @@
+import{K as e,Q as t,Rt as n,Z as r,yt as i}from"../chunks/Bdh0-URS.js";var a=Object.defineProperty,o=((e,t)=>{let n={};for(var r in e)a(n,r,{get:e[r],enumerable:!0});return t||a(n,Symbol.toStringTag,{value:`Module`}),n})({prerender:()=>!0});function s(a,o){var s=t(),c=i(s);e(c,()=>o.children??n),r(a,s)}export{s as component,o as universal};
