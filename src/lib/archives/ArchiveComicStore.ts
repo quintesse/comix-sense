@@ -1,4 +1,5 @@
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
+import type { BblWorkspace } from '../bbl/BblWorkspace';
 import { archiveImageUrl } from '../ImageUrls';
 import { Comic, type Bubble } from '../types/Comic';
 import type { ComicStore } from '../types/ComicStore';
@@ -24,7 +25,9 @@ export class ArchiveComicStore implements ComicStore {
 		readonly archivePath: string,
 		private file: () => Promise<File>,
 		private collectionName = archivePath.split('/').at(-2) ?? '',
-		private adjacent: Source[] = []
+		private adjacent: Source[] = [],
+		private workspace?: BblWorkspace,
+		private overrides: Source[] = []
 	) {
 		// The slash after an archive filename cannot collide with a physical directory.
 		this.prefix = archivePath + '/';
@@ -67,11 +70,18 @@ export class ArchiveComicStore implements ComicStore {
 			});
 		if (!pages.length) throw new Error('Archive contains no supported images');
 		this.metadata?.dispose();
-		this.metadata = new AlbumMetadata((path) => this.reader!.read(path), undefined, this.prefix);
+		this.metadata = new AlbumMetadata(
+			(path) => this.reader!.read(path),
+			undefined,
+			this.prefix,
+			this.workspace,
+			this.archivePath
+		);
 		await this.metadata.discover(
 			[...this.entries],
 			pages.map((p) => p.entryPath!),
-			this.adjacent
+			this.adjacent,
+			this.overrides
 		);
 		if (this.disposed) {
 			this.metadata.dispose();
@@ -119,8 +129,22 @@ export class ArchiveComicStore implements ComicStore {
 	async getBubbles(comic: Comic, language?: string): Promise<Bubble[]> {
 		const lang = language ?? comic.languages[0] ?? '';
 		const overlay = await this.metadata!.overlay(comic.entryPath!, lang);
+		comic.setSourceDocument(
+			lang,
+			overlay.document?.path,
+			overlay.document && this.metadata!.writePath(overlay.document.path)
+		);
 		await comic.prepareTypography(lang, overlay, this.metadata!.fonts);
 		return overlay.bubbles;
+	}
+	async editBubbles(comic: Comic, language: string, bubbles: Bubble[]) {
+		try {
+			const document = await this.metadata!.edit(comic.entryPath!, language, bubbles);
+			comic.setSourceDocument(language, document?.source, document?.path);
+		} catch (error) {
+			this.workspace?.error.set('Could not retain edits: ' + String(error));
+			throw error;
+		}
 	}
 	cancel() {
 		this.reader?.cancel();

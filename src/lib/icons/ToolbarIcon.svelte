@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { faRecycle } from '@fortawesome/free-solid-svg-icons';
+	const [recycleWidth, recycleHeight, , , recyclePath] = faRecycle.icon;
 	let {
 		name
 	}: {
 		name:
 			| 'eye'
+			| 'save'
+			| 'recycle'
 			| 'file-pen'
 			| 'comments'
 			| 'file'
@@ -24,7 +28,7 @@
 <svg
 	width="20"
 	height="20"
-	viewBox="0 0 24 24"
+	viewBox={name === 'recycle' ? `0 0 ${recycleWidth} ${recycleHeight}` : '0 0 24 24'}
 	fill="none"
 	stroke="currentColor"
 	stroke-width="1.5"
@@ -34,7 +38,13 @@
 	focusable="false"
 	data-toolbar-icon={name}
 >
-	{#if name === 'eye'}
+	{#if name === 'save'}
+		<path d="M4 3h13l4 4v14H3V3Zm3 0v6h10V3M7 21v-8h10v8" />
+	{:else if name === 'recycle'}
+		{#each Array.isArray(recyclePath) ? recyclePath : [recyclePath] as d}
+			<path {d} fill="currentColor" stroke="none" />
+		{/each}
+	{:else if name === 'eye'}
 		<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />
 	{:else if name === 'file' || name === 'file-pen'}
 		<path d="M13 2H5a1 1 0 0 0-1 1v18a1 1 0 0 0 1 1h10M13 2l6 6M13 2v6h6v3" />

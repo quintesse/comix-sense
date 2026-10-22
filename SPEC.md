@@ -45,7 +45,7 @@ The project has not had a public release. Backward compatibility with existing f
 
 - Store editable translations in `.bbl` files alongside original image files for folder-based albums.
 - For archived albums, support `.bbl` files alongside image entries inside the archive and separately distributed translation files alongside the album archive.
-- Support both granular and bundled storage: a `.bbl` document can hold a single page's translation in one language or a group of translations spanning multiple pages and/or languages.
+- Support both granular and bundled storage: a `.bbl` document can hold one page or multiple pages, always in a single translation language. Different languages must use separate `.bbl` files.
 - Identify each translation's language and associated album/page images within the data. Association must not depend solely on incidental file enumeration order.
 - Retain the data needed to reproduce and edit the translated presentation, including text, region geometry, layout, and references to any required supporting assets.
 - Allow granular and bundled representations to express the same translation content without losing text, language associations, or editing information.
@@ -87,7 +87,7 @@ CBR exports must be valid RAR-based comic archives, not ZIP archives renamed wit
 - [ ] Create a translation in a user-selected language, manually revise its text and layout, save it, and reopen it with those revisions intact.
 - [ ] Rerun automation without silently discarding reviewed manual edits.
 - [ ] Load equivalent translations from individual page `.bbl` files and a bundled `.bbl` document.
-- [ ] Associate all pages and languages correctly when a bundle contains multiple pages and languages.
+- [ ] Associate all pages and languages correctly when an album package contains multiple pages and separate `.bbl` files for each language.
 - [ ] Open an album with a neighboring language ZIP and read its translation without changing the album archive.
 - [ ] Distribute one language's translation package without original page images or other languages' translations.
 - [ ] Export a default CBR, verify original image bytes are unchanged, and reopen all included translations for editing.

@@ -6,8 +6,14 @@
 	let {
 		selected,
 		languages,
+		unsavedLanguages = new Set<string>(),
 		onselect
-	}: { selected: string; languages: string[]; onselect: (language: string) => void } = $props();
+	}: {
+		selected: string;
+		languages: string[];
+		unsavedLanguages?: ReadonlySet<string>;
+		onselect: (language: string) => void;
+	} = $props();
 	let open = $state(false);
 	let container: HTMLLIElement;
 	let trigger: HTMLButtonElement;
@@ -61,6 +67,7 @@
 	<button
 		bind:this={trigger}
 		class="language-trigger bx--header__menu-item"
+		class:unsaved={unsavedLanguages.has(selected)}
 		type="button"
 		role="menuitem"
 		aria-label={selected.toUpperCase()}
@@ -85,6 +92,7 @@
 						type="button"
 						role="menuitemradio"
 						aria-checked={selected === language}
+						class:unsaved={unsavedLanguages.has(language)}
 						onclick={() => {
 							onselect(language);
 							close();
@@ -107,6 +115,9 @@
 </li>
 
 <style>
+	button.unsaved {
+		font-weight: 700;
+	}
 	.language-menu {
 		position: relative;
 	}

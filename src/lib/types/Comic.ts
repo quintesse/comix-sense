@@ -1,4 +1,5 @@
 import type { Font } from '../bbl/metadata';
+import { writable } from 'svelte/store';
 import type { FontResources, ResourceFace } from '../bbl/FontResources';
 import type { ComicStore } from './ComicStore';
 import type { ArchivePriority } from '../archives/ArchiveReader';
@@ -20,6 +21,21 @@ export class Comic {
 	private typography = new Map<string, Map<string, Font>>();
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
+	private documents = new Map<string, string>();
+	private targets = new Map<string, string>();
+	readonly documentTargets = writable<ReadonlyMap<string, string>>(new Map());
+
+	sourceDocument(language: string): string | undefined {
+		return this.documents.get(language);
+	}
+	setSourceDocument(language: string, path: string | undefined, target = path) {
+		if (this.documents.get(language) === path && this.targets.get(language) === target) return;
+		if (path) this.documents.set(language, path);
+		else this.documents.delete(language);
+		if (target) this.targets.set(language, target);
+		else this.targets.delete(language);
+		this.documentTargets.set(new Map(this.targets));
+	}
 
 	constructor(path: string, languages: string[], store: ComicStore, kind: ComicKind = 'page') {
 		this.path = path;
@@ -82,9 +98,13 @@ export class Comic {
 	}
 
 	// Retain the editor's reactive array when revisiting a page or language.
-	// These are session edits only; no files are written.
+	// Persistence receives a plain snapshot separately through editBubbles.
 	setBubbles(language: string, bubbles: Bubble[]): void {
 		if (language !== 'org') this.langBubbles[language] = bubbles;
+	}
+
+	async editBubbles(language: string, bubbles: Bubble[]): Promise<void> {
+		if (language !== 'org') await this.store.editBubbles?.(this, language, bubbles);
 	}
 }
 

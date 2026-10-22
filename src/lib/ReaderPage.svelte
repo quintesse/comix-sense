@@ -73,6 +73,15 @@
 		bubbles = loadedBubbles;
 		activeBubble = undefined;
 		untrack(() => page.setBubbles(lang, bubbles));
+		let initial = true;
+		$effect(() => {
+			const snapshot = $state.snapshot(bubbles);
+			if (initial) {
+				initial = false;
+				return;
+			}
+			untrack(() => void page.editBubbles(lang, snapshot).catch(console.error));
+		});
 	});
 </script>
 
