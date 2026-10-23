@@ -250,7 +250,7 @@ test('translation uses the shared strict schema with a translation prompt and di
 	try {
 		globalThis.fetch = async (_url, init) => {
 			const body = JSON.parse(init!.body as string);
-			expect(body.messages[0].content).toContain('translate comic lettering');
+			expect(body.messages[0].content).toContain('professional comic-book translator');
 			expect(body.messages[0].content).toContain('from en to fr');
 			expect(body.messages[0].content).toContain('from en into fr');
 			expect(body.messages[0].content).not.toMatch(/\{(?:sourceLanguage|targetLanguage)\}/);
@@ -360,6 +360,54 @@ test('response validation rejects altered contracts before any replacement', asy
 	).toThrow();
 });
 
+test('rejected responses log the reason and full documents for inspection', () => {
+	const original: CleanupDocument = {
+		sourceLanguage: 'en',
+		targetLanguage: 'fr',
+		items: [
+			{ id: 'dialogue', text: 'Hello!' },
+			{ id: 'empty', text: '' }
+		]
+	};
+	const cases: [unknown, string][] = [
+		[{ ...original, extra: true }, 'exactly sourceLanguage, targetLanguage and items'],
+		[{ ...original, sourceLanguage: 'nl' }, 'sourceLanguage must equal en'],
+		[{ ...original, targetLanguage: 'nl' }, 'targetLanguage must equal fr'],
+		[{ ...original, items: {} }, 'items must be an array'],
+		[{ ...original, items: [{ id: 'dialogue' }] }, 'items[0] must contain exactly id and text'],
+		[{ ...original, items: [{ id: 42, text: 'Bonjour!' }] }, 'items[0].id must be a string'],
+		[{ ...original, items: [{ id: 'dialogue', text: 42 }] }, 'items[0].text must be a string'],
+		[{ ...original, items: [{ id: 'unknown', text: 'Bonjour!' }] }, 'unknown ID: unknown'],
+		[
+			{ ...original, items: [original.items[0], original.items[0]] },
+			'items[1] repeats ID: dialogue'
+		],
+		[{ ...original, items: [{ id: 'empty', text: 'Invented' }] }, 'changed an empty source text']
+	];
+	const originalError = console.error;
+	const logs: unknown[][] = [];
+	try {
+		console.error = (...args) => logs.push(args);
+		for (const [returned, reason] of cases) {
+			expect(() => validateCleanup(returned, original)).toThrow('No text was replaced.');
+			expect(logs.at(-1)).toEqual([
+				'AI response validation failed:',
+				{
+					reason: expect.stringContaining(reason),
+					expectedDocument: original,
+					returnedDocument: returned
+				}
+			]);
+		}
+		expect(logs).toHaveLength(cases.length);
+		validateCleanup(original, original);
+		validateCleanup({ ...original, items: [] }, original);
+		expect(logs).toHaveLength(cases.length);
+	} finally {
+		console.error = originalError;
+	}
+});
+
 test('concurrent edits, disconnection and cancellation abort the whole album', async () => {
 	for (const condition of ['edit', 'replace', 'disconnect', 'cancel']) {
 		const pages = fixture();
@@ -423,7 +471,7 @@ test('cleanup sends strict JSON Schema and still validates IDs in the response',
 		globalThis.fetch = async (_url, init) => {
 			const request = JSON.parse(init!.body as string);
 			expect(request.messages[0].content).toContain('comic lettering in en');
-			expect(request.messages[0].content).toContain('Keep the text in en');
+			expect(request.messages[0].content).toContain('NEVER translate');
 			expect(request.messages[0].content).not.toMatch(/\{(?:sourceLanguage|targetLanguage)\}/);
 			expect(JSON.parse(request.messages[1].content)).toEqual(job.document);
 			expect(request.response_format.type).toBe('json_schema');
