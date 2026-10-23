@@ -117,7 +117,8 @@ icon). Select **Current page** or **Entire album**, then **Clean text**. In
 side-by-side mode, current page means the selected page. Album cleanup includes
 only pages with the selected overlay. ORG has no bubble text to clean.
 
-Open **OCR Settings → AI provider** to set the provider URL, model and API key.
+Open **OCR Settings → AI provider** to set the shared provider URL and API key,
+then choose separate models for **Cleanup** and **Translation**.
 The URL can be a base URL such as `https://api.openai.com/v1` or a complete
 `/chat/completions` endpoint. Providers must support the OpenAI-compatible Chat
 Completions request/response format with strict JSON Schema output
@@ -128,6 +129,25 @@ Response items can be in any order; text is matched to bubbles by ID. The app
 also validates returned IDs and empty fields before replacing text. Missing items
 leave their bubbles unchanged and produce a warning; other valid items are applied. Providers
 or models without schema support fail without retrying in a weaker output mode.
+The model fields are editable comboboxes. While AI settings are open, the app
+tries the provider's [model-list endpoint](https://developers.openai.com/api/reference/resources/models/methods/list)
+using the current URL and key. Both fields share the returned suggestions but keep
+independent values. URL/key changes clear stale suggestions and start a new lookup;
+failed, unsupported, or timed-out lookups leave the list empty. You can always type
+an unlisted model ID. Providers do not necessarily list only models suitable for
+text generation; the selected model still needs strict JSON Schema support.
+Existing settings with one shared model initialize both task models automatically.
+
+Each tool has an **Edit prompt** button with a **Default** or **Customized** status.
+The editor supports `{sourceLanguage}` and `{targetLanguage}` insertion and
+**Restore default prompt**. **Use prompt** keeps edits in the settings draft;
+**Save settings** applies both models and prompts together. Cancel in the editor
+abandons that editor change; Cancel in settings abandons the entire draft.
+Custom prompts are stored in browser localStorage alongside model preferences.
+Only overrides are stored, so restoring a default picks up future built-in prompt
+improvements. Schema validation and bubble-ID checks remain enforced for custom
+prompts. Set a model only for the tools you intend to use.
+
 The key is optional for local providers without authentication. URL and model are
 remembered; the key stays in memory unless **Remember on this browser** is checked.
 **Forget key** clears the active and stored AI key independently of Google Vision.
@@ -138,7 +158,7 @@ Cleanup sends only bubble text in a JSON object with `sourceLanguage`, identical
 `/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR/MRG
 language labels use the `.bbl` page/document's `lang` when available, then
 unambiguous bubble language metadata, otherwise `und`.
-The hard-coded prompt conservatively corrects OCR, spelling and punctuation while
+The default cleanup prompt conservatively corrects OCR, spelling and punctuation while
 preserving meaning, voice, names, capitalization and line breaks. No images are
 sent, so uncertain OCR readings are left unchanged.
 Both prompts support `{sourceLanguage}` and `{targetLanguage}` placeholders,

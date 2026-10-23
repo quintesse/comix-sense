@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import { Comic, BblShapeType, type Bubble } from '../src/lib/types/Comic';
 import {
 	completionUrl,
+	normalizeAiSettings,
+	discoverModels,
 	prepareCleanup,
 	requestCleanup,
 	requestTranslation,
@@ -33,6 +35,119 @@ function fixture() {
 		new Comic('album/02.png', ['en'], store)
 	];
 }
+
+test('AI settings migrate a shared model to independent task settings and retain custom prompts', () => {
+	const migrated = normalizeAiSettings({
+		url: 'https://example.com/v1',
+		apiKey: 'secret',
+		model: 'shared'
+	});
+	expect(migrated).toEqual({
+		url: 'https://example.com/v1',
+		apiKey: 'secret',
+		cleanup: { model: 'shared' },
+		translation: { model: 'shared' }
+	});
+	const customized = normalizeAiSettings({
+		...migrated,
+		cleanup: { model: 'cleanup', prompt: 'Clean {sourceLanguage}' },
+		translation: { model: 'translator' }
+	});
+	expect(customized.cleanup.prompt).toBe('Clean {sourceLanguage}');
+	expect(customized.translation).toEqual({ model: 'translator' });
+	expect(
+		normalizeAiSettings({ cleanup: { model: null, prompt: '  ' }, translation: false }).cleanup
+	).toEqual({ model: '' });
+});
+
+test('each AI task sends its own model and expanded prompt while retaining the shared schema', async () => {
+	const originalFetch = globalThis.fetch;
+	const document: CleanupDocument = { sourceLanguage: 'en', targetLanguage: 'fr', items: [] };
+	const settings = normalizeAiSettings({
+		url: 'https://example.com/v1',
+		cleanup: { model: 'cleaner', prompt: 'Clean {sourceLanguage} / {targetLanguage}' },
+		translation: { model: 'translator', prompt: 'Translate {sourceLanguage} into {targetLanguage}' }
+	});
+	const requests: any[] = [];
+	try {
+		globalThis.fetch = async (_url, init) => {
+			requests.push(JSON.parse(init!.body as string));
+			return new Response(
+				JSON.stringify({
+					choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }]
+				})
+			);
+		};
+		await requestCleanup(document, settings);
+		await requestTranslation(document, settings);
+		expect(requests.map((r) => [r.model, r.messages[0].content])).toEqual([
+			['cleaner', 'Clean en / fr'],
+			['translator', 'Translate en into fr']
+		]);
+		for (const request of requests) expect(request.response_format.json_schema.strict).toBe(true);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('model discovery uses the provider models URL and key and returns unique valid model IDs', async () => {
+	const originalFetch = globalThis.fetch;
+	try {
+		globalThis.fetch = async (url, init) => {
+			expect(String(url)).toBe('https://example.com/api/v1/models');
+			expect(init?.headers).toEqual({ Authorization: 'Bearer secret' });
+			return new Response(
+				JSON.stringify({
+					data: [
+						{ id: 'z-model' },
+						{ id: 'a-model' },
+						{ id: 'z-model' },
+						{ id: 42 },
+						{},
+						null,
+						{ id: '' }
+					]
+				})
+			);
+		};
+		for (const url of [
+			'https://example.com/api/v1/',
+			'https://example.com/api/v1/chat/completions'
+		])
+			expect(await discoverModels({ url, apiKey: ' secret ' })).toEqual(['a-model', 'z-model']);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test('model discovery failures, malformed responses and cancellation leave suggestions empty', async () => {
+	const originalFetch = globalThis.fetch;
+	try {
+		for (const response of [
+			new Response('{}', { status: 401 }),
+			new Response('not json'),
+			new Response('{"data":{}}')
+		]) {
+			globalThis.fetch = async () => response;
+			expect(await discoverModels({ url: 'https://example.com/v1', apiKey: '' })).toEqual([]);
+		}
+		globalThis.fetch = async () => {
+			throw new TypeError('Network or CORS failure');
+		};
+		expect(await discoverModels({ url: 'https://example.com/v1', apiKey: '' })).toEqual([]);
+		const controller = new AbortController();
+		controller.abort();
+		globalThis.fetch = async (_url, init) => {
+			init!.signal!.throwIfAborted();
+			return new Response('{}');
+		};
+		expect(
+			await discoverModels({ url: 'https://example.com/v1', apiKey: '' }, controller.signal)
+		).toEqual([]);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
 
 test('page IDs use album indexes; applying a complete result only replaces text', async () => {
 	const pages = fixture();
