@@ -1,3 +1,4 @@
+import { groupImageVariants, imageLanguages } from '../ImageVariants';
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
 import { BblWorkspace } from '../bbl/BblWorkspace';
 import { Diagnostics, matchDocument } from '../bbl/metadata';
@@ -134,9 +135,15 @@ export class DirectoryComicStore implements ComicStore {
 				comics.push(page);
 			}
 		}
-		const sharedPrefix = sharedFilenamePrefix(pages.map((page) => page.displayName));
+		const originalPages = groupImageVariants(pages);
+		const variants = new Set(pages.filter((page) => !originalPages.includes(page)));
+		for (let index = comics.length - 1; index >= 0; index--) {
+			if (variants.has(comics[index])) comics.splice(index, 1);
+		}
+		const sharedPrefix = sharedFilenamePrefix(originalPages.map((page) => page.displayName));
 		if (sharedPrefix) {
-			for (const page of pages) page.displayName = page.displayName.slice(sharedPrefix.length);
+			for (const page of originalPages)
+				page.displayName = page.displayName.slice(sharedPrefix.length);
 		}
 	}
 
@@ -236,7 +243,7 @@ export class DirectoryComicStore implements ComicStore {
 			}
 			for (const page of pages) {
 				const filename = page.path.slice(root.length);
-				page.languages = album.languages(filename);
+				page.languages = imageLanguages(page, album.languages(filename));
 				this.pageMetadata.set(page.path, { album, filename });
 			}
 		}

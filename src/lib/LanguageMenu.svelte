@@ -6,11 +6,13 @@
 	let {
 		selected,
 		languages,
+		availableLanguages = new Set<string>(),
 		unsavedLanguages = new Set<string>(),
 		onselect
 	}: {
 		selected: string;
 		languages: string[];
+		availableLanguages?: ReadonlySet<string>;
 		unsavedLanguages?: ReadonlySet<string>;
 		onselect: (language: string) => void;
 	} = $props();
@@ -79,6 +81,7 @@
 		{#if selected.toLowerCase() === 'ocr'}<ToolbarIcon
 				name="video"
 			/>{:else if selected.toLowerCase() === 'mrg'}<ObjectGroupIcon />{:else if flag(selected)}<img
+				class:unavailable={!availableLanguages.has(selected)}
 				src={flag(selected)}
 				alt=""
 				width="24"
@@ -103,6 +106,7 @@
 								name="video"
 							/>{:else if language.toLowerCase() === 'mrg'}<ObjectGroupIcon
 							/>{:else if flag(language)}<img
+								class:unavailable={!availableLanguages.has(language)}
 								src={flag(language)}
 								alt=""
 								width="24"
@@ -159,6 +163,9 @@
 	button:focus-visible {
 		outline: 2px solid #0f62fe;
 		outline-offset: -2px;
+	}
+	img.unavailable {
+		filter: grayscale(100%);
 	}
 	img {
 		object-fit: contain;

@@ -545,6 +545,7 @@ test('reader renders inherited fonts, keeps SVG styles separate, scales text and
 	await page.getByRole('button', { name: 'Single Page', exact: true }).click();
 	await page.getByRole('treeitem', { name: 'book/', exact: true }).press('ArrowRight');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	const text = page.locator('foreignObject div').first();
 	await expect(text).toHaveText('AB');
 	await expect(text).toHaveCSS('font-size', '44px');

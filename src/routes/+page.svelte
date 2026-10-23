@@ -22,6 +22,7 @@
 	import { resolve } from '$app/paths';
 	import { writable } from 'svelte/store';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
+	import ComicPage from '#lib/ComicPage.svelte';
 	import { PageImages, type PageImage } from '#lib/PageImages.js';
 	import { isFullscreen } from '#lib/fullscreen.js';
 	import {
@@ -372,7 +373,14 @@
 	let pageViews = $state<ReaderPage[]>([]);
 	const pageImages = new PageImages();
 	let displayedPages = $state.raw<
-		{ comic: Comic; image: PageImage; bubbles: Bubble[]; language: string }[]
+		{
+			comic: Comic;
+			image: PageImage;
+			imageComic: Comic;
+			editing: boolean;
+			bubbles: Bubble[];
+			language: string;
+		}[]
 	>([]);
 	let pageLoadError = $state('');
 	let loadingPages = $state(false);
@@ -393,17 +401,25 @@
 	$effect(() => {
 		const requested = visiblePages;
 		const language = selectedLanguage;
+		const editing = editingMode;
+		const imageComics = requested.map((comic) =>
+			editing ? comic : comic.imageForLanguage(language)
+		);
 		let cancelled = false;
 		loadingPages = requested.length > 0;
 		pageLoadError = '';
-		pageImages.retain([...requested, ...untrack(() => displayedPages).map((page) => page.comic)]);
+		pageImages.retain([
+			...imageComics,
+			...untrack(() => displayedPages).map((page) => page.imageComic)
+		]);
 		void Promise.all(
-			requested.map(async (comic) => {
+			requested.map(async (comic, index) => {
+				const imageComic = imageComics[index];
 				const [image, bubbles] = await Promise.all([
-					pageImages.load(comic),
-					comic.getBubbles(language)
+					pageImages.load(imageComic),
+					editing ? comic.getBubbles(language) : Promise.resolve([])
 				]);
-				return { comic, image, bubbles, language };
+				return { comic, image, imageComic, editing, bubbles, language };
 			})
 		)
 			.then(async (pages) => {
@@ -412,13 +428,13 @@
 				loadingPages = false;
 				// Let the outgoing SVGs leave the DOM before revoking their image URLs.
 				await tick();
-				if (!cancelled) pageImages.retain(requested);
+				if (!cancelled) pageImages.retain(imageComics);
 			})
 			.catch((error) => {
 				if (!cancelled) {
 					pageLoadError = String(error);
 					loadingPages = false;
-					pageImages.retain(displayedPages.map((page) => page.comic));
+					pageImages.retain(displayedPages.map((page) => page.imageComic));
 				}
 			});
 		return () => {
@@ -427,7 +443,7 @@
 	});
 
 	let browserLanguages = $state<readonly string[]>([]);
-	let selectedShape: BblShapeType = $state(BblShapeType.box);
+	const selectedShape = BblShapeType.box;
 	let selectedEdit: string = $state('no');
 	let showBubbles = $state(true);
 
@@ -1084,7 +1100,8 @@
 		{ id: '50%', label: '50%' },
 		{ id: '25%', label: '25%' }
 	];
-	let editable = $derived(selectedEdit === 'yes' && !fullscreen && !changesBusy && !discardOpen);
+	let editingMode = $derived(selectedEdit === 'yes' && !fullscreen);
+	let editable = $derived(editingMode && !changesBusy && !discardOpen);
 	let albumPath = $derived($selectedComic?.albumPath ?? '');
 	let albumPages = $derived(
 		$comics.filter((comic) => comic.kind === 'page' && comic.albumPath === albumPath)
@@ -1104,6 +1121,9 @@
 				.filter((c) => c.kind === 'page' && c.albumPath === albumPath)
 				.flatMap((c) => c.languages)
 		)
+	);
+	let availableLanguages = $derived(
+		new Set(languages.filter((language) => $selectedComic?.hasTranslation(language, editingMode)))
 	);
 	let selectedLanguage = $derived(
 		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
@@ -1187,6 +1207,7 @@
 			<LanguageMenu
 				selected={selectedLanguage || 'org'}
 				{languages}
+				{availableLanguages}
 				{unsavedLanguages}
 				onselect={selectLanguage}
 			/>
@@ -1264,27 +1285,12 @@
 								selectedLanguage === 'org'}
 							onclick={openTranslation}><ToolbarIcon name="globe" /></button
 						>
-					</div>
-				</li>
-				<li role="none" class="toolbar-group">
-					<div role="group" aria-label="Drawing tool">
 						<button
 							type="button"
 							class="toolbar-button"
-							aria-label="Draw Boxes"
-							title="Draw Boxes"
-							aria-pressed={selectedShape === BblShapeType.box}
-							onclick={() => (selectedShape = BblShapeType.box)}
-							><ToolbarIcon name="square" /></button
-						>
-						<button
-							type="button"
-							class="toolbar-button"
-							aria-label="Draw Polygons"
-							title="Draw Polygons"
-							aria-pressed={selectedShape === BblShapeType.poly}
-							onclick={() => (selectedShape = BblShapeType.poly)}
-							><ToolbarIcon name="star" /></button
+							aria-label="Render Page"
+							title="Render Page"
+							disabled><ToolbarIcon name="paint-roller" /></button
 						>
 					</div>
 				</li>
@@ -1338,6 +1344,7 @@
 							<ComicsTree
 								bind:this={comicsTree}
 								{selectedLanguage}
+								{editingMode}
 								onarchive={openArchive}
 								{folders}
 								selectedComic={$selectedComic}
@@ -1606,16 +1613,22 @@
 		{#if displayedPages.length}
 			<Zoom level={selectedZoom} contentSize={spreadSize} centered={fullscreen}>
 				{#each displayedPages as page, i (page.comic)}
-					<ReaderPage
-						bind:this={pageViews[i]}
-						comic={page.comic}
-						image={page.image}
-						loadedBubbles={page.bubbles}
-						language={page.language}
-						{showBubbles}
-						{editable}
-						{selectedShape}
-					/>
+					{#if editingMode && page.editing}
+						<ReaderPage
+							bind:this={pageViews[i]}
+							comic={page.comic}
+							image={page.image}
+							loadedBubbles={page.bubbles}
+							language={page.language}
+							{showBubbles}
+							{editable}
+							{selectedShape}
+						/>
+					{:else}
+						<div data-page-path={page.comic.path}>
+							<ComicPage img={page.image.url} width={page.image.width} height={page.image.height} />
+						</div>
+					{/if}
 					{#if i < displayedPages.length - 1}
 						<div
 							class="page-separator"
@@ -1646,8 +1659,6 @@
 							<ContextMenuDivider />
 						{/if}
 						<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
-					{:else if menuTargetBubble.shape.type === BblShapeType.box}
-						<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
 					{/if}
 					<ContextMenuOption labelText="Scan Text" />
 					<ContextMenuDivider />

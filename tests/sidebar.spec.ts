@@ -43,6 +43,16 @@ async function setupDirectory(
 						const secondWriter = await second.createWritable();
 						await secondWriter.write(image);
 						await secondWriter.close();
+						if (iconLanguages && name === 'album') {
+							const rendered = await album.getFileHandle('02.en.webp', { create: true });
+							const renderedWriter = await rendered.createWritable();
+							await renderedWriter.write(
+								await new Promise<Blob>((resolve) =>
+									canvas.toBlob((blob) => resolve(blob!), 'image/webp')
+								)
+							);
+							await renderedWriter.close();
+						}
 						if (translations) {
 							for (const language of name === 'album'
 								? ['en', 'nl', ...(iconLanguages ? ['ocr', 'zz'] : [])]
@@ -454,7 +464,7 @@ async function chooseLanguage(page: Page, current: string, language: string) {
 	await page.getByRole('menuitem', { name: language, exact: true }).click();
 }
 
-test('tree page icons follow translation availability for flags, OCR and original', async ({
+test('tree page icons use images in reading mode and images or BBL in edit mode', async ({
 	page
 }) => {
 	const errors: string[] = [];
@@ -469,6 +479,11 @@ test('tree page icons follow translation availability for flags, OCR and origina
 	const second = album.getByRole('treeitem', { name: /^0?2$/, exact: true });
 	const otherFirst = other.getByRole('treeitem', { name: /^0?1$/, exact: true });
 	const flag = first.locator('.page-icon img');
+	// EN exists only as BBL on the first page and only as an image on the second.
+	await expect(first.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(flag).toHaveCount(0);
+	await expect(second.locator('.page-icon img')).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(flag).toHaveAttribute(
 		'src',
 		(await page
@@ -476,7 +491,7 @@ test('tree page icons follow translation availability for flags, OCR and origina
 			.locator('img')
 			.getAttribute('src'))!
 	);
-	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(second.locator('.page-icon img')).toBeVisible();
 	await expect(otherFirst.locator('[data-comic-icon="page"]')).toBeVisible();
 	await second.click();
 
@@ -502,8 +517,18 @@ test('tree page icons follow translation availability for flags, OCR and origina
 		.getAttribute('src'))!;
 	await expect(flag).toHaveAttribute('src', dutchFlag);
 	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	await expect(page.locator('.comic-tree .page-icon img')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(flag).toHaveAttribute('src', dutchFlag);
+	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
 	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
 	await select('NL', 'OCR');
+	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	await expect(first.locator('[data-toolbar-icon="video"]')).toHaveCount(0);
+	await expect(first.locator('[data-comic-icon="page"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
 	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
 	await expect(otherFirst.locator('[data-comic-icon="page"]')).toBeVisible();
@@ -1093,4 +1118,42 @@ test('shorten collection and album page headings in both panes while keeping sou
 		'data-page-path',
 		'Series/Volume/SERIES✨VOLUME002.png'
 	);
+});
+
+test('language dropdown flags reflect the selected page and reader mode without disabling languages', async ({
+	page
+}) => {
+	await setupDirectory(page, false, true, true);
+	const album = page.getByRole('treeitem', { name: 'album', exact: true });
+	await album.press('ArrowRight');
+	await album.click();
+	const first = album.getByRole('treeitem', { name: /^0?1$/, exact: true });
+	const second = album.getByRole('treeitem', { name: /^0?2$/, exact: true });
+	async function expectFlags(selected: string, english: string, dutch: string) {
+		const trigger = page.getByRole('menuitem', { name: selected, exact: true });
+		await expect(trigger.locator('img')).toHaveCSS('filter', selected === 'EN' ? english : dutch);
+		await trigger.click();
+		await expect(
+			page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).locator('img')
+		).toHaveCSS('filter', english);
+		await expect(
+			page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).locator('img')
+		).toHaveCSS('filter', dutch);
+		await page.keyboard.press('Escape');
+	}
+	// The first page has BBL files, while the second has an EN image and no BBL files.
+	await expectFlags('EN', 'grayscale(1)', 'grayscale(1)');
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expectFlags('EN', 'none', 'none');
+	await second.click();
+	await expectFlags('EN', 'none', 'grayscale(1)');
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	await expectFlags('EN', 'none', 'grayscale(1)');
+	await chooseLanguage(page, 'EN', 'NL');
+	await page.keyboard.press('Escape');
+	await expectFlags('NL', 'none', 'grayscale(1)');
+	await first.click();
+	await expectFlags('NL', 'grayscale(1)', 'grayscale(1)');
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expectFlags('NL', 'none', 'none');
 });

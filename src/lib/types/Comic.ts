@@ -64,6 +64,21 @@ export class Comic {
 		return this.path.replace(/\/$/, '').split('/').at(-1)!;
 	}
 
+	/** Rendered images are variants of this page, never separate reader pages. */
+	readonly renderedImages = new Map<string, Comic>();
+
+	hasTranslation(language: string, editingMode = false): boolean {
+		const code = language.toLowerCase();
+		return (
+			this.renderedImages.has(code) ||
+			(editingMode && this.languages.some((language) => language.toLowerCase() === code))
+		);
+	}
+
+	imageForLanguage(language: string): Comic {
+		return this.renderedImages.get(language.toLowerCase()) ?? this;
+	}
+
 	getImageUrl(priority: ArchivePriority = 'reader'): Promise<string> {
 		return this.store.getImageUrl(this, priority);
 	}
