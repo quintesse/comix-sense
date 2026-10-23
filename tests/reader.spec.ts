@@ -2107,7 +2107,7 @@ test('AI translation creates a new page overlay using flags, schema and the tran
 	await setupAiTranslation(page, '2P');
 	await page.route('https://ai.example/v1/chat/completions', async (route) => {
 		const body = route.request().postDataJSON();
-		expect(body.messages[0].content).toContain('translate comic lettering');
+		expect(body.messages[0].content).toContain('professional comic-book translator');
 		expect(body.response_format.json_schema.strict).toBe(true);
 		const document = JSON.parse(body.messages[1].content);
 		expect(document).toEqual({
@@ -2380,7 +2380,7 @@ test('AI prompt editors stage changes until Save, support Cancel and restore def
 	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue('{sourceLanguage}');
 	await page.getByRole('button', { name: 'Restore default prompt', exact: true }).click();
 	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue(
-		/You translate comic lettering/
+		/You are a professional comic-book translator/
 	);
 	await page.getByRole('button', { name: 'Use prompt', exact: true }).click();
 	await page.getByRole('button', { name: 'Save settings', exact: true }).click();

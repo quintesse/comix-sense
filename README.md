@@ -158,9 +158,10 @@ Cleanup sends only bubble text in a JSON object with `sourceLanguage`, identical
 `/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR/MRG
 language labels use the `.bbl` page/document's `lang` when available, then
 unambiguous bubble language metadata, otherwise `und`.
-The default cleanup prompt conservatively corrects OCR, spelling and punctuation while
-preserving meaning, voice, names, capitalization and line breaks. No images are
-sent, so uncertain OCR readings are left unchanged.
+The default cleanup prompt repairs only clear mechanical OCR errors, preserving
+the original wording, grammar, vocabulary, voice and capitalization. It removes
+line breaks and repairs words split across them. No images are sent, so uncertain
+OCR readings are left unchanged.
 Both prompts support `{sourceLanguage}` and `{targetLanguage}` placeholders,
 replaced with the request's actual language codes before sending the system
 message. Cleanup explicitly names its source language; translation names both.
@@ -226,6 +227,11 @@ unchanged. The dialog names the resolved source language (for example, Dutch (NL
 or shows **(Unknown)** when no language can be resolved. The same resolved code is
 used in the AI request. The target overlay is selected when translation finishes on the current
 page and participates in browser backup, Save Changes and Discard Changes.
+
+The default translation prompt preserves meaning, character voice, humour and
+historical register while favouring concise, natural wording. It removes line
+breaks and layout-only hyphenation, returning each translation as a continuous
+string without forcing it to match the source character count.
 
 Missing response items produce a warning. Existing target bubbles at omitted
 indexes are kept where available; otherwise source text is retained for those
