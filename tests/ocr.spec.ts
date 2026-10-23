@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import { visionToBubbles } from '../src/lib/ocr';
 import { mergeBubbles } from '../src/lib/mergeBubbles';
-import { BblShapeType, type Bubble } from '../src/lib/types/Comic';
+import { BblShapeType, type Bubble, boundsv } from '../src/lib/types/Comic';
 
 test('OCR conversion matches the Java tool fixture', () => {
 	const input = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.json', 'utf8'));
@@ -45,12 +45,18 @@ test('OCR handles empty recognition, omitted zero coordinates and per-word local
 	);
 });
 
-test('merge matches the Java sample output without changing original OCR', () => {
+test('merge retains sample grouping with enclosing boxes without changing original OCR', () => {
 	const input = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.bbl', 'utf8')).pages[0].bubbles;
 	const expected = JSON.parse(fs.readFileSync('tools/SW-A070-P09-mrg.bbl', 'utf8')).pages[0]
 		.bubbles;
 	const snapshot = JSON.stringify(input);
-	expect(mergeBubbles(input)).toEqual(expected);
+	expect(mergeBubbles(input)).toEqual(
+		expected.map((bubble: Bubble) => ({
+			...bubble,
+			text: bubble.text.replaceAll('-\n', '-').replace(/\s+/gu, ' ').trim(),
+			shape: { type: BblShapeType.box, vs: boundsv(bubble.shape.vs) }
+		}))
+	);
 	expect(JSON.stringify(input)).toBe(snapshot);
 });
 
@@ -67,7 +73,7 @@ function word(text: string, l: number, t: number, r: number, b: number): Bubble 
 	};
 }
 
-test('merge follows Java punctuation, split and irregular outline rules', () => {
+test('merge retains punctuation and splits while enclosing irregular groups in boxes', () => {
 	const punctuation = mergeBubbles([
 		word('Hello', 0, 0, 40, 20),
 		word(',', 41, 15, 44, 20),
@@ -75,7 +81,7 @@ test('merge follows Java punctuation, split and irregular outline rules', () => 
 		word('!', 91, 0, 95, 20),
 		word('Next', 20, 25, 65, 45)
 	]);
-	expect(punctuation.map((b) => b.text)).toEqual(['Hello, world!\nNext']);
+	expect(punctuation.map((b) => b.text)).toEqual(['Hello, world! Next']);
 	expect(
 		mergeBubbles([
 			word('A', 0, 0, 40, 20),
@@ -83,15 +89,15 @@ test('merge follows Java punctuation, split and irregular outline rules', () => 
 			word('a', 0, 25, 28, 45),
 			word('b', 54, 25, 82, 45)
 		]).map((b) => b.text)
-	).toEqual(['A\na', 'B\nb']);
+	).toEqual(['A a', 'B b']);
 	const irregular = mergeBubbles([
 		word('wide', 0, 0, 180, 20),
 		word('left', 0, 25, 30, 45),
 		word('right', 140, 25, 180, 45)
 	]);
 	expect(irregular).toHaveLength(1);
-	expect(irregular[0].text).toBe('wide\nleft right');
-	expect(irregular[0].shape.type).toBe('poly');
+	expect(irregular[0].text).toBe('wide left right');
+	expect(irregular[0].shape).toEqual(word('', 0, 0, 180, 45).shape);
 	expect(mergeBubbles([])).toEqual([]);
 	expect(mergeBubbles([word('', 0, 0, 0, 0)])).toEqual([word('', 0, 0, 0, 0)]);
 	const english = { ...word('English', 0, 0, 40, 20), lang: 'en' };
@@ -142,4 +148,37 @@ test('merge retains metadata, separates styles, and produces independent editabl
 	expect(input[0].style.fill).toBe('red');
 	input[1].style.fill = 'black';
 	expect(mergeBubbles(input)).toHaveLength(2);
+});
+
+test('MRG text removes source whitespace formatting, including singleton and empty OCR boxes', () => {
+	const input = [
+		word('  Hello\r\nworld\t ', 0, 0, 90, 20),
+		word(' !\n ', 91, 0, 95, 20),
+		word(' Next\u2028line ', 20, 25, 65, 45),
+		word(' Single\n\nbox\rwith\tspaces ', 300, 0, 500, 20),
+		word('\r\n \t', 600, 0, 650, 20)
+	];
+	const snapshot = JSON.stringify(input);
+	expect(mergeBubbles(input).map((bubble) => bubble.text)).toEqual([
+		'Hello world! Next line',
+		'Single box with spaces',
+		''
+	]);
+	expect(JSON.stringify(input)).toBe(snapshot);
+});
+
+test('MRG joins hyphenated line breaks without spaces while preserving hyphens for cleanup', () => {
+	const input = [word('A long-', 0, 0, 100, 20), word('word here', 0, 25, 100, 45)];
+	expect(mergeBubbles(input).map((bubble) => bubble.text)).toEqual(['A long-word here']);
+	for (const newline of ['\n', '\r\n', '\r', '\u2028', '\u2029']) {
+		expect(mergeBubbles([word(` well- ${newline}  known `, 0, 0, 100, 20)])[0].text).toBe(
+			'well-known'
+		);
+	}
+	// A space that was not a line break stays a space.
+	expect(mergeBubbles([word('well- known', 0, 0, 100, 20)])[0].text).toBe('well- known');
+	expect(mergeBubbles([word('well-', 0, 0, 40, 20), word('known', 42, 0, 80, 20)])[0].text).toBe(
+		'well- known'
+	);
+	expect(input.map((bubble) => bubble.text)).toEqual(['A long-', 'word here']);
 });

@@ -13,7 +13,7 @@ Do not create a branch, commit, or PR for ordinary change requests unless asked.
    preserving any unrelated local work throughout.
    If we are on a linked worktree and there are no more changes, remove it (do not try
    to delete the folder yourself if worktree removal failed, just warn), otherwise warn
-   the user and wait for instructions. In the main worktree, if it is  on `main` run
+   the user and wait for instructions. In the main worktree, if it is on `main` run
    `git pull --ff-only`, preserving any local work throughout, otherwise warn the user
    you weren't able to update and wait for instructions.
 
