@@ -1621,7 +1621,7 @@
 							{#each languages as lang}
 								<ContextMenuOption
 									id={lang}
-									labelText={lang.toUpperCase()}
+									labelText={languageLabel(lang)}
 									on:click={() => selectLanguage(lang)}
 								/>
 							{/each}
