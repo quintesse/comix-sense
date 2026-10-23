@@ -7,9 +7,19 @@ Do not create a branch, commit, or PR for ordinary change requests unless asked.
    branch. The GitHub CLI (`gh`) may be used to create and manage the PR.
 2. Open a PR against `main` using a message that follows the commit message guidelines
    and provide its link to the user.
-3. Wait for the user's explicit approval before merging the PR.
-4. After approval, rebase-merge the PR
-5. If we are on the main worktree, switch back to `main`, and run `git pull --ff-only`,
+3. Before requesting merge approval, review the PR's commit history. Use interactive
+   rebase as needed to arrange the changes into coherent, reviewable commits that
+   preserve meaningful implementation stages. Fold minor fixes, review corrections,
+   formatting changes, and temporary work into the relevant earlier commits. Each
+   retained commit should have a clear purpose and leave the project in a working
+   state. Prefer several commits when they explain how a feature was built; use a
+   single commit when the changes form one cohesive unit. Do not preserve development
+   churn merely to retain chronology. Limit history rewriting to the PR branch,
+   preserve unrelated work, and use `--force-with-lease` when pushing rewritten
+   history. Summarize the resulting commits when requesting merge approval.
+4. Wait for the user's explicit approval before merging the PR.
+5. After approval, rebase-merge the PR.
+6. If we are on the main worktree, switch back to `main`, and run `git pull --ff-only`,
    preserving any unrelated local work throughout.
    If we are on a linked worktree and there are no more changes, remove it (do not try
    to delete the folder yourself if worktree removal failed, just warn), otherwise warn
