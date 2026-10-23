@@ -499,6 +499,7 @@ test('edits to two pages sharing an album document are combined in one backup an
 	await setup(page);
 	await page.getByRole('textbox').fill('First edited');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('Untouched');
 	await page.getByRole('textbox').fill('Second edited');
 	await expect
 		.poll(async () =>
