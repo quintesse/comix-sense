@@ -9,6 +9,18 @@ declare global {
 	}
 }
 
+async function expectPagePaths(page: Page, paths: string[]) {
+	await expect
+		.poll(() =>
+			page
+				.locator('[data-page-path]')
+				.evaluateAll((elements) =>
+					elements.map((element) => element.getAttribute('data-page-path'))
+				)
+		)
+		.toEqual(paths);
+}
+
 async function readerImageCount(page: Page) {
 	return page.evaluate(() => {
 		const previews = new Set(
@@ -34,6 +46,9 @@ async function mockDirectory(
 		overlays?: 'none' | 'ocr' | 'mrg';
 		overlayLanguage?: string;
 		delayedImage?: string;
+		renderedImages?: boolean;
+		legacyPolygons?: boolean;
+		overlappingPolygon?: boolean;
 	} = {}
 ) {
 	await page.addInitScript(
@@ -46,7 +61,10 @@ async function mockDirectory(
 			mixedSizes,
 			delayedImage,
 			overlays,
-			overlayLanguage
+			overlayLanguage,
+			renderedImages,
+			legacyPolygons,
+			overlappingPolygon
 		}) => {
 			Object.defineProperty(navigator, 'languages', { value: browserLanguages ?? ['zz'] });
 			window.__filesRead = [];
@@ -86,6 +104,30 @@ async function mockDirectory(
 				'album/02.en.bbl': JSON.stringify({ pages: [{ bubbles: [bubble('Second page')] }] }),
 				'album/02.nl.bbl': JSON.stringify({ pages: [{ bubbles: [bubble('Tweede pagina')] }] })
 			};
+			const polygon = (text: string, x1: number, y1: number, x2: number, y2: number) => ({
+				text,
+				shape: {
+					type: 'poly',
+					vs: [
+						{ x: x1, y: y1 },
+						{ x: x2, y: y1 },
+						{ x: x2, y: y2 },
+						{ x: x1, y: y2 }
+					]
+				}
+			});
+			if (legacyPolygons)
+				contents['album/02.en.bbl'] = JSON.stringify({
+					pages: [{ bubbles: [polygon('Second page', 80, 80, 300, 180)] }]
+				});
+			if (overlappingPolygon)
+				contents['album/01.en.bbl'] = JSON.stringify({
+					pages: [{ bubbles: [bubble('Hello'), polygon('Old polygon', 300, 180, 400, 300)] }]
+				});
+			if (renderedImages) {
+				contents['album/01.en.jpg'] = svg.replace('Original', 'Rendered English');
+				contents['album/01.fr.webp'] = svg.replace('Original', 'Rendered French');
+			}
 			for (let number = 3; number <= (pageCount ?? 2); number++) {
 				const name = String(number).padStart(2, '0');
 				contents[`album/${name}.png`] = svg;
@@ -118,7 +160,7 @@ async function mockDirectory(
 						if (delayed && path === 'album/01.en.bbl') await new Promise((r) => setTimeout(r, 500));
 						window.__filesRead.push(path);
 						return new File([contents[path]], path.split('/').at(-1)!, {
-							type: path.endsWith('.png') ? 'image/svg+xml' : 'application/json'
+							type: /\.(png|jpg|webp)$/.test(path) ? 'image/svg+xml' : 'application/json'
 						});
 					}
 				};
@@ -223,28 +265,74 @@ async function selectMenu(page: Page, name: string, option: string) {
 	}
 }
 
-test('browse pages and switch language overlays', async ({ page }) => {
-	await mockDirectory(page);
+test('reader uses rendered language images and falls back per page; editing uses original overlays', async ({
+	page
+}) => {
+	await mockDirectory(page, { renderedImages: true });
 	await openComic(page);
+	const image = page.locator('[data-page-path="album/01.png"] svg image').first();
+	const original = await image.getAttribute('href');
+	await page.getByRole('menuitem', { name: 'ORG', exact: true }).click();
+	for (const language of ['English (EN)', 'French (FR)', 'Dutch (NL)']) {
+		await expect(page.getByRole('menuitemradio', { name: language, exact: true })).toHaveCount(1);
+	}
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
+	await expect(image).not.toHaveAttribute('href', original!);
 	await expect(page.locator('foreignObject')).toHaveCount(0);
-	await selectMenu(page, 'ORG', 'EN');
-	await expect(page.locator('foreignObject')).toHaveText('Hello');
-	await expect(
-		page.getByRole('menuitem', { name: 'EN', exact: true }).locator('img')
-	).toBeVisible();
-	await expect(page.getByText('Link 1', { exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Reading Mode', exact: true })).toHaveAttribute(
-		'aria-pressed',
-		'true'
+	await expect(page.getByRole('region', { name: 'Album pages' }).getByRole('button')).toHaveCount(
+		2
 	);
-	await page.getByRole('menuitem', { name: 'EN', exact: true }).press('ArrowDown');
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	expect(await page.evaluate(() => window.__filesRead.at(-1))).not.toBe('album/01.en.jpg');
+	const editImage = page.locator('[data-page-path="album/01.png"] svg image').first();
+	await expect
+		.poll(async () =>
+			page.evaluate(
+				async (url) => await (await fetch(url!)).text(),
+				await editImage.getAttribute('href')
+			)
+		)
+		.toContain('Original');
+	await expect(page.getByRole('button', { name: 'Render Page', exact: true })).toBeDisabled();
 	await expect(
-		page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).locator('img')
-	).toBeVisible();
-	await page.keyboard.press('Escape');
-	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeFocused();
+		page
+			.getByRole('button', { name: 'Render Page', exact: true })
+			.locator('[data-toolbar-icon="paint-roller"]')
+	).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'Draw Boxes', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Draw Polygons', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await selectMenu(page, 'EN', 'FR');
+	await expect
+		.poll(async () =>
+			page.evaluate(
+				async (url) => await (await fetch(url!)).text(),
+				await image.getAttribute('href')
+			)
+		)
+		.toContain('Rendered French');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect
+		.poll(async () =>
+			page.evaluate(
+				async (url) => await (await fetch(url!)).text(),
+				await page.locator('svg image').first().getAttribute('href')
+			)
+		)
+		.toContain('Original');
+	await selectMenu(page, 'FR', 'ORG');
+	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await expect
+		.poll(async () =>
+			page.evaluate(
+				async (url) => await (await fetch(url!)).text(),
+				await image.getAttribute('href')
+			)
+		)
+		.toContain('Original');
 });
 
 test('R and E switch reader modes from the tree and toolbar without intercepting text entry', async ({
@@ -280,12 +368,11 @@ test('R and E switch reader modes from the tree and toolbar without intercepting
 	await expect(reading).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('bubble visibility toggles in reading and edit modes and resets on reload', async ({
-	page
-}) => {
+test('bubble visibility toggles in edit mode and resets on reload', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
 	await selectMenu(page, 'ORG', 'EN');
+	await selectMenu(page, 'EDIT: NO', 'Yes');
 	const toggle = page.getByRole('button', { name: 'Show Translations', exact: true });
 	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
@@ -320,13 +407,13 @@ test('arrow keys navigate pages and stop at both ends', async ({ page }) => {
 	await selectMenu(page, 'ORG', 'EN');
 	await page.locator('main').click({ position: { x: 10, y: 400 } });
 	await page.keyboard.press('ArrowLeft');
-	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await expectPagePaths(page, ['album/01.png']);
 	await page.keyboard.press('ArrowRight');
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await expectPagePaths(page, ['album/02.png']);
 	await page.keyboard.press('ArrowRight');
-	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await expectPagePaths(page, ['album/02.png']);
 	await page.keyboard.press('ArrowLeft');
-	await expect(page.locator('foreignObject')).toHaveText('Hello');
+	await expectPagePaths(page, ['album/01.png']);
 	await expect.poll(() => readerImageCount(page)).toBe(3);
 });
 
@@ -424,37 +511,36 @@ for (const zoom of ['Fit', '50%']) {
 		await openComic(page);
 		await selectMenu(page, 'ORG', 'EN');
 		if (zoom !== 'Fit') await selectMenu(page, 'FIT', zoom);
-		const texts = page.locator('foreignObject');
 		const pane = page.locator('main');
 		const paneBounds = (await pane.boundingBox())!;
 		const image = page.getByRole('img', { name: 'Comic page' });
 		const bounds = (await image.boundingBox())!;
 		// The unused area to the right used to advance the page.
 		await page.mouse.click(paneBounds.x + paneBounds.width - 10, bounds.y + 40);
-		await expect(texts).toHaveText('Hello');
+		await expectPagePaths(page, ['album/01.png']);
 		if (zoom === '50%') {
 			await page.mouse.click(bounds.x + bounds.width * 0.9, bounds.y + bounds.height + 20);
-			await expect(texts).toHaveText('Hello');
+			await expectPagePaths(page, ['album/01.png']);
 		}
 		await clickSpread(page, 0.1);
-		await expect(texts).toHaveText('Hello');
+		await expectPagePaths(page, ['album/01.png']);
 		await clickSpread(page, 0.9);
-		await expect(texts).toHaveText('Second page');
+		await expectPagePaths(page, ['album/02.png']);
 		for (const fraction of [0.3, 0.5, 0.7]) {
 			await clickSpread(page, fraction);
-			await expect(texts).toHaveText('Second page');
+			await expectPagePaths(page, ['album/02.png']);
 		}
 		await clickSpread(page, 0.9);
-		await expect(texts).toHaveText('Second page');
+		await expectPagePaths(page, ['album/02.png']);
 		await clickSpread(page, 0.1);
-		await expect(texts).toHaveText('Hello');
+		await expectPagePaths(page, ['album/01.png']);
 		// A centered fullscreen page also leaves non-clickable margins.
 		await page.evaluate(() => document.documentElement.requestFullscreen());
 		await expect(page.getByRole('banner')).toBeHidden();
 		await page.mouse.click(1430, 400);
-		await expect(texts).toHaveText('Hello');
+		await expectPagePaths(page, ['album/01.png']);
 		await clickSpread(page, 0.9);
-		await expect(texts).toHaveText('Second page');
+		await expectPagePaths(page, ['album/02.png']);
 	});
 }
 
@@ -527,7 +613,8 @@ test('context menu choices update the reader and save zoom', async ({ page }) =>
 	await image.click({ button: 'right', position: { x: 10, y: 10 } });
 	await page.getByRole('menuitem', { name: 'Language', exact: true }).click();
 	await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Hallo');
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect(page.getByRole('menuitem', { name: 'NL', exact: true })).toBeVisible();
 	await expect
 		.poll(() => page.evaluate(() => localStorage.getItem('comix-sense.zoom')))
 		.toBe('75%');
@@ -607,8 +694,10 @@ async function dragPage(page: Page, x1: number, y1: number, x2: number, y2: numb
 	await page.mouse.up();
 }
 
-test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) => {
-	await mockDirectory(page);
+test('draw boxes and convert legacy polygons to boxes without exposing polygon creation', async ({
+	page
+}) => {
+	await mockDirectory(page, { legacyPolygons: true });
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'ORG', 'EN');
@@ -618,33 +707,17 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 	await page.getByRole('textbox').last().fill('New bubble');
 	await expect(page.locator('.svgcontent rect').last()).toHaveAttribute('width', '250');
 	await page.getByRole('textbox').last().click({ button: 'right' });
-	await page.getByText('Convert to Poly', { exact: true }).click();
-	await expect(page.locator('.svgcontent polygon')).toHaveCount(1);
-	// Each bubble stacks its shape and text together; edit handles stay above all bubbles.
-	await expect
-		.poll(() =>
-			page
-				.locator('.svgcontent')
-				.evaluate((layer) => Array.from(layer.children, (element) => element.localName))
-		)
-		.toEqual(['rect', 'foreignObject', 'polygon', 'foreignObject', ...Array(6).fill('circle')]);
-	await page.getByRole('textbox').last().click({ button: 'right' });
-	await page.getByText('Convert to Box', { exact: true }).click();
-	await expect(page.locator('.svgcontent polygon')).toHaveCount(0);
-	await page.getByRole('textbox').last().click({ button: 'right' });
+	await expect(page.getByText('Convert to Poly', { exact: true })).toHaveCount(0);
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveCount(1);
-
-	await selectMenu(page, 'BOX', 'Poly');
-	await dragPage(page, 400, 300, 650, 300);
-	await clickPage(page, 650, 450);
-	await clickPage(page, 400, 300);
+	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(1);
-	await expect(page.locator('.svgcontent polygon')).toHaveAttribute(
-		'points',
-		'400,300 650,300 650,450'
-	);
-	await page.screenshot({ path: test.info().outputPath('editor.png') });
+	await page.getByRole('textbox').click({ button: 'right' });
+	await page.getByText('Convert to Box', { exact: true }).click();
+	await expect(page.locator('.svgcontent polygon')).toHaveCount(0);
+	await expect(page.locator('.svgcontent rect')).toHaveAttribute('width', '220');
+	await expect(page.locator('.svgcontent rect')).toHaveAttribute('height', '100');
+	await expect(page.getByRole('textbox')).toHaveText('Second page');
 });
 
 test('delete a polygon point on the right page while keeping at least three vertices', async ({
@@ -658,14 +731,12 @@ test('delete a polygon point on the right page while keeping at least three vert
 			await expect(contextMenu).not.toBeVisible();
 		}).toPass();
 	}
-	await mockDirectory(page);
+	await mockDirectory(page, { legacyPolygons: true });
 	await openComic(page, '2P');
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
 	const leftPage = page.locator('[data-page-path="album/01.png"]');
 	const rightPage = page.locator('[data-page-path="album/02.png"]');
-	await rightPage.getByRole('textbox').click({ button: 'right' });
-	await page.getByText('Convert to Poly', { exact: true }).click();
 	await expect(rightPage.locator('circle')).toHaveCount(4);
 
 	// A text menu must not inherit a previously targeted vertex.
@@ -692,6 +763,11 @@ test('delete a polygon point on the right page while keeping at least three vert
 	await expect(contextMenu).toBeVisible();
 	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
 	await closeContextMenu();
+	// Mock directory handles cannot be backed up; dismiss their notices before targeting this corner.
+	for (const name of ['Dismiss storage notification', 'Dismiss backup notification']) {
+		const dismiss = page.getByRole('button', { name, exact: true });
+		if (await dismiss.isVisible()) await dismiss.click();
+	}
 	await leftPage.locator('circle').first().click({ button: 'right' });
 	await expect(contextMenu).toBeVisible();
 	await expect(page.getByText('Delete point', { exact: true })).toHaveCount(0);
@@ -716,15 +792,12 @@ test('delete a polygon point on the right page while keeping at least three vert
 test('focus and handle presses raise the active shape, editor and highlighted handles', async ({
 	page
 }) => {
-	await mockDirectory(page);
+	await mockDirectory(page, { overlappingPolygon: true });
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'ORG', 'EN');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	// Draw a second bubble with a corner exactly on the first bubble's corner.
-	await dragPage(page, 400, 300, 300, 180);
-	await page.getByRole('textbox').last().click({ button: 'right' });
-	await page.getByText('Convert to Poly', { exact: true }).click();
+	// A legacy polygon shares a corner with the first bubble.
 	const handles = page.locator('.svgcontent circle');
 	const activeHandles = page.locator('.svgcontent circle.active');
 	const box = page.locator('foreignObject[data-bubble-index="0"]');
@@ -832,14 +905,13 @@ test('clicking another page or the toolbar leaves the previous bubble editor', a
 	await expect(rightText).toHaveText('Second page!');
 });
 
-for (const tool of ['Box', 'Poly']) {
+for (const tool of ['Box']) {
 	for (const zoom of ['50%', '100%']) {
 		test(`${tool} requires a deliberate drag at ${zoom} zoom`, async ({ page }) => {
 			await mockDirectory(page);
 			await openComic(page);
 			await selectMenu(page, 'FIT', zoom);
 			await selectMenu(page, 'EDIT: NO', 'Yes');
-			if (tool === 'Poly') await selectMenu(page, 'BOX', 'Poly');
 			const origin = await pagePoint(page, 400, 300);
 			await page.mouse.click(origin.x, origin.y);
 			await page.mouse.move(origin.x + 40, origin.y + 40);
@@ -870,32 +942,27 @@ for (const tool of ['Box', 'Poly']) {
 			await expect(page.locator('.drawing-target')).toHaveCount(1);
 			await expect(page.locator('foreignObject')).toHaveCount(0);
 			await page.mouse.up();
-			if (tool === 'Poly') {
-				await expect(page.locator('.drawing-target')).toHaveCount(1);
-				await expect(page.locator('foreignObject')).toHaveCount(0);
-				await page.mouse.click(origin.x + 20, origin.y + 40);
-				await page.mouse.click(origin.x, origin.y);
-			}
+
 			await expect(page.locator('.drawing-target')).toHaveCount(0);
 			await expect(page.locator('foreignObject')).toHaveCount(1);
 		});
 	}
 }
 
-test('cancel drawing with Escape and Backspace and reject a tiny box', async ({ page }) => {
+test('cancel box drawing with Escape and reject a tiny box', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	await selectMenu(page, 'BOX', 'Poly');
-	await dragPage(page, 400, 300, 600, 300);
+	const start = await pagePoint(page, 400, 300);
+	const end = await pagePoint(page, 600, 400);
+	await page.mouse.move(start.x, start.y);
+	await page.mouse.down();
+	await page.mouse.move(end.x, end.y);
 	await page.keyboard.press('Escape');
+	await page.mouse.up();
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await dragPage(page, 400, 300, 600, 300);
-	await page.keyboard.press('Backspace');
-	await page.keyboard.press('Backspace');
-	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await selectMenu(page, 'POLY', 'Box');
+	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await dragPage(page, 400, 300, 420, 305);
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await dragPage(page, 400, 300, 600, 400);
@@ -982,6 +1049,7 @@ test('fit avoids scrollbars and width only scrolls vertically, including after z
 test('directory enumeration order does not lose pages or languages', async ({ page }) => {
 	await mockDirectory(page, { shuffled: true });
 	await openComic(page);
+	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await expect(page.getByRole('treeitem', { name: /^0?1$/, exact: true })).toHaveCount(1);
 	await selectMenu(page, 'ORG', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
@@ -992,6 +1060,7 @@ test('directory enumeration order does not lose pages or languages', async ({ pa
 test('a slow language load cannot overwrite the newer page selection', async ({ page }) => {
 	await mockDirectory(page, { delayed: true });
 	await openComic(page);
+	await selectMenu(page, 'EDIT: NO', 'Yes');
 	await selectMenu(page, 'ORG', 'EN');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
@@ -1035,14 +1104,19 @@ test('discard unfinished drawing when leaving a page or disabling editing', asyn
 	await openComic(page);
 	await selectMenu(page, 'FIT', '100%');
 	await selectMenu(page, 'EDIT: NO', 'Yes');
-	await selectMenu(page, 'BOX', 'Poly');
-	await dragPage(page, 400, 300, 600, 300);
+	await page.mouse.move((await pagePoint(page, 400, 300)).x, (await pagePoint(page, 400, 300)).y);
+	await page.mouse.down();
+	await page.mouse.move((await pagePoint(page, 600, 400)).x, (await pagePoint(page, 600, 400)).y);
 	await expect(page.locator('.drawing-target')).toHaveCount(1);
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
+	await page.mouse.up();
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
-	await dragPage(page, 400, 300, 600, 300);
+	await page.mouse.move((await pagePoint(page, 400, 300)).x, (await pagePoint(page, 400, 300)).y);
+	await page.mouse.down();
+	await page.mouse.move((await pagePoint(page, 600, 400)).x, (await pagePoint(page, 600, 400)).y);
 	await selectMenu(page, 'EDIT: YES', 'No');
+	await page.mouse.up();
 	await expect(page.locator('.drawing-target')).toHaveCount(0);
 	await page.keyboard.press('Backspace');
 	await expect(page.getByRole('img', { name: 'Comic page' })).toBeVisible();
@@ -1129,29 +1203,34 @@ for (const pageCount of [5, 6]) {
 		await mockDirectory(page, { pageCount });
 		await openComic(page, '2P');
 		await selectMenu(page, 'ORG', 'EN');
-		const texts = page.locator('foreignObject');
-		await expect(texts).toHaveText(['Hello', 'Second page']);
+		await expectPagePaths(page, ['album/01.png', 'album/02.png']);
 		await clickSpread(page, 0.1);
 		await page.keyboard.press('ArrowRight');
-		await expect(texts).toHaveText(['Page 3', 'Page 4']);
+		await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 		await page.keyboard.press('Shift+ArrowLeft');
-		await expect(texts).toHaveText(['Second page', 'Page 3']);
+		await expectPagePaths(page, ['album/02.png', 'album/03.png']);
 		await clickSpread(page, 0.9, true);
-		await expect(texts).toHaveText(['Page 3', 'Page 4']);
+		await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 		await clickSpread(page, 0.1, true);
-		await expect(texts).toHaveText(['Second page', 'Page 3']);
+		await expectPagePaths(page, ['album/02.png', 'album/03.png']);
 		await page.keyboard.press('Shift+ArrowRight');
-		await expect(texts).toHaveText(['Page 3', 'Page 4']);
+		await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 		await clickSpread(page, 0.9);
-		await expect(texts).toHaveText(pageCount === 5 ? ['Page 5'] : ['Page 5', 'Page 6']);
+		await expectPagePaths(
+			page,
+			pageCount === 5 ? ['album/05.png'] : ['album/05.png', 'album/06.png']
+		);
 		await page.keyboard.press('ArrowRight');
-		await expect(texts).toHaveText(pageCount === 5 ? ['Page 5'] : ['Page 5', 'Page 6']);
+		await expectPagePaths(
+			page,
+			pageCount === 5 ? ['album/05.png'] : ['album/05.png', 'album/06.png']
+		);
 		await clickSpread(page, 0.1);
-		await expect(texts).toHaveText(['Page 3', 'Page 4']);
+		await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 		await page.keyboard.press('ArrowLeft');
-		await expect(texts).toHaveText(['Hello', 'Second page']);
+		await expectPagePaths(page, ['album/01.png', 'album/02.png']);
 		await page.keyboard.press('Shift+ArrowLeft');
-		await expect(texts).toHaveText(['Hello', 'Second page']);
+		await expectPagePaths(page, ['album/01.png', 'album/02.png']);
 	});
 }
 
@@ -1197,9 +1276,7 @@ test('edit both pages in 2P, target the right context menu and retain overlappin
 	const newBubble = rightPage.locator('foreignObject[data-bubble-index="1"]').getByRole('textbox');
 	await newBubble.fill('New on right');
 	await newBubble.click({ button: 'right' });
-	await page.getByText('Convert to Poly', { exact: true }).click();
-	await expect(rightPage.locator('.svgcontent polygon')).toHaveCount(1);
-	await newBubble.click({ button: 'right' });
+	await expect(page.getByText('Convert to Poly', { exact: true })).toHaveCount(0);
 	await page.getByText('Delete', { exact: true }).click();
 	await expect(page.getByRole('textbox')).toHaveText(['Left edit', 'Right edit']);
 	// Navigation starts outside editable text; the retained right page becomes the left page.
@@ -1220,7 +1297,7 @@ test('keep the complete spread and zoom stable until both incoming pages are rea
 	await mockDirectory(page, { pageCount: 5, delayedImage: 'album/04.png' });
 	await openComic(page, '2P');
 	await selectMenu(page, 'ORG', 'EN');
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'Second page']);
+	await expectPagePaths(page, ['album/01.png', 'album/02.png']);
 	const before = await page.locator('.scaled-content').boundingBox();
 	await page.locator('main').click({ position: { x: 10, y: 400 } });
 	await page.keyboard.press('ArrowRight');
@@ -1232,7 +1309,9 @@ test('keep the complete spread and zoom stable until both incoming pages are rea
 			await new Promise(requestAnimationFrame);
 			const content = document.querySelector('.scaled-content')!.getBoundingClientRect();
 			samples.push({
-				texts: Array.from(document.querySelectorAll('foreignObject')).map((el) => el.textContent),
+				paths: Array.from(document.querySelectorAll('[data-page-path]')).map((el) =>
+					el.getAttribute('data-page-path')
+				),
 				width: content.width,
 				height: content.height,
 				loading: document.querySelector('main')!.textContent!.includes('Loading page...')
@@ -1241,13 +1320,13 @@ test('keep the complete spread and zoom stable until both incoming pages are rea
 		return samples;
 	});
 	for (const sample of frames) {
-		expect(sample.texts).toEqual(['Hello', 'Second page']);
+		expect(sample.paths).toEqual(['album/01.png', 'album/02.png']);
 		expect(sample.width).toBe(before!.width);
 		expect(sample.height).toBe(before!.height);
 		expect(sample.loading).toBe(false);
 	}
 	await page.evaluate(() => window.__releaseImage());
-	await expect(page.locator('foreignObject')).toHaveText(['Page 3', 'Page 4']);
+	await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 	await expect(page.locator('.scaled-content')).toHaveJSProperty('clientWidth', before!.width);
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(2);
 });
@@ -1261,10 +1340,10 @@ test('a superseded slow spread cannot replace newer navigation and releases its 
 	await page.getByRole('treeitem', { name: /^0?3$/, exact: true }).click();
 	await expect.poll(() => page.evaluate(() => window.__imageWaiting)).toBe(true);
 	await page.getByRole('treeitem', { name: /^0?5$/, exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText(['Page 5']);
+	await expectPagePaths(page, ['album/05.png']);
 	await page.evaluate(() => window.__releaseImage());
 	await expect.poll(() => page.evaluate(() => window.__imageUrls.revoked.length)).toBe(4);
-	await expect(page.locator('foreignObject')).toHaveText(['Page 5']);
+	await expectPagePaths(page, ['album/05.png']);
 	await expect(page.locator('[data-page-path]')).toHaveAttribute('data-page-path', 'album/05.png');
 });
 
@@ -1286,11 +1365,11 @@ test('fullscreen hides reader UI, fills the window, and restores editing and sid
 	await expect
 		.poll(() => page.locator('main').boundingBox())
 		.toEqual({ x: 0, y: 0, width: 1440, height: 1100 });
-	await expect(page.locator('foreignObject')).toHaveText(['Fullscreen edit', 'Second page']);
+	await expectPagePaths(page, ['album/01.png', 'album/02.png']);
 	await page.locator('main').click({ position: { x: 1430, y: 400 } });
-	await expect(page.locator('foreignObject')).toHaveText(['Page 3', 'Page 4']);
+	await expectPagePaths(page, ['album/03.png', 'album/04.png']);
 	await page.keyboard.press('Shift+ArrowLeft');
-	await expect(page.locator('foreignObject')).toHaveText(['Second page', 'Page 3']);
+	await expectPagePaths(page, ['album/02.png', 'album/03.png']);
 	await page.evaluate(() => document.exitFullscreen());
 	await expect(page.getByRole('banner')).toBeVisible();
 	await expect(page.getByRole('tree')).toBeVisible();
@@ -1839,6 +1918,9 @@ for (const scope of ['page', 'album']) {
 		await page.getByLabel('Scope', { exact: true }).selectOption(scope);
 		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
 		await expect(page.locator('foreignObject')).toHaveText('Hello!');
+		// Carbon restores the dialog trigger's focus after its closing transition.
+		// Wait before opening another menu so that restoration cannot close it.
+		await expect(page.getByRole('button', { name: 'Cleanup Text', exact: true })).toBeFocused();
 		await expect(page.getByRole('status').filter({ hasText: 'bubble text' })).toContainText(
 			scope === 'page' ? '1 bubble text' : '2 bubble texts'
 		);
@@ -1848,10 +1930,12 @@ for (const scope of ['page', 'album']) {
 				.apiKey
 		).toBe('');
 		await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
-		await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).press('Enter');
+		await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).focus();
+		await page.keyboard.press('Enter');
 		await expect(page.locator('foreignObject')).toHaveText('Hallo');
 		await page.getByRole('menuitem', { name: 'NL', exact: true }).click();
-		await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).press('Enter');
+		await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).focus();
+		await page.keyboard.press('Enter');
 		await page.getByRole('button', { name: 'Next Page', exact: true }).click();
 		await expect(page.locator('foreignObject')).toHaveText(
 			scope === 'page' ? 'Second page' : 'Second page!'
@@ -2041,7 +2125,8 @@ test('AI translation creates a new page overlay using flags, schema and the tran
 	await expect(page.getByRole('menuitem', { name: 'FR', exact: true })).toBeVisible();
 	await expect(page.getByRole('status').filter({ hasText: 'translated to FR' })).toBeVisible();
 	await page.getByRole('menuitem', { name: 'FR', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).press('Enter');
+	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).focus();
+	await page.keyboard.press('Enter');
 	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'Second page']);
 });
 
@@ -2104,7 +2189,8 @@ test('late AI translation stays with its source page and does not change the cur
 	await expect(page.getByRole('menuitem', { name: 'EN', exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Previous Page', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'EN', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'French (FR)', exact: true }).press('Enter');
+	await page.getByRole('menuitemradio', { name: 'French (FR)', exact: true }).focus();
+	await page.keyboard.press('Enter');
 	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
 });
 

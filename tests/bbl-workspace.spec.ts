@@ -235,6 +235,8 @@ test('back up edits as .bbl documents, restore in another tab, and confirm disca
 		FileSystemHandle.prototype.queryPermission = async () => 'granted';
 	});
 	await reopened.goto('./');
+	await expect(reopened.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await reopened.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(reopened.locator('foreignObject')).toHaveText('Browser edit');
 	await reopened.close();
 	const discard = page
@@ -783,9 +785,12 @@ test('Save and Discard affect only the selected page-language source file', asyn
 	await writeDocuments(page, docs, true);
 	await page.getByRole('textbox').fill('English edit');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('Untouched');
 	await page.getByRole('textbox').fill('Second page pending');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('English edit');
 	await selectLanguage(page, 'EN', 'NL');
+	await expect(page.getByRole('textbox')).toHaveText('Original');
 	await page.getByRole('textbox').fill('Dutch edit');
 	await expect(page.getByRole('menuitem', { name: 'NL', exact: true })).toHaveCSS(
 		'font-weight',
@@ -801,10 +806,9 @@ test('Save and Discard affect only the selected page-language source file', asyn
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 	expect((await disk(page, 'album/01.png.en.bbl')).pages[0].bubbles[0].text).toBe('Original');
 	expect((await disk(page, 'album/02.png.en.bbl')).pages[0].bubbles[0].text).toBe('Untouched');
-	expect(Object.keys(await backups(page)).sort()).toEqual([
-		'album/01.png.en.bbl',
-		'album/02.png.en.bbl'
-	]);
+	await expect
+		.poll(async () => Object.keys(await backups(page)).sort())
+		.toEqual(['album/01.png.en.bbl', 'album/02.png.en.bbl']);
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
@@ -1045,5 +1049,7 @@ test('AI page translation backs up and saves a new language without changing the
 	});
 	expect(await disk(page)).toEqual(original);
 	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
 });

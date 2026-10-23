@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { faRecycle } from '@fortawesome/free-solid-svg-icons';
+	import { faRecycle, faPaintRoller } from '@fortawesome/free-solid-svg-icons';
+	const [paintRollerWidth, paintRollerHeight, , , paintRollerPath] = faPaintRoller.icon;
 	const [recycleWidth, recycleHeight, , , recyclePath] = faRecycle.icon;
 	let {
 		name
@@ -16,6 +17,7 @@
 			| 'star'
 			| 'video'
 			| 'camera'
+			| 'paint-roller'
 			| 'spell-check'
 			| 'globe'
 			| 'crosshairs'
@@ -28,7 +30,11 @@
 <svg
 	width="20"
 	height="20"
-	viewBox={name === 'recycle' ? `0 0 ${recycleWidth} ${recycleHeight}` : '0 0 24 24'}
+	viewBox={name === 'recycle'
+		? `0 0 ${recycleWidth} ${recycleHeight}`
+		: name === 'paint-roller'
+			? `0 0 ${paintRollerWidth} ${paintRollerHeight}`
+			: '0 0 24 24'}
 	fill="none"
 	stroke="currentColor"
 	stroke-width="1.5"
@@ -42,6 +48,10 @@
 		<path d="M4 3h13l4 4v14H3V3Zm3 0v6h10V3M7 21v-8h10v8" />
 	{:else if name === 'recycle'}
 		{#each Array.isArray(recyclePath) ? recyclePath : [recyclePath] as d}
+			<path {d} fill="currentColor" stroke="none" />
+		{/each}
+	{:else if name === 'paint-roller'}
+		{#each Array.isArray(paintRollerPath) ? paintRollerPath : [paintRollerPath] as d}
 			<path {d} fill="currentColor" stroke="none" />
 		{/each}
 	{:else if name === 'eye'}

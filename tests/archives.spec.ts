@@ -172,6 +172,7 @@ test('archive albums open with keyboard, keep natural order across internal fold
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	const pane = page.getByRole('region', { name: 'Album pages' });
 	await expect(pane.locator('button')).toHaveText(['nested/2.png', 'nested/10.png', 'z/1.png']);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(
 		page.locator('svg').getByText('Archive hello', { exact: true }).last()
 	).toBeVisible();
@@ -486,6 +487,8 @@ test('empty archive and malformed overlay errors leave adjacent archive albums u
 	await page.getByRole('treeitem', { name: 'empty', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('no supported images');
 	await page.getByRole('treeitem', { name: 'bad', exact: true }).click();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('Could not read bubbles');
 	await page.getByRole('treeitem', { name: 'good', exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
@@ -678,6 +681,7 @@ test('archive page headings use collection and album while preserving internal p
 		'data-page-path',
 		'comics - Volume.cbz/' + names[0]
 	);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject').last()).toHaveText('Original overlay match');
 	await album.press('ArrowRight');
 	await expect(album.getByRole('treeitem', { name: '001.png', exact: true })).toBeVisible();
@@ -740,5 +744,52 @@ test('shorten the complete archive label including repeated wrapper folders and 
 		'title',
 		`${title}/RozeB-0002.webp`
 	);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject').last()).toHaveText('Wrapper overlay');
+});
+
+test('archive rendered images stay attached to original pages and reading never loads bubbles', async ({
+	page
+}) => {
+	await page.goto('./');
+	const translated = new Uint8Array(
+		await page.evaluate(async () => {
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 1;
+			const blob = await new Promise<Blob>((resolve) =>
+				canvas.toBlob((blob) => resolve(blob!), 'image/webp')
+			);
+			return [...new Uint8Array(await blob.arrayBuffer())];
+		})
+	);
+	await setup(page, {
+		'rendered.cbz': await zipBytes({
+			'1.png': png,
+			'1.EN.webp': translated,
+			'2.png': png,
+			'1.en.bbl': comicEntries['nested/2.en.bbl']
+		})
+	});
+	await page.getByRole('treeitem', { name: 'rendered', exact: true }).click();
+	const images = page.locator('[data-page-path] svg > image:first-of-type');
+	await expect(page.getByRole('region', { name: 'Album pages' }).getByRole('button')).toHaveCount(
+		2
+	);
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	const sizes = () =>
+		images.evaluateAll(async (elements) =>
+			Promise.all(
+				elements.map(
+					async (element) =>
+						(await (await fetch(element.getAttribute('href')!)).arrayBuffer()).byteLength
+				)
+			)
+		);
+	await expect.poll(sizes).toEqual([translated.length, png.length]);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Archive hello');
+	await expect.poll(sizes).toEqual([png.length, png.length]);
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect.poll(sizes).toEqual([translated.length, png.length]);
 });

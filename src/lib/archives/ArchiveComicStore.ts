@@ -1,3 +1,4 @@
+import { groupImageVariants, imageLanguages } from '../ImageVariants';
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
 import type { BblWorkspace } from '../bbl/BblWorkspace';
 import { archiveImageUrl } from '../ImageUrls';
@@ -50,24 +51,26 @@ export class ArchiveComicStore implements ComicStore {
 		const entries = await this.reader.list();
 		if (this.disposed) throw new Error('Archive disconnected');
 		this.entries = new Set(entries.map((e) => e.path));
-		const pages = entries
-			.filter((e) => supportedImageTypes.includes(baseNameExt(e.path)[1].toLowerCase()))
-			.sort(
-				(a, b) =>
-					a.path.localeCompare(b.path, 'en', { numeric: true }) ||
-					a.path.localeCompare(b.path, 'en')
-			)
-			.map((entry) => {
-				const page = new Comic(this.prefix + entry.path, [], this);
-				page.album = this.archivePath;
-				page.entryPath = entry.path;
-				const parts = entry.path.split('/');
-				const [filename, extension] = baseNameExt(parts.pop()!);
-				const album = baseNameExt(this.archivePath.split('/').at(-1)!)[0];
-				parts.push(withoutAlbumPrefix(filename, this.collectionName, album) + '.' + extension);
-				page.displayName = withoutAlbumPrefix(parts.join('/'), this.collectionName, album);
-				return page;
-			});
+		const pages = groupImageVariants(
+			entries
+				.filter((e) => supportedImageTypes.includes(baseNameExt(e.path)[1].toLowerCase()))
+				.sort(
+					(a, b) =>
+						a.path.localeCompare(b.path, 'en', { numeric: true }) ||
+						a.path.localeCompare(b.path, 'en')
+				)
+				.map((entry) => {
+					const page = new Comic(this.prefix + entry.path, [], this);
+					page.album = this.archivePath;
+					page.entryPath = entry.path;
+					const parts = entry.path.split('/');
+					const [filename, extension] = baseNameExt(parts.pop()!);
+					const album = baseNameExt(this.archivePath.split('/').at(-1)!)[0];
+					parts.push(withoutAlbumPrefix(filename, this.collectionName, album) + '.' + extension);
+					page.displayName = withoutAlbumPrefix(parts.join('/'), this.collectionName, album);
+					return page;
+				})
+		);
 		if (!pages.length) throw new Error('Archive contains no supported images');
 		this.metadata?.dispose();
 		this.metadata = new AlbumMetadata(
@@ -87,7 +90,8 @@ export class ArchiveComicStore implements ComicStore {
 			this.metadata.dispose();
 			throw new Error('Archive disconnected');
 		}
-		for (const page of pages) page.languages = this.metadata.languages(page.entryPath!);
+		for (const page of pages)
+			page.languages = imageLanguages(page, this.metadata.languages(page.entryPath!));
 		// Archives often wrap every page in the album's directory. Include that
 		// virtual directory in the shared-prefix rule used for folder albums.
 		const sharedPrefix = sharedFilenamePrefix(
