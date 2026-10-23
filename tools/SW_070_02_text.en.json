@@ -1,76 +1,76 @@
 {
-  "sourceLanguage": "nl",
-  "targetLanguage": "en",
-  "items": [
-    {
-      "id": "/pages/0/bubbles/0",
-      "source": "Merkwaardig! Telkens als er een\nomroepster komt moet\nhij plots aan de knoppen draaien!",
-      "target": "Strange! Whenever a female announcer comes on, he suddenly has to turn the knobs!"
-    },
-    {
-      "id": "/pages/0/bubbles/1",
-      "source": "Ja, ja, Suske. Hij wil er met zijn neus bovenop staan! Zolang die lieve dames op het scherm te zien zijn is hij niet weg te slaan van bij het beeld!",
-      "target": "Yes, yes, Spike. He wants to be right on top of it! As long as those lovely ladies are on the screen, you can't tear him away from the TV!"
-    },
-    {
-      "id": "/pages/0/bubbles/2",
-      "source": "DIE AVOND... ZOALS\nTROUWENS ELKE A-\nVOND, KOMT LAMBIK\nBIJ TANTE SIDONIA\nNAAR DE TELEVISIE-\nUITZENDING KIJKEN.",
-      "target": "THAT EVENING... AS USUAL, EVERY EVENING, LAMBIK COMES TO AUNT SIDONIA'S\nTO WATCH THE TELEVISION BROADCAST."
-    },
-    {
-      "id": "/pages/0/bubbles/3",
-      "source": "Lach je me maar niet uit, Sidonia! Want wie wil het\nbeeld altijd zo scherp mogelijk hebben als er een knappe\njongen op het beeld komt",
-      "target": "Don't laugh at me, Sidonia! Because who always wants the picture as sharp as possible when a handsome boy appears on screen?"
-    },
-    {
-      "id": "/pages/0/bubbles/4",
-      "source": "Zeg, is Jerom nog niet\nterug van de door-\nlichting?",
-      "target": "Say, isn't Jerome back from the examination yet?"
-    },
-    {
-      "id": "/pages/0/bubbles/5",
-      "source": "Er wordt gebeld. Daar zal hij zijn!",
-      "target": "Someone's ringing. That must be him!"
-    },
-    {
-      "id": "/pages/0/bubbles/6",
-      "source": "Wel Jerom, hoe\nis het afgelo-\npen!",
-      "target": "Well, Jerome, how did it go?"
-    },
-    {
-      "id": "/pages/0/bubbles/7",
-      "source": "..Dokters stom verbaasd... nog\nnooit foto van stalen lon-\ngen gezien",
-      "target": "...Doctors dumbfounded... never seen a photo of steel lungs before"
-    },
-    {
-      "id": "/pages/0/bubbles/8",
-      "source": "Stilte!! Mevrouw de barones\nLamer de Rodeldal!",
-      "target": "Silence!! The Honourable Baroness Lamer de Rodeldal!"
-    },
-    {
-      "id": "/pages/0/bubbles/9",
-      "source": "... Nieuwe relatie... leren kennen\nbij dokter... Komt iets\nvragen...",
-      "target": "...New relationship... met her at the doctor's... Came to ask something..."
-    },
-    {
-      "id": "/pages/0/bubbles/10",
-      "source": "Mevrouw, gelieve niet\nzo fijn te kijken! Mijn\nafwas...",
-      "target": "Madam, please don't stare so intently! My washing-up..."
-    },
-    {
-      "id": "/pages/0/bubbles/11",
-      "source": "Al goed... al goed\nIk wilde u gaarne\nspreken!",
-      "target": "All right... all right. I wished to speak to you!"
-    },
-    {
-      "id": "/pages/0/bubbles/12",
-      "source": "Mevrouw stoeltje geven...\nEven gaan zitten...)",
-      "target": "Give madam a chair... Sit down for a moment...)"
-    },
-    {
-      "id": "/pages/0/bubbles/13",
-      "source": "Heel even... heel even... ik kom\nJerom halen....",
-      "target": "Just a moment... just a moment... I'll fetch Jerome...."
-    }
-  ]
+	"sourceLanguage": "nl",
+	"targetLanguage": "en",
+	"items": [
+		{
+			"id": "/pages/0/bubbles/0",
+			"source": "Merkwaardig! Telkens als er een\nomroepster komt moet\nhij plots aan de knoppen draaien!",
+			"target": "Strange! Whenever a female announcer comes on, he suddenly has to turn the knobs!"
+		},
+		{
+			"id": "/pages/0/bubbles/1",
+			"source": "Ja, ja, Suske. Hij wil er met zijn neus bovenop staan! Zolang die lieve dames op het scherm te zien zijn is hij niet weg te slaan van bij het beeld!",
+			"target": "Yes, yes, Spike. He wants to be right on top of it! As long as those lovely ladies are on the screen, you can't tear him away from the TV!"
+		},
+		{
+			"id": "/pages/0/bubbles/2",
+			"source": "DIE AVOND... ZOALS\nTROUWENS ELKE A-\nVOND, KOMT LAMBIK\nBIJ TANTE SIDONIA\nNAAR DE TELEVISIE-\nUITZENDING KIJKEN.",
+			"target": "THAT EVENING... AS USUAL, EVERY EVENING, LAMBIK COMES TO AUNT SIDONIA'S\nTO WATCH THE TELEVISION BROADCAST."
+		},
+		{
+			"id": "/pages/0/bubbles/3",
+			"source": "Lach je me maar niet uit, Sidonia! Want wie wil het\nbeeld altijd zo scherp mogelijk hebben als er een knappe\njongen op het beeld komt",
+			"target": "Don't laugh at me, Sidonia! Because who always wants the picture as sharp as possible when a handsome boy appears on screen?"
+		},
+		{
+			"id": "/pages/0/bubbles/4",
+			"source": "Zeg, is Jerom nog niet\nterug van de door-\nlichting?",
+			"target": "Say, isn't Jerome back from the examination yet?"
+		},
+		{
+			"id": "/pages/0/bubbles/5",
+			"source": "Er wordt gebeld. Daar zal hij zijn!",
+			"target": "Someone's ringing. That must be him!"
+		},
+		{
+			"id": "/pages/0/bubbles/6",
+			"source": "Wel Jerom, hoe\nis het afgelo-\npen!",
+			"target": "Well, Jerome, how did it go?"
+		},
+		{
+			"id": "/pages/0/bubbles/7",
+			"source": "..Dokters stom verbaasd... nog\nnooit foto van stalen lon-\ngen gezien",
+			"target": "...Doctors dumbfounded... never seen a photo of steel lungs before"
+		},
+		{
+			"id": "/pages/0/bubbles/8",
+			"source": "Stilte!! Mevrouw de barones\nLamer de Rodeldal!",
+			"target": "Silence!! The Honourable Baroness Lamer de Rodeldal!"
+		},
+		{
+			"id": "/pages/0/bubbles/9",
+			"source": "... Nieuwe relatie... leren kennen\nbij dokter... Komt iets\nvragen...",
+			"target": "...New relationship... met her at the doctor's... Came to ask something..."
+		},
+		{
+			"id": "/pages/0/bubbles/10",
+			"source": "Mevrouw, gelieve niet\nzo fijn te kijken! Mijn\nafwas...",
+			"target": "Madam, please don't stare so intently! My washing-up..."
+		},
+		{
+			"id": "/pages/0/bubbles/11",
+			"source": "Al goed... al goed\nIk wilde u gaarne\nspreken!",
+			"target": "All right... all right. I wished to speak to you!"
+		},
+		{
+			"id": "/pages/0/bubbles/12",
+			"source": "Mevrouw stoeltje geven...\nEven gaan zitten...)",
+			"target": "Give madam a chair... Sit down for a moment...)"
+		},
+		{
+			"id": "/pages/0/bubbles/13",
+			"source": "Heel even... heel even... ik kom\nJerom halen....",
+			"target": "Just a moment... just a moment... I'll fetch Jerome...."
+		}
+	]
 }

@@ -1,81 +1,81 @@
 {
-  "sourceLanguage": "nl",
-  "targetLanguage": "en",
-  "items": [
-    {
-      "id": "/pages/0/bubbles/0",
-      "source": "De lichten schudden soms door\nlichte aardschokken! Het is niet\ngevaarlijk!",
-      "target": "The lights sometimes shake from slight earthquakes! It's not dangerous!"
-    },
-    {
-      "id": "/pages/0/bubbles/1",
-      "source": "Jerom, jij brengt de bezoekers\nnaar hun kamers, en... zo vlug\nmogelijk... zo vlug mogelijk!",
-      "target": "Jerom, you take the visitors to their rooms, and... as quickly as possible... as quickly as possible!"
-    },
-    {
-      "id": "/pages/0/bubbles/2",
-      "source": "En let erop... let erop... dat ze niet\nuit hun kamers kunnen komen\nvannacht!",
-      "target": "And make sure... make sure... they can't leave their rooms tonight!"
-    },
-    {
-      "id": "/pages/0/bubbles/7",
-      "source": "OK... Barones... eh....\nBarones!",
-      "target": "OK... Baroness... uh.... Baroness!"
-    },
-    {
-      "id": "/pages/0/bubbles/9",
-      "source": "JEROM BRENGT DE BEZOEKERS NAAR HUN KAMERS.",
-      "target": "JEROM TAKES THE VISITORS TO THEIR ROOMS."
-    },
-    {
-      "id": "/pages/0/bubbles/10",
-      "source": "WELDRA IS IEDEREEN IN DIEPE\nRUST VERZONKEN. MAAR WAN-\nNEER DE KLOK MIDDERNACHT..\nmm",
-      "target": "SOON EVERYONE IS LOST IN A DEEP SLEEP. BUT WHEN THE CLOCK STRIKES MIDNIGHT.. mm"
-    },
-    {
-      "id": "/pages/0/bubbles/11",
-      "source": "... SLAAT WORDT IN ENKELE KAMERS LICHT ONTSTOKEN",
-      "target": "... LIGHTS ARE TURNED ON IN SOME ROOMS"
-    },
-    {
-      "id": "/pages/0/bubbles/15",
-      "source": "... WANT...",
-      "target": "... BECAUSE..."
-    },
-    {
-      "id": "/pages/0/bubbles/16",
-      "source": "Met",
-      "target": "With"
-    },
-    {
-      "id": "/pages/0/bubbles/17",
-      "source": "HET GEHEIMZINNIG GEDAVER WAART WEER DOOR HET KASTEEL.",
-      "target": "THE MYSTERIOUS RUMBLING ONCE AGAIN ECHOES THROUGH THE CASTLE."
-    },
-    {
-      "id": "/pages/0/bubbles/18",
-      "source": "Ongesloten. Dat heeft de barones aan Jerom be-\nvolen! Ik vraag mij af, waarom?",
-      "target": "Unlocked. The baroness ordered Jerom to do that! I wonder why?"
-    },
-    {
-      "id": "/pages/0/bubbles/19",
-      "source": "UIT HUN SLAAP GE-\nRUKT, STELLEN ONZE\nVRIENDEN VAST, DAT\nZE OPGESLOTEN ZIJN.\nALLEEN LAMBIK LAAT\nHET NIET BIJ DIE\nVASTSTELLING.",
-      "target": "ROUSED FROM THEIR SLEEP, OUR FRIENDS DISCOVER THAT THEY ARE LOCKED IN. ONLY LAMBIK DOESN'T LEAVE IT AT THAT."
-    },
-    {
-      "id": "/pages/0/bubbles/21",
-      "source": "Hier gebeurt iets dat wij niet mogen\nzien! Maar dan kent ze me...",
-      "target": "Something is happening here that we're not allowed to see! But then she knows me..."
-    },
-    {
-      "id": "/pages/0/bubbles/22",
-      "source": "Oei! De knop breekt af!!",
-      "target": "Oh dear! The knob breaks off!!"
-    },
-    {
-      "id": "/pages/0/bubbles/23",
-      "source": "Help! Weer een onschuldig slachtoffer\nvan de zwaartekracht.",
-      "target": "Help! Another innocent victim of gravity."
-    }
-  ]
+	"sourceLanguage": "nl",
+	"targetLanguage": "en",
+	"items": [
+		{
+			"id": "/pages/0/bubbles/0",
+			"source": "De lichten schudden soms door\nlichte aardschokken! Het is niet\ngevaarlijk!",
+			"target": "The lights sometimes shake from slight earthquakes! It's not dangerous!"
+		},
+		{
+			"id": "/pages/0/bubbles/1",
+			"source": "Jerom, jij brengt de bezoekers\nnaar hun kamers, en... zo vlug\nmogelijk... zo vlug mogelijk!",
+			"target": "Jerom, you take the visitors to their rooms, and... as quickly as possible... as quickly as possible!"
+		},
+		{
+			"id": "/pages/0/bubbles/2",
+			"source": "En let erop... let erop... dat ze niet\nuit hun kamers kunnen komen\nvannacht!",
+			"target": "And make sure... make sure... they can't leave their rooms tonight!"
+		},
+		{
+			"id": "/pages/0/bubbles/7",
+			"source": "OK... Barones... eh....\nBarones!",
+			"target": "OK... Baroness... uh.... Baroness!"
+		},
+		{
+			"id": "/pages/0/bubbles/9",
+			"source": "JEROM BRENGT DE BEZOEKERS NAAR HUN KAMERS.",
+			"target": "JEROM TAKES THE VISITORS TO THEIR ROOMS."
+		},
+		{
+			"id": "/pages/0/bubbles/10",
+			"source": "WELDRA IS IEDEREEN IN DIEPE\nRUST VERZONKEN. MAAR WAN-\nNEER DE KLOK MIDDERNACHT..\nmm",
+			"target": "SOON EVERYONE IS LOST IN A DEEP SLEEP. BUT WHEN THE CLOCK STRIKES MIDNIGHT.. mm"
+		},
+		{
+			"id": "/pages/0/bubbles/11",
+			"source": "... SLAAT WORDT IN ENKELE KAMERS LICHT ONTSTOKEN",
+			"target": "... LIGHTS ARE TURNED ON IN SOME ROOMS"
+		},
+		{
+			"id": "/pages/0/bubbles/15",
+			"source": "... WANT...",
+			"target": "... BECAUSE..."
+		},
+		{
+			"id": "/pages/0/bubbles/16",
+			"source": "Met",
+			"target": "With"
+		},
+		{
+			"id": "/pages/0/bubbles/17",
+			"source": "HET GEHEIMZINNIG GEDAVER WAART WEER DOOR HET KASTEEL.",
+			"target": "THE MYSTERIOUS RUMBLING ONCE AGAIN ECHOES THROUGH THE CASTLE."
+		},
+		{
+			"id": "/pages/0/bubbles/18",
+			"source": "Ongesloten. Dat heeft de barones aan Jerom be-\nvolen! Ik vraag mij af, waarom?",
+			"target": "Unlocked. The baroness ordered Jerom to do that! I wonder why?"
+		},
+		{
+			"id": "/pages/0/bubbles/19",
+			"source": "UIT HUN SLAAP GE-\nRUKT, STELLEN ONZE\nVRIENDEN VAST, DAT\nZE OPGESLOTEN ZIJN.\nALLEEN LAMBIK LAAT\nHET NIET BIJ DIE\nVASTSTELLING.",
+			"target": "ROUSED FROM THEIR SLEEP, OUR FRIENDS DISCOVER THAT THEY ARE LOCKED IN. ONLY LAMBIK DOESN'T LEAVE IT AT THAT."
+		},
+		{
+			"id": "/pages/0/bubbles/21",
+			"source": "Hier gebeurt iets dat wij niet mogen\nzien! Maar dan kent ze me...",
+			"target": "Something is happening here that we're not allowed to see! But then she knows me..."
+		},
+		{
+			"id": "/pages/0/bubbles/22",
+			"source": "Oei! De knop breekt af!!",
+			"target": "Oh dear! The knob breaks off!!"
+		},
+		{
+			"id": "/pages/0/bubbles/23",
+			"source": "Help! Weer een onschuldig slachtoffer\nvan de zwaartekracht.",
+			"target": "Help! Another innocent victim of gravity."
+		}
+	]
 }

@@ -1,4 +1,4 @@
-import { BblShapeType, type BblShape, type Bubble, type Vertex } from './types/Comic';
+import { BblShapeType, type BblShape, type Bubble } from './types/Comic';
 
 type Box = { l: number; t: number; r: number; b: number };
 type Word = { index: number; bubble: Bubble; box: Box; text: string };
@@ -161,6 +161,14 @@ function continuation(upper: Line, lower: Line) {
 	const alignment = Math.min(Math.abs(cx(a) - cx(b)), Math.abs(a.l - b.l), Math.abs(a.r - b.r)) / h;
 	return alignment > 2 ? Infinity : Math.max(0, gap) / h + 0.2 * alignment;
 }
+/** Flatten OCR formatting while keeping hyphenated line breaks joined. */
+function unformatted(value: string): string {
+	return value
+		.replace(/-[^\S\r\n\u2028\u2029]*[\r\n\u2028\u2029]\s*/gu, '-')
+		.replace(/\s+/gu, ' ')
+		.trim();
+}
+
 function text(line: Line) {
 	let output = '',
 		previous = '';
@@ -184,147 +192,6 @@ function boxShape(box: Box): BblShape {
 		]
 	};
 }
-function signedArea(points: Vertex[]) {
-	return (
-		points.reduce((sum, a, i) => {
-			const b = points[(i + 1) % points.length];
-			return sum + a.x * b.y - b.x * a.y;
-		}, 0) / 2
-	);
-}
-
-/** Orthogonal rectangle union replaces java.awt.geom.Area; holes are filled and
- * disconnected components fall back to the enclosing box, as in the Java tool. */
-function rectangleOutline(edges: number[][], enclosing: Box): BblShape {
-	const xs = [...new Set(edges.flatMap((b) => [b[0], b[2]]))].sort((a, b) => a - b);
-	const ys = [...new Set(edges.flatMap((b) => [b[1], b[3]]))].sort((a, b) => a - b);
-	const cells = ys
-		.slice(1)
-		.map((_, y) =>
-			xs
-				.slice(1)
-				.map((_, x) =>
-					edges.some(
-						(b) => b[0] <= xs[x] && b[2] >= xs[x + 1] && b[1] <= ys[y] && b[3] >= ys[y + 1]
-					)
-				)
-		);
-	type Edge = { from: Vertex; to: Vertex; direction: number };
-	const remaining = new Set<Edge>(),
-		outgoing = new Map<string, Edge[]>();
-	const key = (p: Vertex) => `${p.x},${p.y}`;
-	function add(x1: number, y1: number, x2: number, y2: number, direction: number) {
-		const edge = { from: { x: x1, y: y1 }, to: { x: x2, y: y2 }, direction };
-		remaining.add(edge);
-		const list = outgoing.get(key(edge.from)) ?? [];
-		list.push(edge);
-		outgoing.set(key(edge.from), list);
-	}
-	for (let y = 0; y < cells.length; y++)
-		for (let x = 0; x < cells[y].length; x++) {
-			if (!cells[y][x]) continue;
-			if (!cells[y - 1]?.[x]) add(xs[x], ys[y], xs[x + 1], ys[y], 0);
-			if (!cells[y]?.[x + 1]) add(xs[x + 1], ys[y], xs[x + 1], ys[y + 1], 1);
-			if (!cells[y + 1]?.[x]) add(xs[x + 1], ys[y + 1], xs[x], ys[y + 1], 2);
-			if (!cells[y]?.[x - 1]) add(xs[x], ys[y + 1], xs[x], ys[y], 3);
-		}
-	const contours: Vertex[][] = [];
-	while (remaining.size) {
-		const first = remaining.values().next().value!;
-		const contour: Vertex[] = [];
-		let edge = first;
-		do {
-			contour.push(edge.from);
-			remaining.delete(edge);
-			if (key(edge.to) === key(first.from)) break;
-			const candidates = (outgoing.get(key(edge.to)) ?? []).filter((candidate) =>
-				remaining.has(candidate)
-			);
-			const incoming = edge.direction;
-			// At point contacts, turn right to keep separate contours separate.
-			candidates.sort(
-				(a, b) =>
-					[1, 0, 3, 2].indexOf((a.direction - incoming + 4) % 4) -
-					[1, 0, 3, 2].indexOf((b.direction - incoming + 4) % 4)
-			);
-			if (!candidates.length) return boxShape(enclosing);
-			edge = candidates[0];
-		} while (true);
-		contours.push(contour);
-	}
-	if (!contours.length) return boxShape(enclosing);
-	let contour = contours.reduce((a, b) =>
-		Math.abs(signedArea(a)) >= Math.abs(signedArea(b)) ? a : b
-	);
-	// Positive contours are outer boundaries; negative contours are holes.
-	if (contours.some((c) => c !== contour && signedArea(c) > 0)) return boxShape(enclosing);
-	let changed = true;
-	while (changed && contour.length > 4) {
-		changed = false;
-		for (let i = 0; i < contour.length; i++) {
-			const a = contour[(i + contour.length - 1) % contour.length],
-				b = contour[i],
-				c = contour[(i + 1) % contour.length];
-			if ((a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y)) {
-				contour.splice(i, 1);
-				changed = true;
-				break;
-			}
-		}
-	}
-	if (contour.length === 4)
-		return boxShape({
-			l: Math.min(...edges.map((b) => b[0])),
-			t: Math.min(...edges.map((b) => b[1])),
-			r: Math.max(...edges.map((b) => b[2])),
-			b: Math.max(...edges.map((b) => b[3]))
-		});
-	if (signedArea(contour) < 0) contour.reverse();
-	let start = 0;
-	for (let i = 1; i < contour.length; i++)
-		if (
-			contour[i].y < contour[start].y ||
-			(contour[i].y === contour[start].y && contour[i].x < contour[start].x)
-		)
-			start = i;
-	contour = [...contour.slice(start), ...contour.slice(0, start)];
-	return { type: BblShapeType.poly, vs: contour };
-}
-function outline(lines: Line[]): BblShape {
-	const tolerance = 0.25 * median(lines.map((line) => line.height));
-	const edges = lines.map((line) => {
-		const b = line.box;
-		return [b.l, b.t, b.r, b.b];
-	});
-	for (let axis = 0; axis < 4; axis++) {
-		const order = edges.map((_, i) => i).sort((a, b) => edges[a][axis] - edges[b][axis]);
-		for (let start = 0; start < order.length;) {
-			let end = start + 1;
-			const low = edges[order[start]][axis];
-			while (end < order.length && edges[order[end]][axis] - low <= tolerance) end++;
-			const target = axis < 2 ? low : edges[order[end - 1]][axis];
-			for (let i = start; i < end; i++) edges[order[i]][axis] = target;
-			start = end;
-		}
-	}
-	const original = edges.map((b) => [...b]);
-	for (let i = 0; i < edges.length; i++)
-		for (let j = 0; j < edges.length; j++) {
-			const a = original[i],
-				b = original[j];
-			if (
-				a[3] < b[1] &&
-				b[1] - a[3] <= 0.65 * Math.min(lines[i].height, lines[j].height) &&
-				Math.min(a[2], b[2]) > Math.max(a[0], b[0])
-			) {
-				const middle = (a[3] + b[1]) / 2;
-				edges[i][3] = Math.max(edges[i][3], middle);
-				edges[j][1] = Math.min(edges[j][1], middle);
-			}
-		}
-	return rectangleOutline(edges, lines.map((line) => line.box).reduce(union));
-}
-
 /** Port of tools/bubblemerge.java, operating on a single page without mutating OCR. */
 export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
 	const words: Word[] = bubbles.map((bubble, index) => {
@@ -337,7 +204,7 @@ export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
 		return {
 			bubble,
 			index,
-			text: bubble.text ?? '',
+			text: unformatted(bubble.text ?? ''),
 			box: {
 				l: Math.min(...vs.map((v) => v.x)),
 				t: Math.min(...vs.map((v) => v.y)),
@@ -420,12 +287,13 @@ export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
 		const members = group.flatMap((line) => line.words);
 		const first = members.reduce((a, b) => (a.index < b.index ? a : b));
 		const merged: Bubble = JSON.parse(JSON.stringify(first.bubble));
+		merged.text = first.text;
 		if (members.length > 1) {
 			const textRows = rows(members).sort((a, b) => a.center - b.center);
 			for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
-			merged.text = textRows.map(text).join('\n');
-			merged.shape = outline(group);
+			merged.text = unformatted(textRows.map(text).filter(Boolean).join('\n'));
 		}
+		merged.shape = boxShape(group.map((line) => line.box).reduce(union));
 		return merged;
 	});
 }
