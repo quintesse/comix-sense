@@ -35,7 +35,7 @@ public class bubbletext {
             }
             var output = extract(document, path.getFileName().toString());
             var writer = new OutputStreamWriter(System.out, StandardCharsets.UTF_8);
-            new GsonBuilder().disableHtmlEscaping().create().toJson(output, writer);
+            new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(output, writer);
             writer.write('\n');
             writer.flush();
         } catch (Exception error) {

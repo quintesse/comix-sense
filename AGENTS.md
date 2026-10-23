@@ -48,7 +48,8 @@ project-local helper tools and translation instructions for this workflow.
    regions can have empty target text; document these decisions in the manifest
    or a companion review note. Do not remove bubbles or change geometry.
 6. Run `insert --batch BATCH.json`. It refuses to overwrite targets and changes
-   only text and language values in the original serialization. Each batch is
+   only text and language values, plus whitespace for pretty printing, in the
+   original serialization. Preserve number literals and other string escapes. Each batch is
    recorded in the manifest. Continue until every missing file is complete.
 7. Run `validate`: require all source/target pairs, valid JSON, target language,
    an exact indexed translation for every field, identical non-text/lang data

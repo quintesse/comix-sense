@@ -19,7 +19,7 @@ class TranslationWorkflowTest(unittest.TestCase):
         self.target = self.root / "01.fr.bbl"
         self.state = self.root / "state.json"
         self.batch = self.root / "batch.json"
-        # Keep BOM, CRLF, irregular spaces, nested language, escaped quotes and newlines.
+        # Preserve BOM and values while normalizing CRLF and irregular spacing.
         self.original = ('\ufeff{ "pages": [{"bubbles":[{"text":"Hola \\"amigo\\"\\n¡Ven!",'
                          '"lang":"es","shape":{"vs":[{"x":3,"y":7}]}}]}],\r\n'
                          '"lang" : "es" }').encode("utf-8")
@@ -45,8 +45,12 @@ class TranslationWorkflowTest(unittest.TestCase):
         self.run_tool("validate")
         self.assertEqual(self.source.read_bytes(), self.original)
         self.assertTrue(self.target.read_bytes().startswith(b"\xef\xbb\xbf"))
-        self.assertIn(b"\r\n", self.target.read_bytes())
+        self.assertNotIn(b"\r\n", self.target.read_bytes())
         translated = json.loads(self.target.read_text(encoding="utf-8-sig"))
+        self.assertEqual(self.target.read_text(encoding="utf-8-sig"),
+                         json.dumps(translated, ensure_ascii=False, indent=2) + "\n")
+        manifest = self.state.read_text(encoding="utf-8")
+        self.assertEqual(manifest, json.dumps(json.loads(manifest), ensure_ascii=False, indent=2) + "\n")
         self.assertEqual(translated["pages"][0]["bubbles"][0]["text"], 'Bonjour "ami"\nViens !')
         before = self.target.read_bytes()
         self.run_tool("insert", "--batch", self.batch, succeeds=False)
@@ -78,7 +82,7 @@ class TranslationWorkflowTest(unittest.TestCase):
     def test_validation_detects_geometry_and_original_changes(self):
         self.translate()
         before = self.target.read_bytes()
-        self.target.write_bytes(before.replace(b'"x":3', b'"x":4'))
+        self.target.write_bytes(before.replace(b'"x": 3', b'"x": 4'))
         self.run_tool("validate", succeeds=False)
         self.target.write_bytes(before)
         self.source.write_bytes(self.original + b" ")
@@ -90,6 +94,26 @@ class TranslationWorkflowTest(unittest.TestCase):
         self.run_tool("init")
         self.run_tool("validate")
         self.assertEqual(self.target.read_bytes(), before)
+
+    def test_formatting_preserves_number_literals_and_string_escapes(self):
+        self.source.write_text(
+            r'{"lang":"es","note":"\u00e9 { , : }","empty":[],"object":{},'
+            r'"flags":[true,false,null],"pages":[{"bubbles":[{"text":"Hola",'
+            r'"shape":{"x":1.23000000000000000001,"y":1e+02,"z":-0}}]}]}',
+            encoding="utf-8")
+        self.batch.write_text(json.dumps({self.source.name: ["Bonjour"]}), encoding="utf-8")
+        self.translate()
+        self.run_tool("validate")
+        result = self.target.read_text(encoding="utf-8")
+        self.assertIn('"x": 1.23000000000000000001', result)
+        self.assertIn('"y": 1e+02', result)
+        self.assertIn('"z": -0', result)
+        self.assertIn(r'"note": "\u00e9 { , : }"', result)
+        self.assertIn('"empty": []', result)
+        self.assertIn('"object": {}', result)
+        # Even semantically equal rewrites of non-text values must be detected.
+        self.target.write_text(result.replace('1e+02', '100.0'), encoding="utf-8")
+        self.run_tool("validate", succeeds=False)
 
 
 if __name__ == "__main__":

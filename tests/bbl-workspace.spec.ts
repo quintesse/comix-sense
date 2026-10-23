@@ -139,20 +139,24 @@ async function backups(page: Page): Promise<Record<string, any>> {
 	});
 }
 
-async function disk(page: Page, path = 'album/album.en.bbl') {
-	return page.evaluate(async (path) => {
-		const root = await navigator.storage.getDirectory();
-		let dir = await (await root.getDirectoryHandle('first')).getDirectoryHandle('comics');
-		const parts = path.split('/');
-		const name = parts.pop()!;
-		try {
-			for (const part of parts) dir = await dir.getDirectoryHandle(part);
-			return JSON.parse(await (await (await dir.getFileHandle(name)).getFile()).text());
-		} catch (error) {
-			if (error instanceof DOMException && error.name === 'NotFoundError') return null;
-			throw error;
-		}
-	}, path);
+async function disk(page: Page, path = 'album/album.en.bbl', raw = false) {
+	return page.evaluate(
+		async ({ path, raw }) => {
+			const root = await navigator.storage.getDirectory();
+			let dir = await (await root.getDirectoryHandle('first')).getDirectoryHandle('comics');
+			const parts = path.split('/');
+			const name = parts.pop()!;
+			try {
+				for (const part of parts) dir = await dir.getDirectoryHandle(part);
+				const text = await (await (await dir.getFileHandle(name)).getFile()).text();
+				return raw ? text : JSON.parse(text);
+			} catch (error) {
+				if (error instanceof DOMException && error.name === 'NotFoundError') return null;
+				throw error;
+			}
+		},
+		{ path, raw }
+	);
 }
 
 async function writeDocuments(page: Page, documents: Record<string, unknown>, removeIndex = false) {
@@ -274,6 +278,7 @@ test('save text and geometry to the original document, preserving other pages an
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
 	const result = await disk(page);
+	expect(await disk(page, 'album/album.en.bbl', true)).toBe(JSON.stringify(result, null, 2) + '\n');
 	expect(result).toMatchObject({
 		title: original.title,
 		lang: original.lang,

@@ -104,7 +104,7 @@ export class BblWorkspace {
 	async read(path: string, original: () => Promise<string>): Promise<string> {
 		const draft = this.drafts.get(path);
 		const raw = draft?.raw ?? this.savedDocuments.get(path);
-		return raw ? JSON.stringify(raw) : original();
+		return raw ? JSON.stringify(raw, null, 2) + '\n' : original();
 	}
 
 	// Older backups only identified documents; discovery can associate their pages.
@@ -181,7 +181,7 @@ export class BblWorkspace {
 		clearTimeout(this.timer);
 		this.timer = undefined;
 		const documents = Object.fromEntries(
-			[...this.drafts].map(([path, draft]) => [path, JSON.stringify(draft.raw, null, 2)])
+			[...this.drafts].map(([path, draft]) => [path, JSON.stringify(draft.raw, null, 2) + '\n'])
 		);
 		const changedPages = Object.fromEntries(
 			[...this.drafts].map(([path, draft]) => [path, [...draft.pages]])
@@ -230,7 +230,7 @@ export class BblWorkspace {
 			throw new Error('Write permission was not granted. Your edits are still retained.');
 		await this.flush().catch(() => {});
 		const draft = this.drafts.get(path)!;
-		const text = JSON.stringify(draft.raw, null, 2);
+		const text = JSON.stringify(draft.raw, null, 2) + '\n';
 		const revision = draft.revision;
 		try {
 			const parts = path.split('/');

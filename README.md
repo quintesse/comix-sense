@@ -225,7 +225,13 @@ use separate `.bbl` files; mixing languages in one document is intentionally uns
 Keep this constraint in future proposals, and flag requests that suggest mixing languages.
 Per-bubble OCR locale metadata does not create additional translation languages.
 
-Each `.bbl` file is JSON with a `pages` array containing page objects with ordered `bubbles` arrays. The reader preserves file/page metadata and matches album-index pages by their `filename`; legacy single-page sidecars may omit it. The shape-based format is illustrated below:
+Each `.bbl` file is JSON with a `pages` array containing page objects with ordered `bubbles` arrays. The reader preserves file/page metadata and matches album-index pages by their `filename`; legacy single-page sidecars may omit it.
+
+The app and helper tools write `.bbl` and JSON output with two-space indentation
+and a final newline for readability. Translation batches preserve number literals,
+string escapes outside translated fields, and field order while formatting new files.
+
+The shape-based format is illustrated below:
 
 ```json
 {

@@ -7,6 +7,34 @@ import re
 
 
 TOKEN = re.compile(r'("(?P<key>text|lang)"\s*:\s*)("(?:\\.|[^"\\])*")')
+JSON_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|[^\s{}\[\],:]+|[{}\[\],:]')
+
+
+def pretty_json(raw):
+    """Indent valid JSON without rewriting number literals or string escapes."""
+    tokens = JSON_TOKEN.findall(raw)
+    parts = []
+    depth = 0
+    previous = None
+    for index, token in enumerate(tokens):
+        if token in ("{", "["):
+            parts.append(token)
+            depth += 1
+            if tokens[index + 1] not in ("}", "]"):
+                parts.append("\n" + "  " * depth)
+        elif token in ("}", "]"):
+            depth -= 1
+            if previous not in ("{", "["):
+                parts.append("\n" + "  " * depth)
+            parts.append(token)
+        elif token == ",":
+            parts.append(",\n" + "  " * depth)
+        elif token == ":":
+            parts.append(": ")
+        else:
+            parts.append(token)
+        previous = token
+    return "".join(parts) + "\n"
 
 
 def read(path):
@@ -81,7 +109,7 @@ def main():
         return source.with_name(source.name.removesuffix(f".{args.source}.bbl") + f".{args.target}.bbl")
 
     def save():
-        args.state.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        args.state.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     if args.action == "init":
         assert not args.state.exists(), "Manifest exists; use it instead of replacing its baseline"
@@ -127,7 +155,7 @@ def main():
                 value = next(values) if match["key"] == "text" else args.target
                 return match[1] + json.dumps(value, ensure_ascii=False)
 
-            result = TOKEN.sub(replace, raw)
+            result = pretty_json(TOKEN.sub(replace, raw))
             compare(json.loads(raw), json.loads(result), args.target)
             if source_bytes.startswith(b"\xef\xbb\xbf"):
                 result = "\ufeff" + result
@@ -154,11 +182,12 @@ def main():
             compare(read(source), obj, args.target)
             translations = [t for _, t in text_fields(obj)]
             assert translations == state["translations"][source.name], (dest, "translation coverage")
-            mask = lambda p: TOKEN.sub(lambda m: m[1] + '"__VALUE__"', p.read_bytes().decode("utf-8-sig"))
-            assert mask(source) == mask(dest), (dest, "non-text/lang bytes")
+            mask = lambda p: JSON_TOKEN.findall(TOKEN.sub(
+                lambda m: m[1] + '"__VALUE__"', p.read_bytes().decode("utf-8-sig")))
+            assert mask(source) == mask(dest), (dest, "non-text/lang tokens")
             count += len(translations)
         print(f"PASS: {len(files)} pairs; {len(state['translations'])} created; {count} text fields; "
-              f"all other data/bytes identical; {len(state['originals'])} original hashes unchanged")
+              f"all other data/tokens identical; {len(state['originals'])} original hashes unchanged")
 
 
 if __name__ == "__main__":
