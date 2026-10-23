@@ -50,6 +50,7 @@
 		requestCleanup,
 		requestTranslation,
 		resolveSourceLanguage,
+		normalizeAiSettings,
 		type AiSettings
 	} from '#lib/textCleanup.js';
 	import { scanImage } from '#lib/ocr.js';
@@ -57,7 +58,7 @@
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
 
-	let ai = $state<AiSettings>({ url: 'https://api.openai.com/v1', model: '', apiKey: '' });
+	let ai = $state<AiSettings>(normalizeAiSettings(undefined));
 	let settingsTab = $state('ocr');
 	let cleanupOpen = $state(false);
 	let cleanupScope = $state('page');
@@ -140,7 +141,7 @@
 		const translating = targetLanguage !== undefined;
 		const action = translating ? 'Translation' : 'Cleanup';
 		if (!comic || cleaning || scanning || !editable || language === 'org') return;
-		if (!ai.url.trim() || !ai.model.trim()) {
+		if (!ai.url.trim() || !ai[translating ? 'translation' : 'cleanup'].model.trim()) {
 			cleanupOpen = false;
 			translationOpen = false;
 			settingsTab = 'ai';

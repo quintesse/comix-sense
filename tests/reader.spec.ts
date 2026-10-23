@@ -1808,7 +1808,7 @@ for (const scope of ['page', 'album']) {
 		await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
 		await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
 		await page.getByLabel('Provider URL', { exact: true }).fill('https://ai.example/v1');
-		await page.getByLabel('Model', { exact: true }).fill('cleanup-model');
+		await page.getByRole('combobox', { name: 'Cleanup model', exact: true }).fill('cleanup-model');
 		await page.getByLabel('AI API key', { exact: true }).fill('session-secret');
 		await page.getByRole('button', { name: 'Save settings', exact: true }).click();
 		let requests = 0;
@@ -1865,7 +1865,7 @@ test('AI settings remember and forget the key independently of Google Vision', a
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
 	await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
-	await page.getByLabel('Model', { exact: true }).fill('test-model');
+	await page.getByRole('combobox', { name: 'Cleanup model', exact: true }).fill('test-model');
 	await page.getByLabel('AI API key', { exact: true }).fill('remembered-secret');
 	await page.getByLabel('Remember on this browser').check();
 	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
@@ -2144,3 +2144,265 @@ for (const [overlay, declared, expected] of [
 		);
 	});
 }
+
+async function openAiPreferences(page: Page) {
+	await page.getByRole('button', { name: 'OCR Settings', exact: true }).click();
+	await page.getByRole('tab', { name: 'AI provider', exact: true }).click();
+}
+
+async function setupAiPreferences(page: Page) {
+	await mockDirectory(page);
+	await page.addInitScript(() => {
+		if (!localStorage.getItem('comix-sense.ai-settings'))
+			localStorage.setItem(
+				'comix-sense.ai-settings',
+				JSON.stringify({
+					url: 'https://settings.example/v1',
+					model: 'legacy-model',
+					apiKey: 'saved-key'
+				})
+			);
+	});
+	await page.route('https://settings.example/v1/models', (route) =>
+		route.fulfill({ json: { data: [{ id: 'model-a' }, { id: 'model-b' }] } })
+	);
+	await openComic(page);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await openAiPreferences(page);
+}
+
+test('AI settings model comboboxes share discovered models and always preserve custom input', async ({
+	page
+}) => {
+	await setupAiPreferences(page);
+	const cleanup = page.getByRole('combobox', { name: 'Cleanup model', exact: true });
+	const translation = page.getByRole('combobox', { name: 'Translation model', exact: true });
+	await expect(cleanup).toHaveValue('legacy-model');
+	await expect(translation).toHaveValue('legacy-model');
+	await expect(page.getByRole('status').filter({ hasText: '2 models available' })).toBeVisible();
+	const cleanupOptions = page
+		.getByRole('listbox', { name: 'Cleanup model', exact: true })
+		.getByRole('option');
+	await cleanup.fill('DEL-A');
+	await expect(cleanupOptions).toHaveText(['model-a']);
+	await cleanup.fill('');
+	await expect(cleanupOptions).toHaveCount(2);
+	await cleanup.fill('model-');
+	await page
+		.getByRole('listbox', { name: 'Cleanup model', exact: true })
+		.getByRole('option', { name: 'model-a', exact: true })
+		.click();
+	await expect(cleanup).toHaveValue('model-a');
+	await cleanup.fill('my-unlisted-model');
+	await expect(cleanupOptions).toHaveCount(0);
+	await translation.focus();
+	await expect(cleanup).toHaveValue('my-unlisted-model');
+	await translation.fill('model-');
+	const translationOptions = page
+		.getByRole('listbox', { name: 'Translation model', exact: true })
+		.getByRole('option');
+	await expect(translationOptions).toHaveCount(2);
+	await translation.fill('DEL-B');
+	await expect(translationOptions).toHaveText(['model-b']);
+	await page
+		.getByRole('listbox', { name: 'Translation model', exact: true })
+		.getByRole('option', { name: 'model-b', exact: true })
+		.click();
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	const stored = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem('comix-sense.ai-settings')!)
+	);
+	expect(stored.cleanup.model).toBe('my-unlisted-model');
+	expect(stored.translation.model).toBe('model-b');
+	expect(stored.model).toBeUndefined();
+	await openAiPreferences(page);
+	await expect(cleanup).toHaveValue('my-unlisted-model');
+	await expect(translation).toHaveValue('model-b');
+});
+
+test('AI model discovery failure clears stale suggestions without changing typed models', async ({
+	page
+}) => {
+	await setupAiPreferences(page);
+	await expect(page.getByRole('status').filter({ hasText: '2 models available' })).toBeVisible();
+	const cleanup = page.getByRole('combobox', { name: 'Cleanup model', exact: true });
+	const translation = page.getByRole('combobox', { name: 'Translation model', exact: true });
+	await cleanup.fill('private-cleanup');
+	await translation.fill('private-translation');
+	let requests = 0;
+	await page.route('https://offline.example/v1/models', (route) => {
+		requests++;
+		return route.fulfill({ status: 404, json: {} });
+	});
+	await page.getByLabel('Provider URL', { exact: true }).fill('https://offline.example/v1');
+	await expect.poll(() => requests).toBe(1);
+	await expect(page.getByRole('status').filter({ hasText: 'No model suggestions' })).toBeVisible();
+	await expect(cleanup).toHaveValue('private-cleanup');
+	await expect(translation).toHaveValue('private-translation');
+	await cleanup.press('ArrowDown');
+	await expect(
+		page.getByRole('listbox', { name: 'Cleanup model', exact: true }).getByRole('option')
+	).toHaveCount(0);
+	await cleanup.press('Escape');
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	const stored = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem('comix-sense.ai-settings')!)
+	);
+	expect(stored.cleanup.model).toBe('private-cleanup');
+	expect(stored.translation.model).toBe('private-translation');
+});
+
+test('AI prompt editors stage changes until Save, support Cancel and restore defaults', async ({
+	page
+}) => {
+	await setupAiPreferences(page);
+	const cleanupPromptText = 'Clean {sourceLanguage} while keeping every ID.';
+	const translationPromptText = 'Translate {sourceLanguage} to {targetLanguage} concisely.';
+	async function edit(task: 'cleanup' | 'translation', prompt: string) {
+		await page.getByRole('button', { name: `Edit ${task} prompt`, exact: true }).click();
+		await page.getByLabel('Instructions', { exact: true }).fill(prompt);
+		await page.getByRole('button', { name: 'Use prompt', exact: true }).click();
+	}
+	await edit('cleanup', cleanupPromptText);
+	await edit('translation', translationPromptText);
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await openAiPreferences(page);
+	await expect(page.getByRole('region', { name: 'Cleanup', exact: true })).toContainText('Default');
+	await expect(page.getByRole('region', { name: 'Translation', exact: true })).toContainText(
+		'Default'
+	);
+	await edit('cleanup', cleanupPromptText);
+	await edit('translation', translationPromptText);
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	let stored = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem('comix-sense.ai-settings')!)
+	);
+	expect(stored.cleanup.prompt).toBe(cleanupPromptText);
+	expect(stored.translation.prompt).toBe(translationPromptText);
+	await openAiPreferences(page);
+	await page.getByRole('button', { name: 'Edit translation prompt', exact: true }).click();
+	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue(translationPromptText);
+	await page.getByLabel('Instructions', { exact: true }).fill('Unsaved editor text');
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await page.getByRole('button', { name: 'Edit translation prompt', exact: true }).click();
+	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue(translationPromptText);
+	await page.getByLabel('Instructions', { exact: true }).fill('');
+	await expect(page.getByRole('button', { name: 'Use prompt', exact: true })).toBeDisabled();
+	await page.getByRole('button', { name: '{sourceLanguage}', exact: true }).click();
+	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue('{sourceLanguage}');
+	await page.getByRole('button', { name: 'Restore default prompt', exact: true }).click();
+	await expect(page.getByLabel('Instructions', { exact: true })).toHaveValue(
+		/You translate comic lettering/
+	);
+	await page.getByRole('button', { name: 'Use prompt', exact: true }).click();
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	stored = await page.evaluate(() => JSON.parse(localStorage.getItem('comix-sense.ai-settings')!));
+	expect(stored.translation.prompt).toBeUndefined();
+	expect(stored.cleanup.prompt).toBe(cleanupPromptText);
+});
+
+test('AI Forget key does not discard model or prompt drafts', async ({ page }) => {
+	await setupAiPreferences(page);
+	await page.getByRole('combobox', { name: 'Cleanup model', exact: true }).fill('draft-model');
+	await page.getByRole('button', { name: 'Edit cleanup prompt', exact: true }).click();
+	await page.getByLabel('Instructions', { exact: true }).fill('Draft prompt');
+	await page.getByRole('button', { name: 'Use prompt', exact: true }).click();
+	await page.getByRole('button', { name: 'Forget key', exact: true }).click();
+	await expect(page.getByRole('combobox', { name: 'Cleanup model', exact: true })).toHaveValue(
+		'draft-model'
+	);
+	await expect(page.getByRole('region', { name: 'Cleanup', exact: true })).toContainText(
+		'Customized'
+	);
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	const stored = await page.evaluate(() =>
+		JSON.parse(localStorage.getItem('comix-sense.ai-settings')!)
+	);
+	expect(stored.apiKey).toBe('');
+	expect(stored.cleanup).toEqual({ model: 'draft-model', prompt: 'Draft prompt' });
+});
+
+test('AI actions use the saved per-task model and expanded custom prompt', async ({ page }) => {
+	await setupAiPreferences(page);
+	await page.getByRole('combobox', { name: 'Cleanup model', exact: true }).fill('custom-cleaner');
+	await page
+		.getByRole('combobox', { name: 'Translation model', exact: true })
+		.fill('custom-translator');
+	for (const [task, prompt] of [
+		['cleanup', 'Clean {sourceLanguage}'],
+		['translation', 'Translate {sourceLanguage} to {targetLanguage}']
+	]) {
+		await page.getByRole('button', { name: `Edit ${task} prompt`, exact: true }).click();
+		await page.getByLabel('Instructions', { exact: true }).fill(prompt);
+		await page.getByRole('button', { name: 'Use prompt', exact: true }).click();
+	}
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	await selectMenu(page, 'ORG', 'EN');
+	const models: string[] = [];
+	await page.route('https://settings.example/v1/chat/completions', async (route) => {
+		const body = route.request().postDataJSON();
+		models.push(body.model);
+		const document = JSON.parse(body.messages[1].content);
+		const translating = document.targetLanguage === 'fr';
+		expect(body.model).toBe(translating ? 'custom-translator' : 'custom-cleaner');
+		expect(body.messages[0].content).toBe(translating ? 'Translate en to fr' : 'Clean en');
+		expect(body.response_format.json_schema.strict).toBe(true);
+		document.items[0].text = translating ? 'Bonjour' : 'Hello cleaned';
+		await route.fulfill({
+			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
+		});
+	});
+	await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
+	await page.getByRole('button', { name: 'Clean text', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hello cleaned');
+	// An unused tool's empty model must not prevent using the configured tool.
+	await openAiPreferences(page);
+	await page.getByRole('combobox', { name: 'Cleanup model', exact: true }).fill('');
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	await chooseTranslationLanguage(page, 'FR');
+	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
+	expect(models).toEqual(['custom-cleaner', 'custom-translator']);
+});
+
+test('AI model discovery ignores late responses from an old provider', async ({ page }) => {
+	await setupAiPreferences(page);
+	await expect(page.getByRole('status').filter({ hasText: '2 models available' })).toBeVisible();
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let started!: () => void;
+	const pending = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	let completed!: () => void;
+	const finished = new Promise<void>((resolve) => {
+		completed = resolve;
+	});
+	await page.route('https://slow.example/v1/models', async (route) => {
+		started();
+		await gate;
+		try {
+			await route.fulfill({ json: { data: [{ id: 'old-model' }] } });
+		} catch {
+			/* Changing the provider aborts the old request. */
+		} finally {
+			completed();
+		}
+	});
+	await page.route('https://current.example/v1/models', (route) =>
+		route.fulfill({ json: { data: [{ id: 'current-model' }] } })
+	);
+	await page.getByLabel('Provider URL', { exact: true }).fill('https://slow.example/v1');
+	await pending;
+	await page.getByLabel('Provider URL', { exact: true }).fill('https://current.example/v1');
+	await expect(page.getByRole('status').filter({ hasText: '1 models available' })).toBeVisible();
+	release();
+	await finished;
+	const cleanup = page.getByRole('combobox', { name: 'Cleanup model', exact: true });
+	await expect(cleanup).toHaveValue('legacy-model');
+	await cleanup.fill('current');
+	const choices = page.getByRole('listbox', { name: 'Cleanup model', exact: true });
+	await expect(choices.getByRole('option', { name: 'current-model', exact: true })).toBeVisible();
+	await expect(choices.getByRole('option', { name: 'old-model', exact: true })).toHaveCount(0);
+});
