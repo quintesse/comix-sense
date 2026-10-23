@@ -1,1 +1,0 @@
-import{$ as e,At as t,Y as n,Z as r,bt as i,ht as a,jt as o,xt as s,yt as c}from"../chunks/DiHyyblt.js";import{t as l}from"../chunks/DIVpR_8O.js";var u=e(`<h1> </h1> <p> </p>`,1);function d(e,d){o(d,!0);var f=u(),p=c(f),m=i(p,!0),h=s(p,2),g=i(h,!0);a(()=>{n(m,l.status),n(g,l.error?.message)}),r(e,f),t()}export{d as component};

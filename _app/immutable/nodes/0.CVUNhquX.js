@@ -1,1 +1,0 @@
-import{K as e,Q as t,Z as n,yt as r,zt as i}from"../chunks/DiHyyblt.js";var a=Object.defineProperty,o=((e,t)=>{let n={};for(var r in e)a(n,r,{get:e[r],enumerable:!0});return t||a(n,Symbol.toStringTag,{value:`Module`}),n})({prerender:()=>!0});function s(a,o){var s=t(),c=r(s);e(c,()=>o.children??i),n(a,s)}export{s as component,o as universal};
