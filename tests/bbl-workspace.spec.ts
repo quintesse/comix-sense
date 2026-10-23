@@ -260,6 +260,24 @@ test('back up edits as .bbl documents, restore in another tab, and confirm disca
 	await expect(page.locator('foreignObject')).toHaveText('Original');
 });
 
+test('save feedback floats above the page and can be dismissed or expires', async ({ page }) => {
+	await setup(page);
+	await page.clock.install();
+	await page.getByRole('textbox').fill('First save');
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	const notification = page.locator('.notification').filter({ hasText: 'Saved changes to' });
+	await expect(notification).toBeVisible();
+	await expect(page.locator('.notification-stack')).toHaveCSS('position', 'absolute');
+	await page.screenshot({ path: test.info().outputPath('save-notification.png') });
+	await notification.getByRole('button', { name: 'Dismiss changes notification' }).click();
+	await expect(notification).toBeHidden();
+	await page.getByRole('textbox').fill('Second save');
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(notification).toBeVisible();
+	await page.clock.fastForward(6000);
+	await expect(notification).toBeHidden();
+});
+
 test('save text and geometry to the original document, preserving other pages and metadata', async ({
 	page
 }) => {
@@ -305,6 +323,8 @@ test('write denial retains backups and edits, and same-named roots stay independ
 	await page.evaluate(() => localStorage.setItem('denyWrite', 'yes'));
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('Write permission was not granted');
+	await page.getByRole('button', { name: 'Dismiss changes notification' }).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
 	await expect(page.getByRole('textbox')).toHaveText('First root only');
 	expect(await disk(page)).toEqual(original);
 	await expect

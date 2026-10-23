@@ -44,6 +44,7 @@
 	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
 	import LanguageMenu from '#lib/LanguageMenu.svelte';
 	import OcrSettings from '#lib/OcrSettings.svelte';
+	import Notification from '#lib/Notification.svelte';
 	import { flag, languageLabel, translationLanguages } from '#lib/languageFlags.js';
 	import {
 		prepareCleanup,
@@ -459,6 +460,20 @@
 	let discardFolder = $state.raw<ComicFolder>();
 	let discardDocument = $state('');
 	let discardOpen = $state(false);
+
+	$effect(() => {
+		if (!cleaning && cleanupMessage && !cleanupError && !cleanupWarning) {
+			const timer = window.setTimeout(() => (cleanupMessage = ''), 6000);
+			return () => window.clearTimeout(timer);
+		}
+	});
+
+	$effect(() => {
+		if (!changesBusy && changesMessage) {
+			const timer = window.setTimeout(() => (changesMessage = ''), 6000);
+			return () => window.clearTimeout(timer);
+		}
+	});
 
 	$effect(() => {
 		const workspace = activeFolder?.store.workspace;
@@ -1367,8 +1382,6 @@
 				/>
 			{/snippet}
 		</SidebarPanes>
-		{#if directoryError}<p role="alert">{directoryError}</p>{/if}
-		{#if persistenceError}<p role="status">{persistenceError}</p>{/if}
 	</SideNav>
 
 	<OcrSettings
@@ -1519,47 +1532,77 @@
 		class={displayedPages.length === 0 ? 'fullsize empty-reader' : 'fullsize'}
 	>
 		{#if !fullscreen}
-			{#if backupError || changesError}<p role="alert">{changesError || backupError}</p>{/if}
-			{#if changesMessage}<p role="status">{changesMessage}</p>{/if}
-			{#if cleanupError || cleanupMessage || cleanupWarning}
-				<div class="scan-feedback">
-					{#if cleanupError}<p role="alert">{cleanupError}</p>{/if}
-					{#if cleanupWarning}<p role="alert">{cleanupWarning}</p>{/if}
-					{#if cleanupMessage}<p role="status">{cleanupMessage}</p>{/if}
-					{#if cleaning}
-						<button type="button" onclick={() => cleanupController?.abort()}
-							>{aiOperation === 'translation' ? 'Cancel translation' : 'Cancel cleanup'}</button
-						>
-					{:else}
-						<button
-							type="button"
-							aria-label={aiOperation === 'translation'
-								? 'Dismiss translation notification'
-								: 'Dismiss cleanup notification'}
-							onclick={() => {
-								cleanupMessage = '';
-								cleanupWarning = '';
-								cleanupError = '';
-							}}>×</button
-						>
-					{/if}
-				</div>
-			{/if}
-			{#if scanError || scanMessage}
-				<div class="scan-feedback">
-					{#if scanError}<p role="alert">{scanError}</p>{/if}
-					{#if scanMessage}<p role="status">{scanMessage}</p>{/if}
-					<button
-						type="button"
-						class="toolbar-button"
-						aria-label="Dismiss scan notification"
-						title="Dismiss scan notification"
-						onclick={dismissScanFeedback}>×</button
+			<div class="notification-stack">
+				{#if directoryError}
+					<Notification
+						label="Dismiss directory notification"
+						ondismiss={() => (directoryError = '')}
 					>
-				</div>
-			{/if}
+						<p role="alert">{directoryError}</p>
+					</Notification>
+				{/if}
+				{#if persistenceError}
+					<Notification
+						label="Dismiss storage notification"
+						ondismiss={() => (persistenceError = '')}
+					>
+						<p role="status">{persistenceError}</p>
+					</Notification>
+				{/if}
+				{#if backupError}
+					<Notification label="Dismiss backup notification" ondismiss={() => (backupError = '')}>
+						<p role="alert">{backupError}</p>
+					</Notification>
+				{/if}
+				{#if changesError || changesMessage}
+					<Notification
+						label="Dismiss changes notification"
+						ondismiss={() => {
+							changesError = '';
+							changesMessage = '';
+						}}
+					>
+						{#if changesError}<p role="alert">{changesError}</p>{/if}
+						{#if changesMessage}<p role="status">{changesMessage}</p>{/if}
+					</Notification>
+				{/if}
+				{#if cleanupError || cleanupMessage || cleanupWarning}
+					<Notification
+						label={aiOperation === 'translation'
+							? 'Dismiss translation notification'
+							: 'Dismiss cleanup notification'}
+						ondismiss={() => {
+							cleanupMessage = '';
+							cleanupWarning = '';
+							cleanupError = '';
+						}}
+					>
+						{#if cleanupError}<p role="alert">{cleanupError}</p>{/if}
+						{#if cleanupWarning}<p role="alert">{cleanupWarning}</p>{/if}
+						{#if cleanupMessage}<p role="status">{cleanupMessage}</p>{/if}
+						{#if cleaning}
+							<button type="button" onclick={() => cleanupController?.abort()}
+								>{aiOperation === 'translation' ? 'Cancel translation' : 'Cancel cleanup'}</button
+							>
+						{/if}
+					</Notification>
+				{/if}
+				{#if scanError || scanMessage}
+					<Notification label="Dismiss scan notification" ondismiss={dismissScanFeedback}>
+						{#if scanError}<p role="alert">{scanError}</p>{/if}
+						{#if scanMessage}<p role="status">{scanMessage}</p>{/if}
+					</Notification>
+				{/if}
+				{#if pageLoadError}
+					<Notification
+						label="Dismiss page loading notification"
+						ondismiss={() => (pageLoadError = '')}
+					>
+						<p role="alert">{pageLoadError}</p>
+					</Notification>
+				{/if}
+			</div>
 		{/if}
-		{#if pageLoadError && !fullscreen}<p role="alert">{pageLoadError}</p>{/if}
 		{#if displayedPages.length}
 			<Zoom level={selectedZoom} contentSize={spreadSize} centered={fullscreen}>
 				{#each displayedPages as page, i (page.comic)}
@@ -1664,18 +1707,17 @@
 		cursor: pointer;
 		border-radius: 0.125rem;
 	}
-	.scan-feedback {
+	.notification-stack {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 0.5rem;
 		position: absolute;
 		top: 0.5rem;
 		left: 1rem;
 		z-index: 1;
 		max-width: calc(100% - 2rem);
-		padding: 0.5rem 1rem;
-		background: white;
-		box-shadow: 0 2px 6px #0003;
+		max-height: calc(100% - 1rem);
+		overflow-y: auto;
 	}
 	.scan-button {
 		display: flex;

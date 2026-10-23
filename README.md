@@ -186,7 +186,24 @@ with bubble paths and text, including empty strings. Page indexes start at zero
 within the supplied file. Conventional language suffixes take precedence over
 the document's `lang`; OCR/MRG use bubble language metadata, or `und` when ambiguous.
 Without a language suffix, the document's `lang` is used, falling back to bubble
-language metadata. The input file is never modified.
+language metadata. Both dot and hyphen suffixes are supported. The input file is never modified.
+
+Supply an optional second argument to extract paired source and translated text:
+
+```sh
+jbang tools/bubbletext.java SW-A070-P09-mrg.bbl en
+jbang tools/bubbletext.java album.nl.bbl translations/album.en.bbl
+```
+
+A language code replaces the first file's suffix in the same folder (for example,
+`SW-A070-P09-mrg.bbl` becomes `SW-A070-P09-en.bbl`). A file without a suffix gets
+`.CODE` before `.bbl`. Otherwise, the argument is a file path, relative to the
+current working directory or absolute. The files must have the same page count
+and the same bubble count on each page; bubbles are paired by index. In this mode,
+`targetLanguage` comes from the second file, and each item contains `id`, `source`,
+and `target` instead of `id` and `text`. Items with exactly identical source and
+target text (including two empty strings) are omitted; remaining IDs retain their
+original page and bubble indexes. Neither file is modified.
 
 ### AI page translation
 

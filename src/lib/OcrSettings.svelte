@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
 	import { Modal, ComboBox } from 'carbon-components-svelte';
+	import Notification from './Notification.svelte';
 	import {
 		completionUrl,
 		defaultPrompts,
@@ -40,6 +41,14 @@
 	let promptInput: HTMLTextAreaElement | undefined = $state();
 	let availableModels = $state<string[]>([]);
 	let loadingModels = $state(false);
+	let modelsNotificationDismissed = $state(false);
+	$effect(() => {
+		// New discovery results and reopening settings should show fresh feedback.
+		void loadingModels;
+		void availableModels;
+		void open;
+		modelsNotificationDismissed = false;
+	});
 	let modelOpen = $state<Record<AiTask, boolean>>({ cleanup: false, translation: false });
 	let modelSelections = $state<Record<AiTask, string | undefined>>({
 		cleanup: undefined,
@@ -358,13 +367,6 @@
 						</div>
 					</section>
 				{/each}
-				<p role="status">
-					{loadingModels
-						? 'Loading available models…'
-						: availableModels.length
-							? `${availableModels.length} models available. You can also enter your own model ID.`
-							: 'No model suggestions available. Enter any model ID.'}
-				</p>
 				<p>
 					Set a model for each tool you want to use. Models must support strict JSON Schema output.
 					The provider must allow browser requests (CORS).
@@ -388,10 +390,38 @@
 			</div>
 		{/if}
 	{/if}
-	{#if error}<p role="alert">{error}</p>{/if}
+	<div class="settings-notifications">
+		{#if open && !editor && tab === 'ai' && !modelsNotificationDismissed}
+			<Notification
+				label="Dismiss model discovery notification"
+				ondismiss={() => (modelsNotificationDismissed = true)}
+			>
+				<p role="status">
+					{loadingModels
+						? 'Loading available models…'
+						: availableModels.length
+							? `${availableModels.length} models available. You can also enter your own model ID.`
+							: 'No model suggestions available. Enter any model ID.'}
+				</p>
+			</Notification>
+		{/if}
+		{#if error}
+			<Notification label="Dismiss settings notification" ondismiss={() => (error = '')}>
+				<p role="alert">{error}</p>
+			</Notification>
+		{/if}
+	</div>
 </Modal>
 
 <style>
+	.settings-notifications {
+		position: sticky;
+		bottom: 0;
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
 	[role='tablist'] {
 		display: flex;
 		gap: 1rem;

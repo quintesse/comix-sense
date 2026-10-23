@@ -2180,6 +2180,8 @@ test('AI settings model comboboxes share discovered models and always preserve c
 	await expect(cleanup).toHaveValue('legacy-model');
 	await expect(translation).toHaveValue('legacy-model');
 	await expect(page.getByRole('status').filter({ hasText: '2 models available' })).toBeVisible();
+	await page.getByRole('button', { name: 'Dismiss model discovery notification' }).click();
+	await expect(page.getByRole('status').filter({ hasText: '2 models available' })).toBeHidden();
 	const cleanupOptions = page
 		.getByRole('listbox', { name: 'Cleanup model', exact: true })
 		.getByRole('option');
