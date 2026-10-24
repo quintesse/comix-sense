@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import { visionToBubbles } from '../src/lib/ocr';
 import { mergeBubbles } from '../src/lib/mergeBubbles';
-import { BblShapeType, type Bubble, boundsv } from '../src/lib/types/Comic';
+import { BblShapeType, type Bubble } from '../src/lib/types/Comic';
 
 test('OCR conversion matches the Java tool fixture', () => {
 	const input = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.json', 'utf8'));
@@ -45,7 +45,7 @@ test('OCR handles empty recognition, omitted zero coordinates and per-word local
 	);
 });
 
-test('merge retains sample grouping with enclosing boxes without changing original OCR', () => {
+test('merge restores sample polygon outlines without changing original OCR', () => {
 	const input = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.bbl', 'utf8')).pages[0].bubbles;
 	const expected = JSON.parse(fs.readFileSync('tools/SW-A070-P09-mrg.bbl', 'utf8')).pages[0]
 		.bubbles;
@@ -53,8 +53,7 @@ test('merge retains sample grouping with enclosing boxes without changing origin
 	expect(mergeBubbles(input)).toEqual(
 		expected.map((bubble: Bubble) => ({
 			...bubble,
-			text: bubble.text.replaceAll('-\n', '-').replace(/\s+/gu, ' ').trim(),
-			shape: { type: BblShapeType.box, vs: boundsv(bubble.shape.vs) }
+			text: bubble.text.replaceAll('-\n', '-').replace(/\s+/gu, ' ').trim()
 		}))
 	);
 	expect(JSON.stringify(input)).toBe(snapshot);
@@ -73,7 +72,7 @@ function word(text: string, l: number, t: number, r: number, b: number): Bubble 
 	};
 }
 
-test('merge retains punctuation and splits while enclosing irregular groups in boxes', () => {
+test('merge retains punctuation and splits while outlining irregular groups with polygons', () => {
 	const punctuation = mergeBubbles([
 		word('Hello', 0, 0, 40, 20),
 		word(',', 41, 15, 44, 20),
@@ -97,7 +96,10 @@ test('merge retains punctuation and splits while enclosing irregular groups in b
 	]);
 	expect(irregular).toHaveLength(1);
 	expect(irregular[0].text).toBe('wide left right');
-	expect(irregular[0].shape).toEqual(word('', 0, 0, 180, 45).shape);
+	expect(irregular[0].shape.type).toBe(BblShapeType.poly);
+	expect(irregular[0].shape.vs).toHaveLength(8);
+	const singleton = { ...word(' single\npolygon ', 300, 0, 400, 20), shape: irregular[0].shape };
+	expect(mergeBubbles([singleton])).toEqual([{ ...singleton, text: 'single polygon' }]);
 	expect(mergeBubbles([])).toEqual([]);
 	expect(mergeBubbles([word('', 0, 0, 0, 0)])).toEqual([word('', 0, 0, 0, 0)]);
 	const english = { ...word('English', 0, 0, 40, 20), lang: 'en' };

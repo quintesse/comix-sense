@@ -521,7 +521,7 @@
 	});
 
 	let browserLanguages = $state<readonly string[]>([]);
-	const selectedShape = BblShapeType.box;
+	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
 	let showBubbles = $state(true);
 
@@ -1388,6 +1388,28 @@
 					</div>
 				</li>
 				<li role="none" class="toolbar-group">
+					<div role="group" aria-label="Drawing tool">
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Draw Boxes"
+							title="Draw Boxes"
+							aria-pressed={selectedShape === BblShapeType.box}
+							onclick={() => (selectedShape = BblShapeType.box)}
+							><ToolbarIcon name="square" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button"
+							aria-label="Draw Polygons"
+							title="Draw Polygons"
+							aria-pressed={selectedShape === BblShapeType.poly}
+							onclick={() => (selectedShape = BblShapeType.poly)}
+							><ToolbarIcon name="star" /></button
+						>
+					</div>
+				</li>
+				<li role="none" class="toolbar-group">
 					<div role="group" aria-label="Document changes">
 						<button
 							type="button"
@@ -1780,6 +1802,8 @@
 							<ContextMenuDivider />
 						{/if}
 						<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
+					{:else if menuTargetBubble.shape.type === BblShapeType.box}
+						<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
 					{/if}
 					<ContextMenuOption labelText="Scan Text" />
 					<ContextMenuDivider />
