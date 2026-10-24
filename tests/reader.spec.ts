@@ -700,6 +700,59 @@ async function dragPage(page: Page, x1: number, y1: number, x2: number, y2: numb
 	await page.mouse.up();
 }
 
+for (const shape of ['box', 'polygon']) {
+	for (const gesture of ['Shift', 'middle'] as const) {
+		for (const zoom of ['50%', '100%']) {
+			test(`move entire ${shape} with ${gesture} at ${zoom}`, async ({ page }) => {
+				await mockDirectory(page);
+				await openComic(page);
+				await selectMenu(page, 'FIT', zoom);
+				await selectMenu(page, 'ORG', 'EN');
+				await selectMenu(page, 'EDIT: NO', 'Yes');
+				if (shape === 'polygon') {
+					await page.getByRole('textbox').click({ button: 'right' });
+					await page.getByText('Convert to Poly', { exact: true }).click();
+				}
+				const vertices = () =>
+					page
+						.locator('.svgcontent circle')
+						.evaluateAll((handles) =>
+							handles.map((handle) => [
+								Number(handle.getAttribute('cx')),
+								Number(handle.getAttribute('cy'))
+							])
+						);
+				const before = await vertices();
+				await page.getByRole('textbox').focus();
+				for (const dismiss of await page
+					.getByRole('button', { name: 'Dismiss storage notification', exact: true })
+					.all()) {
+					await dismiss.click();
+				}
+				const start = await pagePoint(page, 180, 120);
+				const end = await pagePoint(page, 450, 250);
+				if (gesture === 'Shift') await page.keyboard.down('Shift');
+				const button = gesture === 'middle' ? 'middle' : 'left';
+				await page.mouse.move(start.x, start.y);
+				await page.mouse.down({ button });
+				await page.mouse.move(end.x, end.y, { steps: 5 });
+				await page.mouse.up({ button });
+				if (gesture === 'Shift') await page.keyboard.up('Shift');
+				const moved = before.map(([x, y]) => [x + 270, y + 130]);
+				await expect.poll(vertices).toEqual(moved);
+				await expect(page.getByRole('textbox')).toHaveText('Hello');
+				await expect(page.locator('.drawing-target')).toHaveCount(0);
+				await page.mouse.move(start.x, start.y);
+				expect(await vertices()).toEqual(moved);
+				await selectMenu(page, 'EN', 'NL');
+				await expect(page.getByRole('textbox')).toHaveText('Hallo');
+				await selectMenu(page, 'NL', 'EN');
+				await expect.poll(vertices).toEqual(moved);
+			});
+		}
+	}
+}
+
 test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) => {
 	await mockDirectory(page);
 	await openComic(page);
