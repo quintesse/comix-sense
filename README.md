@@ -127,7 +127,7 @@ and allow browser requests through CORS. Requests include a schema requiring the
 original languages and string IDs/text, with no extra fields.
 Response items can be in any order; text is matched to bubbles by ID. The app
 also validates returned IDs and empty fields before replacing text. Missing items
-leave their bubbles unchanged and produce a warning; other valid items are applied. Providers
+reject the entire response without changing any bubbles. Providers
 or models without schema support fail without retrying in a weaker output mode.
 The model fields are editable comboboxes. While AI settings are open, the app
 tries the provider's [model-list endpoint](https://developers.openai.com/api/reference/resources/models/methods/list)
@@ -169,7 +169,9 @@ Bubble text is never interpolated.
 
 The entire selected scope is sent in one request for context. Choose page cleanup
 if the album exceeds your model's context/output limits. Only text is replaced;
-geometry and metadata stay unchanged. Invalid JSON, changed IDs/languages,
+geometry and metadata stay unchanged. The response schema restricts IDs to those
+sent and requires the same item count; local validation also requires every ID
+exactly once. Invalid JSON, missing/duplicate/changed IDs, changed languages,
 truncated responses, or edits/disconnection during the request abort replacement.
 Requests can be cancelled and time out after three minutes. Cleanup results enter
 the same browser backup and Save/Discard workflow as manual edits. Use **Save Changes**

@@ -284,15 +284,15 @@ export function validateCleanup(value: unknown, original: CleanupDocument): Clea
 			return reject(`${location} changed an empty source text for ID: ${item.id}.`);
 		texts.set(item.id, item.text);
 	}
+	const missingIds = original.items.filter(({ id }) => !texts.has(id)).map(({ id }) => id);
+	if (missingIds.length) return reject(`Document is missing IDs: ${missingIds.join(', ')}.`);
 	return {
 		...original,
-		items: original.items
-			.filter(({ id }) => texts.has(id))
-			.map(({ id }) => ({ id, text: texts.get(id)! }))
+		items: original.items.map(({ id }) => ({ id, text: texts.get(id)! }))
 	};
 }
 
-/** Keep the schema small for albums; exact IDs are checked by validateCleanup. */
+/** Constrain allowed IDs and item count; validateCleanup also checks uniqueness and coverage. */
 function cleanupResponseFormat(document: CleanupDocument) {
 	return {
 		type: 'json_schema',
@@ -306,10 +306,18 @@ function cleanupResponseFormat(document: CleanupDocument) {
 					targetLanguage: { type: 'string', enum: [document.targetLanguage] },
 					items: {
 						type: 'array',
+						minItems: document.items.length,
 						maxItems: document.items.length,
 						items: {
 							type: 'object',
-							properties: { id: { type: 'string' }, text: { type: 'string' } },
+							properties: {
+								id: {
+									type: 'string',
+									// An empty enum is invalid; maxItems: 0 already prevents any IDs.
+									...(document.items.length ? { enum: document.items.map(({ id }) => id) } : {})
+								},
+								text: { type: 'string' }
+							},
 							required: ['id', 'text'],
 							additionalProperties: false
 						}

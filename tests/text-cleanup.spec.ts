@@ -216,7 +216,7 @@ test('translation rejects stale target edits and never creates a target from an 
 	const pages = fixture();
 	const job = await prepareCleanup(pages, [pages[0]], 'MRG', 'fr');
 	expect(job.document.sourceLanguage).toBe('en');
-	await job.apply({ ...job.document, items: [] }, () => true);
+	await expect(job.apply({ ...job.document, items: [] }, () => true)).rejects.toThrow('IDs');
 	expect(pages[0].languages).not.toContain('fr');
 	pages[0].languages.push('fr');
 	pages[0].setBubbles('fr', [{ ...(await pages[0].getBubbles('en'))[0], text: 'Old French' }]);
@@ -226,7 +226,7 @@ test('translation rejects stale target edits and never creates a target from an 
 	expect((await pages[0].getBubbles('fr'))[0].text).toBe('Manual French edit');
 });
 
-test('partial translation preserves omitted existing target bubbles', async () => {
+test('partial translation is rejected without changing any existing target bubbles', async () => {
 	const pages = fixture();
 	const source = await pages[0].getBubbles('en');
 	pages[0].setBubbles('en', [...source, { ...source[0], text: 'Second source' }]);
@@ -236,12 +236,13 @@ test('partial translation preserves omitted existing target bubbles', async () =
 		{ ...source[0], text: 'Deuxième', lang: 'fr' }
 	]);
 	const job = await prepareCleanup(pages, [pages[0]], 'en', 'fr');
-	const result = await job.apply(
-		{ ...job.document, items: [{ id: '/pages/0/bubbles/1', text: 'Nouveau' }] },
-		() => true
-	);
-	expect(result.missingIds).toEqual(['/pages/0/bubbles/0']);
-	expect((await pages[0].getBubbles('fr')).map((b) => b.text)).toEqual(['Ancien', 'Nouveau']);
+	await expect(
+		job.apply(
+			{ ...job.document, items: [{ id: '/pages/0/bubbles/1', text: 'Nouveau' }] },
+			() => true
+		)
+	).rejects.toThrow('IDs');
+	expect((await pages[0].getBubbles('fr')).map((b) => b.text)).toEqual(['Ancien', 'Deuxième']);
 });
 
 test('translation uses the shared strict schema with a translation prompt and distinct target language', async () => {
@@ -258,6 +259,10 @@ test('translation uses the shared strict schema with a translation prompt and di
 			expect(body.response_format.json_schema.schema.properties.targetLanguage.enum).toEqual([
 				'fr'
 			]);
+			const itemsSchema = body.response_format.json_schema.schema.properties.items;
+			expect(itemsSchema.minItems).toBe(0);
+			expect(itemsSchema.maxItems).toBe(0);
+			expect(itemsSchema.items.properties.id.enum).toBeUndefined();
 			return new Response(
 				JSON.stringify({
 					choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(job.document) } }]
@@ -291,30 +296,23 @@ test('reordered response items update their bubbles by ID across pages', async (
 	expect((await pages[1].getBubbles('en'))[0].text).toBe('Second page corrected');
 });
 
-test('partial cleanup applies returned IDs and reports omissions without changing their bubbles', async () => {
+test('partial cleanup is rejected before changing any bubbles', async () => {
 	const pages = fixture();
 	const job = await prepareCleanup(pages, pages, 'en');
 	const result = {
 		...job.document,
 		items: [{ id: '/pages/1/bubbles/0', text: 'Corrected second page' }]
 	};
-	// Validation must retain omissions so the apply step can report them.
-	expect(validateCleanup(result, job.document).items).toEqual(result.items);
-	expect(await job.apply(result, () => true)).toEqual({
-		changed: 1,
-		missingIds: ['/pages/0/bubbles/0']
-	});
+	expect(() => validateCleanup(result, job.document)).toThrow('IDs');
+	await expect(job.apply(result, () => true)).rejects.toThrow('IDs');
 	expect((await pages[0].getBubbles('en'))[0].text).toBe('He11o!');
-	expect((await pages[1].getBubbles('en'))[0].text).toBe('Corrected second page');
+	expect((await pages[1].getBubbles('en'))[0].text).toBe('He11o!');
 });
 
-test('empty cleanup result reports all omitted IDs and leaves every bubble unchanged', async () => {
+test('empty cleanup result is rejected and leaves every bubble unchanged', async () => {
 	const pages = fixture();
 	const job = await prepareCleanup(pages, pages, 'en');
-	expect(await job.apply({ ...job.document, items: [] }, () => true)).toEqual({
-		changed: 0,
-		missingIds: ['/pages/0/bubbles/0', '/pages/1/bubbles/0']
-	});
+	await expect(job.apply({ ...job.document, items: [] }, () => true)).rejects.toThrow('IDs');
 	for (const page of pages) expect((await page.getBubbles('en'))[0].text).toBe('He11o!');
 });
 
@@ -379,6 +377,12 @@ test('rejected responses log the reason and full documents for inspection', () =
 		[{ ...original, items: [{ id: 'dialogue', text: 42 }] }, 'items[0].text must be a string'],
 		[{ ...original, items: [{ id: 'unknown', text: 'Bonjour!' }] }, 'unknown ID: unknown'],
 		[
+			{ ...original, items: [{ id: 'dialogue,', text: 'Bonjour!' }, original.items[1]] },
+			'unknown ID: dialogue,'
+		],
+		[{ ...original, items: [original.items[0]] }, 'missing IDs: empty'],
+		[{ ...original, items: [] }, 'missing IDs: dialogue, empty'],
+		[
 			{ ...original, items: [original.items[0], original.items[0]] },
 			'items[1] repeats ID: dialogue'
 		],
@@ -401,7 +405,7 @@ test('rejected responses log the reason and full documents for inspection', () =
 		}
 		expect(logs).toHaveLength(cases.length);
 		validateCleanup(original, original);
-		validateCleanup({ ...original, items: [] }, original);
+		validateCleanup({ ...original, items: [] }, { ...original, items: [] });
 		expect(logs).toHaveLength(cases.length);
 	} finally {
 		console.error = originalError;
@@ -467,6 +471,7 @@ test('cleanup sends strict JSON Schema and still validates IDs in the response',
 	const originalFetch = globalThis.fetch;
 	const job = await prepareCleanup(fixture(), [], 'en');
 	job.document.items.push({ id: '/pages/0/bubbles/0', text: 'Hello {targetLanguage}' });
+	job.document.items.push({ id: '/pages/1/bubbles/0', text: 'Second page' });
 	try {
 		globalThis.fetch = async (_url, init) => {
 			const request = JSON.parse(init!.body as string);
@@ -481,11 +486,14 @@ test('cleanup sends strict JSON Schema and still validates IDs in the response',
 			expect(schema.additionalProperties).toBe(false);
 			expect(schema.properties.sourceLanguage.enum).toEqual(['en']);
 			expect(schema.properties.targetLanguage.enum).toEqual(['en']);
-			expect(schema.properties.items.minItems).toBeUndefined();
-			expect(schema.properties.items.maxItems).toBe(1);
+			expect(schema.properties.items.minItems).toBe(2);
+			expect(schema.properties.items.maxItems).toBe(2);
 			expect(schema.properties.items.items).toEqual({
 				type: 'object',
-				properties: { id: { type: 'string' }, text: { type: 'string' } },
+				properties: {
+					id: { type: 'string', enum: ['/pages/0/bubbles/0', '/pages/1/bubbles/0'] },
+					text: { type: 'string' }
+				},
 				required: ['id', 'text'],
 				additionalProperties: false
 			});
