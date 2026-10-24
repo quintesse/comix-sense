@@ -138,6 +138,10 @@ an unlisted model ID. Providers do not necessarily list only models suitable for
 text generation; the selected model still needs strict JSON Schema support.
 Existing settings with one shared model initialize both task models automatically.
 
+AI responses log the operation, model and provider-reported token usage to the
+browser console (`AI usage:`). Missing usage is logged as `unknown`. Usage is not
+stored by the app, and monetary cost is not calculated.
+
 Each tool has an **Edit prompt** button with a **Default** or **Customized** status.
 The editor supports `{sourceLanguage}` and `{targetLanguage}` insertion and
 **Restore default prompt**. **Use prompt** keeps edits in the settings draft;

@@ -359,6 +359,7 @@ export function requestCleanup(
 		document,
 		{ ...config, model: config.cleanup.model },
 		config.cleanup.prompt ?? cleanupPrompt,
+		'cleanup',
 		signal
 	);
 }
@@ -373,6 +374,7 @@ export function requestTranslation(
 		document,
 		{ ...config, model: config.translation.model },
 		config.translation.prompt ?? translationPrompt,
+		'translation',
 		signal
 	);
 }
@@ -381,6 +383,7 @@ async function requestText(
 	document: CleanupDocument,
 	settings: Pick<AiSettings, 'url' | 'apiKey'> & { model: string },
 	prompt: string,
+	operation: AiTask,
 	signal?: AbortSignal
 ) {
 	if (!settings.model.trim()) throw new Error('Configure an AI model in Settings.');
@@ -406,6 +409,11 @@ async function requestText(
 			`AI request failed (HTTP ${response.status}). Check the provider URL, model and key. The provider and model must support strict JSON Schema output (response_format: json_schema).`
 		);
 	const data = await response.json();
+	console.log('AI usage:', {
+		operation,
+		model: data?.model ?? settings.model.trim(),
+		usage: data?.usage ?? 'unknown'
+	});
 	const choice = data?.choices?.[0];
 	if (choice?.message?.refusal)
 		throw new Error('AI declined the text request. No text was replaced.');

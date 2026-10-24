@@ -102,6 +102,11 @@ export async function requestRender(
 			`Image request failed (HTTP ${response.status}). Check the model, quality, dimensions and API access.`
 		);
 	const data = await response.json();
+	console.log('AI usage:', {
+		operation: 'render',
+		model: data?.model ?? config.render.model.trim(),
+		usage: data?.usage ?? 'unknown'
+	});
 	const encoded = data?.data?.[0]?.b64_json;
 	if (typeof encoded !== 'string' || !encoded) throw new Error('Image model returned no image.');
 	let bytes: Uint8Array<ArrayBuffer>;
