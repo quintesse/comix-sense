@@ -1,6 +1,7 @@
 import { groupImageVariants, imageLanguages } from '../ImageVariants';
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
 import type { BblWorkspace } from '../bbl/BblWorkspace';
+import type { Font, Face } from '../bbl/metadata';
 import { archiveImageUrl } from '../ImageUrls';
 import { Comic, type Bubble } from '../types/Comic';
 import type { ComicStore } from '../types/ComicStore';
@@ -142,10 +143,49 @@ export class ArchiveComicStore implements ComicStore {
 		await comic.prepareTypography(lang, overlay, this.metadata!.fonts);
 		return overlay.bubbles;
 	}
-	async editBubbles(comic: Comic, language: string, bubbles: Bubble[]) {
+	async editAlbumFont(_comic: Comic, font?: Font, faces?: Face[]) {
 		try {
-			const document = await this.metadata!.edit(comic.entryPath!, language, bubbles);
+			await this.metadata!.editAlbumFont(font, faces);
+			await Promise.all(
+				(this.pages ?? []).flatMap((page) =>
+					page.typographyLanguages().map(async (language) => {
+						const overlay = await this.metadata!.overlay(page.entryPath!, language);
+						await page.prepareTypography(
+							language,
+							{ ...overlay, bubbles: await page.getBubbles(language) },
+							this.metadata!.fonts
+						);
+					})
+				)
+			);
+		} catch (error) {
+			this.workspace?.error.set('Could not retain album edits: ' + String(error));
+			throw error;
+		}
+	}
+	async editFontFaces(comic: Comic, language: string, faces: Face[], album: boolean) {
+		if (album) return this.editAlbumFont(comic, undefined, faces);
+		try {
+			await this.metadata!.editPageFaces(comic.entryPath!, language, faces);
+			const overlay = await this.metadata!.overlay(comic.entryPath!, language);
+			await comic.prepareTypography(
+				language,
+				{ ...overlay, bubbles: await comic.getBubbles(language) },
+				this.metadata!.fonts
+			);
+		} catch (error) {
+			this.workspace?.error.set('Could not retain font resources: ' + String(error));
+			throw error;
+		}
+	}
+	async editBubbles(comic: Comic, language: string, bubbles: Bubble[], font?: Font) {
+		try {
+			const document = await this.metadata!.edit(comic.entryPath!, language, bubbles, font);
 			comic.setSourceDocument(language, document?.source, document?.path);
+			if (font !== undefined) {
+				const overlay = await this.metadata!.overlay(comic.entryPath!, language);
+				await comic.prepareTypography(language, { ...overlay, bubbles }, this.metadata!.fonts);
+			}
 		} catch (error) {
 			this.workspace?.error.set('Could not retain edits: ' + String(error));
 			throw error;

@@ -1,5 +1,6 @@
 import type { Bubble } from '../types/Comic';
 
+export type FontScope = 'album' | 'page' | 'bubble';
 export type Font = {
 	family?: string[];
 	size?: number;
@@ -35,6 +36,19 @@ export function relativePath(value: unknown): string | undefined {
 	if (parts.some((p) => !p || p === '..')) return;
 	const normalized = parts.filter((p) => p !== '.').join('/');
 	return normalized || undefined;
+}
+
+export function fontSource(value: string): string | undefined {
+	const extension = value.split(/[?#]/)[0];
+	if (!/\.(woff2?|ttf|otf)$/i.test(extension)) return;
+	if (value.startsWith('https://')) {
+		try {
+			if (new URL(value).protocol === 'https:') return value;
+		} catch {
+			return;
+		}
+	}
+	return relativePath(value);
 }
 
 export function font(value: unknown, context: string, diagnostics: Diagnostics): Font {
@@ -87,20 +101,11 @@ export function parseDocument(
 		const style = f.style === undefined ? 'normal' : f.style;
 		const weight = f.weight === undefined ? 400 : f.weight;
 		const src = typeof f.src === 'string' ? f.src : '';
-		let validSource = !!relativePath(src);
-		if (src.startsWith('https://')) {
-			try {
-				validSource = new URL(src).protocol === 'https:';
-			} catch {
-				validSource = false;
-			}
-		}
-		const extension = src.split(/[?#]/)[0];
+		const validSource = fontSource(src);
 		if (
 			typeof f.family !== 'string' ||
 			!f.family.trim() ||
 			!validSource ||
-			!/\.(woff2?|ttf|otf)$/i.test(extension) ||
 			!['normal', 'italic', 'oblique'].includes(style) ||
 			!Number.isInteger(weight) ||
 			weight < 1 ||
@@ -115,7 +120,7 @@ export function parseDocument(
 		}
 		doc.fontFaces.push({
 			family: f.family,
-			src: src.startsWith('https://') ? src : relativePath(src)!,
+			src: validSource,
 			style,
 			weight
 		});

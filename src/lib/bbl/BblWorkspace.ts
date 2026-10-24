@@ -1,12 +1,13 @@
 import { writable } from 'svelte/store';
 import type { Bubble } from '../types/Comic';
-import { relativePath } from './metadata';
+import { relativePath, type Font, type Face } from './metadata';
 
 type Backup = {
 	id?: number;
 	directory: FileSystemDirectoryHandle;
 	documents: Record<string, string>;
 	changedPages?: Record<string, string[]>;
+	changedAlbums?: Record<string, string[]>;
 	changedLanguages?: Record<string, Record<string, string[]>>;
 	sources?: Record<string, string>;
 };
@@ -14,6 +15,7 @@ type Draft = {
 	raw: Record<string, any>;
 	revision: number;
 	pages: Set<string>;
+	albums: Set<string>;
 	languages: Map<string, Set<string>>;
 	source: string;
 	legacy?: boolean;
@@ -47,12 +49,15 @@ async function database<T>(
 export class BblWorkspace {
 	readonly pending = writable(0);
 	readonly pendingPages = writable<ReadonlySet<string>>(new Set());
+	readonly pendingNodes = writable<ReadonlySet<string>>(new Set());
+	readonly pendingAlbums = writable<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
 	readonly pendingLanguages = writable<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
 	readonly error = writable('');
 	private id?: number;
 	private drafts = new Map<string, Draft>();
 	private savedDocuments = new Map<string, Record<string, any>>();
 	private publishedPages = new Set<string>();
+	private publishedNodes = new Set<string>();
 	private timer?: ReturnType<typeof setTimeout>;
 	private writes = Promise.resolve();
 	constructor(private directory: FileSystemDirectoryHandle) {}
@@ -66,12 +71,18 @@ export class BblWorkspace {
 				for (const [path, text] of Object.entries(record.documents)) {
 					if (!relativePath(path) || !path.endsWith('.bbl')) continue;
 					const raw = JSON.parse(text);
-					if (!raw || typeof raw !== 'object' || !Array.isArray(raw.pages))
+					if (
+						!raw ||
+						typeof raw !== 'object' ||
+						Array.isArray(raw) ||
+						(raw.pages !== undefined && !Array.isArray(raw.pages))
+					)
 						throw new Error('Invalid browser backup: ' + path);
 					this.drafts.set(path, {
 						raw,
 						revision: 0,
 						pages: new Set(record.changedPages?.[path] ?? []),
+						albums: new Set(record.changedAlbums?.[path] ?? []),
 						languages: new Map(
 							Object.entries(record.changedLanguages?.[path] ?? {}).map(([page, languages]) => [
 								page,
@@ -100,6 +111,44 @@ export class BblWorkspace {
 	source(path: string): string | undefined {
 		return this.drafts.get(path)?.source;
 	}
+	pageDocuments(page: string, language: string): string[] {
+		return [...this.drafts]
+			.filter(([, draft]) => draft.languages.get(page)?.has(language))
+			.map(([path]) => path);
+	}
+	private draft(path: string, original: Record<string, any>, source: string) {
+		if (!relativePath(path) || !path.endsWith('.bbl')) throw new Error('Invalid .bbl path');
+		let draft = this.drafts.get(path);
+		if (!draft) {
+			draft = {
+				raw: structuredClone(this.savedDocuments.get(path) ?? original),
+				revision: 0,
+				pages: new Set(),
+				albums: new Set(),
+				languages: new Map(),
+				source
+			};
+			this.drafts.set(path, draft);
+		}
+		return draft;
+	}
+	editFaces(
+		path: string,
+		original: Record<string, any>,
+		faces: Face[],
+		pagePath: string,
+		language: string,
+		source = path
+	) {
+		const draft = this.draft(path, original, source);
+		draft.raw.fontFaces = structuredClone(faces);
+		draft.pages.add(pagePath);
+		const languages = draft.languages.get(pagePath) ?? new Set<string>();
+		languages.add(language);
+		draft.languages.set(pagePath, languages);
+		draft.revision++;
+		this.changed();
+	}
 
 	async read(path: string, original: () => Promise<string>): Promise<string> {
 		const draft = this.drafts.get(path);
@@ -126,7 +175,8 @@ export class BblWorkspace {
 		bubbles: Bubble[],
 		pagePath: string,
 		language: string,
-		source = path
+		source = path,
+		font?: Font
 	) {
 		if (!relativePath(path) || !path.endsWith('.bbl')) throw new Error('Invalid .bbl path');
 		let draft = this.drafts.get(path);
@@ -135,17 +185,49 @@ export class BblWorkspace {
 				raw: structuredClone(this.savedDocuments.get(path) ?? original),
 				revision: 0,
 				pages: new Set(),
+				albums: new Set(),
 				languages: new Map(),
 				source
 			};
 			this.drafts.set(path, draft);
 		}
 		// Callers provide a plain snapshot; retain no editor proxies in storage.
-		draft.raw.pages[pageIndex].bubbles = bubbles;
+		// Page font edits preserve the document's bubble serialization and pending text edits.
+		if (font === undefined || !Array.isArray(draft.raw.pages[pageIndex].bubbles))
+			draft.raw.pages[pageIndex].bubbles = bubbles;
+		if (font !== undefined) draft.raw.pages[pageIndex].font = structuredClone(font);
 		draft.pages.add(pagePath);
 		const languages = draft.languages.get(pagePath) ?? new Set<string>();
 		languages.add(language);
 		draft.languages.set(pagePath, languages);
+		draft.revision++;
+		this.changed();
+	}
+
+	editAlbum(
+		path: string,
+		original: Record<string, any>,
+		font: Font | undefined,
+		albumPath: string,
+		source = path,
+		faces?: Face[]
+	) {
+		if (!relativePath(path) || !path.endsWith('.bbl')) throw new Error('Invalid .bbl path');
+		let draft = this.drafts.get(path);
+		if (!draft) {
+			draft = {
+				raw: structuredClone(this.savedDocuments.get(path) ?? original),
+				revision: 0,
+				pages: new Set(),
+				albums: new Set(),
+				languages: new Map(),
+				source
+			};
+			this.drafts.set(path, draft);
+		}
+		if (font !== undefined) draft.raw.font = structuredClone(font);
+		if (faces !== undefined) draft.raw.fontFaces = structuredClone(faces);
+		draft.albums.add(albumPath);
 		draft.revision++;
 		this.changed();
 	}
@@ -159,6 +241,22 @@ export class BblWorkspace {
 		) {
 			this.publishedPages = pages;
 			this.pendingPages.set(pages);
+		}
+		const albums = new Map<string, Set<string>>();
+		for (const [path, draft] of this.drafts)
+			for (const album of draft.albums) {
+				const documents = albums.get(album) ?? new Set<string>();
+				documents.add(path);
+				albums.set(album, documents);
+			}
+		this.pendingAlbums.set(albums);
+		const nodes = new Set([...pages, ...albums.keys()]);
+		if (
+			nodes.size !== this.publishedNodes.size ||
+			[...nodes].some((path) => !this.publishedNodes.has(path))
+		) {
+			this.publishedNodes = nodes;
+			this.pendingNodes.set(nodes);
 		}
 		const languages = new Map<string, Set<string>>();
 		for (const draft of this.drafts.values())
@@ -186,6 +284,9 @@ export class BblWorkspace {
 		const changedPages = Object.fromEntries(
 			[...this.drafts].map(([path, draft]) => [path, [...draft.pages]])
 		);
+		const changedAlbums = Object.fromEntries(
+			[...this.drafts].map(([path, draft]) => [path, [...draft.albums]])
+		);
 		const changedLanguages = Object.fromEntries(
 			[...this.drafts].map(([path, draft]) => [
 				path,
@@ -208,6 +309,7 @@ export class BblWorkspace {
 					directory: this.directory,
 					documents,
 					changedPages,
+					changedAlbums,
 					changedLanguages,
 					sources
 				};

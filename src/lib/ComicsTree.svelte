@@ -43,7 +43,7 @@
 	$effect(() => {
 		untrack(() => (dirtyPages = {}));
 		const subscriptions = folders.map((folder) =>
-			folder.store.workspace.pendingPages.subscribe((pages) =>
+			folder.store.workspace.pendingNodes.subscribe((pages) =>
 				untrack(() => (dirtyPages = { ...dirtyPages, [folder.id]: pages }))
 			)
 		);
@@ -142,7 +142,8 @@
 			const unsaved =
 				c.kind === 'page'
 					? dirty.has(c.path)
-					: [...dirty].some((path) =>
+					: dirty.has(c.path) ||
+						[...dirty].some((path) =>
 							path.startsWith(c.kind === 'archive' ? c.path + '/' : c.path)
 						);
 			let tc: TreeChild = {

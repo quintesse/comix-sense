@@ -7,7 +7,9 @@ import {
 	parseDocument,
 	relativePath,
 	type Document,
-	type Font
+	type Page,
+	type Font,
+	type Face
 } from './metadata';
 
 export type Source = {
@@ -145,13 +147,88 @@ export class AlbumMetadata {
 			}
 		return [...new Set(languages)];
 	}
+	private albumDocument() {
+		return (
+			this.companion.find((doc) => doc.path.endsWith('/album.bbl') && doc.language === '') ??
+			this.internal.find((doc) => doc.language === '')
+		);
+	}
+	async editAlbumFont(font?: Font, faces?: Face[]) {
+		if (!this.workspace) return;
+		let document = this.albumDocument();
+		const source =
+			document?.path ??
+			(this.archiveOutput ? this.archiveOutput + '.bbl/' : this.context) + 'album.bbl';
+		const raw = this.rawDocuments.get(source) ?? { pages: [] };
+		this.workspace.editAlbum(
+			this.writePath(source),
+			raw,
+			font,
+			this.archiveOutput ?? this.context,
+			source,
+			faces
+		);
+		if (!document) {
+			document = {
+				path: source,
+				language: '',
+				read: async () => JSON.stringify(raw),
+				data: parseDocument(raw, source, true, this.diagnostics)
+			};
+			(this.archiveOutput ? this.companion : this.internal).push(document);
+			this.rawDocuments.set(source, raw);
+		}
+		if (font !== undefined) {
+			document.data.font = structuredClone(font);
+			raw.font = structuredClone(font);
+		}
+		if (faces !== undefined) {
+			document.data.fontFaces = structuredClone(faces);
+			raw.fontFaces = structuredClone(faces);
+		}
+	}
+	async editPageFaces(filename: string, language: string, faces: Face[]) {
+		if (!this.workspace) return;
+		filename = filename.normalize('NFC');
+		const sidecar = this.sidecars.get(filename)?.get(language);
+		if (sidecar) await this.load(sidecar, false);
+		const source =
+			sidecar?.path ??
+			(this.archiveOutput ? this.archiveOutput + '.bbl/' : this.context) +
+				filename +
+				(language ? '.' + language : '') +
+				'.bbl';
+		const raw = this.rawDocuments.get(source) ?? { pages: [] };
+		this.workspace.editFaces(
+			this.writePath(source),
+			raw,
+			faces,
+			this.context + filename,
+			language,
+			source
+		);
+		raw.fontFaces = structuredClone(faces);
+		const data = sidecar
+			? await this.load(sidecar, false)
+			: parseDocument(raw, source, false, this.diagnostics);
+		data.fontFaces = structuredClone(faces);
+		this.rawDocuments.set(source, raw);
+		this.documents.set(source, Promise.resolve(data));
+		const languages = this.sidecars.get(filename) ?? new Map<string, Source>();
+		languages.set(
+			language,
+			sidecar ?? { path: source, language, exact: true, read: async () => JSON.stringify(raw) }
+		);
+		this.sidecars.set(filename, languages);
+	}
 	async overlay(filename: string, language: string) {
 		filename = filename.normalize('NFC');
 		let bubbles: Bubble[] = [];
 		let sourceLanguage: string | undefined;
 		let font: Font = {};
 		const faces = new Map<string, ResourceFace>();
-		let document: { path: string; raw: Record<string, any>; pageIndex: number } | undefined;
+		let document:
+			{ path: string; raw: Record<string, any>; pageIndex: number; page: Page } | undefined;
 		const apply = (doc: Loaded, sidecar = false) => {
 			const page =
 				doc.data.pages.find((p) => p.filename === filename) ??
@@ -173,7 +250,7 @@ export class AlbumMetadata {
 						!Array.isArray(p) &&
 						(page.filename ? relativePath(p.filename) === page.filename : !p.filename)
 				);
-				document = { path: doc.path, raw, pageIndex };
+				document = { path: doc.path, raw, pageIndex, page };
 				const declared = raw.pages[pageIndex]?.lang ?? raw.lang;
 				sourceLanguage = typeof declared === 'string' ? declared : undefined;
 			}
@@ -190,7 +267,17 @@ export class AlbumMetadata {
 			for (const doc of this.companion) if (doc.language === lang) apply(doc);
 		if (sidecar && companionSidecar)
 			apply({ ...sidecar, data: await this.load(sidecar, false) }, true);
-		return { bubbles, font, faces: [...faces.values()], document, sourceLanguage };
+		return {
+			bubbles,
+			font,
+			pageFont: document?.page.font ?? {},
+			albumFont: this.albumDocument()?.data.font ?? {},
+			albumFaces: this.albumDocument()?.data.fontFaces ?? [],
+			pageFaces: sidecar ? (await this.load(sidecar, false)).fontFaces : [],
+			faces: [...faces.values()],
+			document,
+			sourceLanguage
+		};
 	}
 
 	writePath(source: string): string {
@@ -199,7 +286,7 @@ export class AlbumMetadata {
 			: source;
 	}
 
-	async edit(filename: string, language: string, bubbles: Bubble[]) {
+	async edit(filename: string, language: string, bubbles: Bubble[], font?: Font) {
 		if (!this.workspace) return;
 		const overlay = await this.overlay(filename, language);
 		const suffix = language ? '.' + language : '';
@@ -207,7 +294,8 @@ export class AlbumMetadata {
 		const document = overlay.document ?? {
 			path: prefix + filename.replace(/\.[^/.]+$/, '') + suffix + '.bbl',
 			raw: { pages: [{ filename, bubbles: [] }] },
-			pageIndex: 0
+			pageIndex: 0,
+			page: { filename, bubbles: [] } as Page
 		};
 		const path = this.writePath(document.path);
 		this.workspace.edit(
@@ -217,8 +305,14 @@ export class AlbumMetadata {
 			bubbles,
 			this.context + filename,
 			language,
-			document.path
+			document.path,
+			font
 		);
+		if (font !== undefined) {
+			// Keep the in-memory cascade in sync with the draft for immediate preview.
+			document.page.font = structuredClone(font);
+			document.raw.pages[document.pageIndex].font = structuredClone(font);
+		}
 		return { path, source: document.path };
 	}
 	dispose() {

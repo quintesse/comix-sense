@@ -364,6 +364,14 @@ words, automatic text fitting, and named styles are outside this initial design.
 
 #### Font resources
 
+In edit mode, open **Font Settings** with **F** and expand **Advanced font
+resources** to add, edit, or remove face definitions. This section is collapsed
+by default and available for page and album scopes only. Page definitions go
+in the page sidecar's root-level `fontFaces`, creating a sidecar if needed;
+album definitions go in `album.bbl`. Use the family name in the regular font
+settings to select the registered face. Definitions participate in the usual
+Save/Discard and browser backup workflow.
+
 An optional root-level `fontFaces` array declares font files shared by all
 pages. Each entry has `family` and `src`, with optional `style` and `weight`
 descriptors (defaulting to `normal` and 400). These describe the supplied face;
