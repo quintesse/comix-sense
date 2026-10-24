@@ -2028,7 +2028,7 @@ for (const failure of ['invalid JSON', 'concurrent edit', 'cancel']) {
 }
 
 for (const allOmitted of [false, true]) {
-	test(`AI partial cleanup warns and preserves omitted bubbles (${allOmitted ? 'all' : 'some'})`, async ({
+	test(`AI partial cleanup rejects the response and preserves all bubbles (${allOmitted ? 'all' : 'some'})`, async ({
 		page
 	}) => {
 		await mockDirectory(page);
@@ -2053,19 +2053,12 @@ for (const allOmitted of [false, true]) {
 		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
 		await page.getByLabel('Scope', { exact: true }).selectOption('album');
 		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
-		await expect(page.getByRole('alert').filter({ hasText: 'AI omitted' })).toHaveText(
-			`AI omitted ${allOmitted ? '2 bubbles' : '1 bubble'}. Their text was left unchanged.`
-		);
-		await expect(page.getByRole('status').filter({ hasText: 'bubble text' })).toContainText(
-			allOmitted ? '0 bubble texts updated' : '1 bubble text updated'
+		await expect(page.getByRole('alert')).toContainText(
+			'AI response changed the document structure, languages, IDs, or empty fields. No text was replaced.'
 		);
 		await expect(page.locator('foreignObject')).toHaveText('Hello');
 		await page.getByRole('button', { name: 'Next Page', exact: true }).click();
-		await expect(page.locator('foreignObject')).toHaveText(
-			allOmitted ? 'Second page' : 'Second corrected'
-		);
-		await page.getByRole('button', { name: 'Dismiss cleanup notification', exact: true }).click();
-		await expect(page.getByRole('alert').filter({ hasText: 'AI omitted' })).toHaveCount(0);
+		await expect(page.locator('foreignObject')).toHaveText('Second page');
 	});
 }
 
