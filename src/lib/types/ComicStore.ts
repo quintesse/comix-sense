@@ -1,7 +1,7 @@
 import { groupImageVariants, imageLanguages } from '../ImageVariants';
 import { AlbumMetadata, type Source } from '../bbl/AlbumMetadata';
 import { BblWorkspace } from '../bbl/BblWorkspace';
-import { Diagnostics, matchDocument } from '../bbl/metadata';
+import { Diagnostics, matchDocument, type Font, type Face } from '../bbl/metadata';
 import { ArchiveComicStore } from '../archives/ArchiveComicStore';
 import type { ArchivePriority } from '../archives/ArchiveReader';
 import { Comic, type Bubble } from './Comic';
@@ -19,7 +19,9 @@ export interface ComicStore {
 	getImageUrl(c: Comic, priority?: ArchivePriority): Promise<string>;
 	protectImage?(c: Comic): () => void;
 	getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
-	editBubbles?(c: Comic, language: string, bubbles: Bubble[]): Promise<void>;
+	editBubbles?(c: Comic, language: string, bubbles: Bubble[], font?: Font): Promise<void>;
+	editAlbumFont?(c: Comic, font: Font): Promise<void>;
+	editFontFaces?(c: Comic, language: string, faces: Face[], album: boolean): Promise<void>;
 }
 
 export interface UpdatableComicStore extends ComicStore {
@@ -31,6 +33,7 @@ export class DirectoryComicStore implements ComicStore {
 	private disposed = false;
 	private metadata = new Map<string, AlbumMetadata>();
 	private pageMetadata = new Map<string, { album: AlbumMetadata; filename: string }>();
+	private pageComics = new Map<string, Comic>();
 	private files = new Set<string>();
 	private directories = new Map<string, string[]>();
 	private pageSidecars = new Set<string>();
@@ -76,11 +79,21 @@ export class DirectoryComicStore implements ComicStore {
 		for (const album of this.metadata.values()) album.dispose();
 		this.metadata.clear();
 		this.pageMetadata.clear();
+		this.pageComics.clear();
 	}
 	async list(): Promise<Comic[]> {
 		await this.workspace.restore();
 		const comics: Comic[] = [];
 		await this.listDirectory(this.dir, '', comics);
+		// New album defaults may exist only in the browser backup until Save.
+		for (const path of this.workspace.paths()) {
+			const slash = path.lastIndexOf('/');
+			const names = this.directories.get(path.slice(0, slash + 1));
+			if (names && !names.includes(path.slice(slash + 1))) {
+				names.push(path.slice(slash + 1));
+				this.files.add(path);
+			}
+		}
 		await this.discoverMetadata(comics);
 		return comics;
 	}
@@ -273,6 +286,7 @@ export class DirectoryComicStore implements ComicStore {
 				const filename = page.path.slice(root.length);
 				page.languages = imageLanguages(page, album.languages(filename));
 				this.pageMetadata.set(page.path, { album, filename });
+				this.pageComics.set(page.path, page);
 			}
 		}
 	}
@@ -292,11 +306,60 @@ export class DirectoryComicStore implements ComicStore {
 		return overlay.bubbles;
 	}
 
-	async editBubbles(comic: Comic, language: string, bubbles: Bubble[]) {
+	async editAlbumFont(comic: Comic, font?: Font, faces?: Face[]) {
+		const entry = this.pageMetadata.get(comic.path);
+		if (!entry) return;
+		try {
+			await entry.album.editAlbumFont(font, faces);
+			await Promise.all(
+				[...this.pageComics.values()]
+					.filter((page) => this.pageMetadata.get(page.path)?.album === entry.album)
+					.flatMap((page) =>
+						page.typographyLanguages().map(async (language) => {
+							const overlay = await entry.album.overlay(
+								this.pageMetadata.get(page.path)!.filename,
+								language
+							);
+							await page.prepareTypography(
+								language,
+								{ ...overlay, bubbles: await page.getBubbles(language) },
+								entry.album.fonts
+							);
+						})
+					)
+			);
+		} catch (error) {
+			this.workspace.error.set('Could not retain album edits: ' + String(error));
+			throw error;
+		}
+	}
+
+	async editFontFaces(comic: Comic, language: string, faces: Face[], album: boolean) {
+		if (album) return this.editAlbumFont(comic, undefined, faces);
+		const entry = this.pageMetadata.get(comic.path);
+		if (!entry) return;
+		try {
+			await entry.album.editPageFaces(entry.filename, language, faces);
+			const overlay = await entry.album.overlay(entry.filename, language);
+			await comic.prepareTypography(
+				language,
+				{ ...overlay, bubbles: await comic.getBubbles(language) },
+				entry.album.fonts
+			);
+		} catch (error) {
+			this.workspace.error.set('Could not retain font resources: ' + String(error));
+			throw error;
+		}
+	}
+	async editBubbles(comic: Comic, language: string, bubbles: Bubble[], font?: Font) {
 		const entry = this.pageMetadata.get(comic.path);
 		try {
-			const document = await entry?.album.edit(entry.filename, language, bubbles);
+			const document = await entry?.album.edit(entry.filename, language, bubbles, font);
 			comic.setSourceDocument(language, document?.source, document?.path);
+			if (entry && font !== undefined) {
+				const overlay = await entry.album.overlay(entry.filename, language);
+				await comic.prepareTypography(language, { ...overlay, bubbles }, entry.album.fonts);
+			}
 		} catch (error) {
 			this.workspace.error.set('Could not retain edits: ' + String(error));
 			throw error;

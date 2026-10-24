@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { faRecycle, faPaintRoller } from '@fortawesome/free-solid-svg-icons';
+	import { faRecycle, faPaintRoller, faFont } from '@fortawesome/free-solid-svg-icons';
+	const [fontWidth, fontHeight, , , fontPath] = faFont.icon;
 	const [paintRollerWidth, paintRollerHeight, , , paintRollerPath] = faPaintRoller.icon;
 	const [recycleWidth, recycleHeight, , , recyclePath] = faRecycle.icon;
 	let {
@@ -18,6 +19,7 @@
 			| 'video'
 			| 'camera'
 			| 'paint-roller'
+			| 'font'
 			| 'spell-check'
 			| 'globe'
 			| 'crosshairs'
@@ -34,7 +36,9 @@
 		? `0 0 ${recycleWidth} ${recycleHeight}`
 		: name === 'paint-roller'
 			? `0 0 ${paintRollerWidth} ${paintRollerHeight}`
-			: '0 0 24 24'}
+			: name === 'font'
+				? `0 0 ${fontWidth} ${fontHeight}`
+				: '0 0 24 24'}
 	fill="none"
 	stroke="currentColor"
 	stroke-width="1.5"
@@ -52,6 +56,10 @@
 		{/each}
 	{:else if name === 'paint-roller'}
 		{#each Array.isArray(paintRollerPath) ? paintRollerPath : [paintRollerPath] as d}
+			<path {d} fill="currentColor" stroke="none" />
+		{/each}
+	{:else if name === 'font'}
+		{#each Array.isArray(fontPath) ? fontPath : [fontPath] as d}
 			<path {d} fill="currentColor" stroke="none" />
 		{/each}
 	{:else if name === 'eye'}

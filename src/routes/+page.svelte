@@ -43,6 +43,8 @@
 	import ReaderPage from '#lib/ReaderPage.svelte';
 	import Zoom from '#lib/Zoom.svelte';
 	import ToolbarIcon from '#lib/icons/ToolbarIcon.svelte';
+	import FontSettings from '#lib/FontSettings.svelte';
+	import type { FontScope } from '#lib/bbl/metadata.js';
 	import LanguageMenu from '#lib/LanguageMenu.svelte';
 	import OcrSettings from '#lib/OcrSettings.svelte';
 	import Notification from '#lib/Notification.svelte';
@@ -447,6 +449,19 @@
 	let selectedZoom: string = $state('fit');
 	let pageMode = $state('2P');
 	let pageViews = $state<ReaderPage[]>([]);
+	let fontSettingsOpen = $state(false);
+	let fontScope = $state<FontScope>('page');
+	let fontPagePath = $state('');
+	let fontPage = $derived(
+		pageViews.find((page) => page?.pagePath() === fontPagePath) ?? pageViews[0]
+	);
+	let fontPanelTarget = $derived(fontPage?.fontTarget(fontScope));
+	function closeFontSettings() {
+		fontSettingsOpen = false;
+		readerUi
+			?.querySelector<HTMLButtonElement>('[data-font-settings-toggle]')
+			?.focus({ preventScroll: true });
+	}
 	const pageImages = new PageImages();
 	let displayedPages = $state.raw<
 		{
@@ -542,6 +557,7 @@
 	let disconnectOpen = $state(false);
 	let activeFolder = $derived(folders.find((folder) => folder.id === activeDirectoryId));
 	let pendingChanges = $state(0);
+	let pendingAlbums = $state.raw<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
 	let pendingLanguages = $state.raw<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
 	let documentTargets = $state.raw<ReadonlyMap<string, string>>(new Map());
 	let unsavedLanguages = $derived(
@@ -553,6 +569,7 @@
 	let changesError = $state('');
 	let discardFolder = $state.raw<ComicFolder>();
 	let discardDocument = $state('');
+	let discardDocuments = $state<string[]>([]);
 	let discardOpen = $state(false);
 
 	$effect(() => {
@@ -572,15 +589,18 @@
 	$effect(() => {
 		const workspace = activeFolder?.store.workspace;
 		pendingChanges = 0;
+		pendingAlbums = new Map();
 		pendingLanguages = new Map();
 		backupError = '';
 		const pending = workspace?.pending.subscribe((value) => (pendingChanges = value));
 		const error = workspace?.error.subscribe((value) => (backupError = value));
 		const languages = workspace?.pendingLanguages.subscribe((value) => (pendingLanguages = value));
+		const albums = workspace?.pendingAlbums.subscribe((value) => (pendingAlbums = value));
 		return () => {
 			pending?.();
 			error?.();
 			languages?.();
+			albums?.();
 		};
 	});
 	$effect(() => {
@@ -613,11 +633,12 @@
 	async function saveChanges() {
 		const folder = activeFolder;
 		const document = currentDocument;
+		const documents = currentDocuments;
 		if (!folder || !document || changesBusy || scanning || cleaning || rendering) return;
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
-			await folder.store.workspace.save(document);
+			for (const path of documents) await folder.store.workspace.save(path);
 			await reloadFolder(folder);
 			changesMessage = `Saved changes to “${document}”.`;
 		} catch (error) {
@@ -630,13 +651,14 @@
 	async function discardChanges() {
 		const folder = discardFolder;
 		const document = discardDocument;
+		const documents = discardDocuments;
 		discardOpen = false;
 		discardFolder = undefined;
 		if (!folder || !document || changesBusy) return;
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
-			await folder.store.workspace.discard(document);
+			for (const path of documents) await folder.store.workspace.discard(path);
 			await reloadFolder(folder);
 			changesMessage = `Changes to “${document}” discarded.`;
 		} catch (error) {
@@ -919,7 +941,7 @@
 	function handlePageNavigationKey(event: KeyboardEvent) {
 		const key = event.key.toLowerCase();
 		if (
-			(key === 'l' || key === 'r' || key === 'e') &&
+			(key === 'l' || key === 'r' || key === 'e' || key === 'f') &&
 			!(
 				event.target instanceof Element &&
 				event.target.closest(
@@ -943,7 +965,9 @@
 			event.stopPropagation();
 			if (!event.repeat) {
 				if (key === 'l') void locatePage();
-				else selectedEdit = key === 'e' ? 'yes' : 'no';
+				else if (key === 'f') {
+					if (editable) fontSettingsOpen = !fontSettingsOpen;
+				} else selectedEdit = key === 'e' ? 'yes' : 'no';
 			}
 			return;
 		}
@@ -1206,12 +1230,28 @@
 	let selectedLanguage = $derived(
 		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
 	);
-	let currentDocument = $derived(
+	let pageDocument = $derived(
 		selectedLanguage === 'org' ? undefined : documentTargets.get(selectedLanguage)
 	);
-	let documentDirty = $derived(
-		!!currentDocument && pendingChanges > 0 && !!activeFolder?.store.workspace.has(currentDocument)
-	);
+	let currentDocuments = $derived.by(() => {
+		const workspace = activeFolder?.store.workspace;
+		const path = $selectedComic?.path;
+		const albumDocuments =
+			path === undefined
+				? []
+				: [...pendingAlbums]
+						.filter(([album]) =>
+							path.startsWith(album.endsWith('/') || album === '' ? album : album + '/')
+						)
+						.flatMap(([, paths]) => [...paths]);
+		const pageDocuments =
+			path === undefined ? [] : (workspace?.pageDocuments(path, selectedLanguage) ?? []);
+		return [
+			...new Set([...(pageDocument ? [pageDocument] : []), ...pageDocuments, ...albumDocuments])
+		].filter((document) => workspace?.has(document));
+	});
+	let currentDocument = $derived(currentDocuments.join(', ') || pageDocument);
+	let documentDirty = $derived(pendingChanges > 0 && currentDocuments.length > 0);
 	let canRender = $derived(
 		!!$selectedComic &&
 			editable &&
@@ -1226,6 +1266,17 @@
 </script>
 
 <svelte:window onkeydown={handleNavigationKey} onclick={handleNavigationClick} />
+
+{#if fontSettingsOpen && editable && fontPanelTarget && fontPage}
+	<FontSettings
+		{...fontPanelTarget}
+		busy={loadingPages}
+		bind:scope={fontScope}
+		onchange={(font) => fontPage.setFont(fontScope, font)}
+		onfaceschange={(faces) => fontPage.setFontFaces(fontScope, faces)}
+		onclose={closeFontSettings}
+	/>
+{/if}
 
 <div bind:this={readerUi} class="reader-shell" class:fullscreen>
 	<Header platformName="Comix Sense" bind:isSideNavOpen>
@@ -1336,6 +1387,19 @@
 			</li>
 			{#if editable}
 				<li role="none" class="toolbar-group">
+					<button
+						type="button"
+						class="toolbar-button"
+						aria-label="Font Settings"
+						title="Font Settings (F)"
+						aria-keyshortcuts="f"
+						aria-expanded={fontSettingsOpen}
+						data-font-settings-toggle
+						onclick={() => (fontSettingsOpen = !fontSettingsOpen)}
+						><ToolbarIcon name="font" /></button
+					>
+				</li>
+				<li role="none" class="toolbar-group">
 					<div role="group" aria-label="Text tools">
 						<button
 							type="button"
@@ -1438,6 +1502,7 @@
 							onclick={() => {
 								discardFolder = activeFolder;
 								discardDocument = currentDocument ?? '';
+								discardDocuments = [...currentDocuments];
 								discardOpen = true;
 							}}><ToolbarIcon name="recycle" /></button
 						>
@@ -1653,9 +1718,9 @@
 		on:click:button--secondary={() => (discardOpen = false)}
 	>
 		<p>
-			Discard all unsaved changes in “{discardDocument}”? This includes all edited pages stored in
-			this document. Its browser backup will be removed and its original content reloaded. This
-			cannot be undone.
+			Discard all unsaved changes in “{discardDocument}”? This includes album font defaults and all
+			edited pages stored in these documents. Their browser backups will be removed and their
+			original content reloaded. This cannot be undone.
 		</p>
 	</Modal>
 
@@ -1766,6 +1831,7 @@
 							{showBubbles}
 							{editable}
 							{selectedShape}
+							onfontselect={() => (fontPagePath = page.comic.path)}
 						/>
 					{:else}
 						<div data-page-path={page.comic.path}>

@@ -1,4 +1,4 @@
-import type { Font } from '../bbl/metadata';
+import type { Font, Face, FontScope } from '../bbl/metadata';
 import { writable } from 'svelte/store';
 import type { FontResources, ResourceFace } from '../bbl/FontResources';
 import type { ComicStore } from './ComicStore';
@@ -19,6 +19,20 @@ export class Comic {
 	private store: ComicStore;
 
 	private typography = new Map<string, Map<string, Font>>();
+	private fontContexts = new Map<
+		string,
+		{
+			font: Font;
+			pageFont?: Font;
+			albumFont?: Font;
+			pageFaces?: Face[];
+			albumFaces?: Face[];
+			faces: ResourceFace[];
+			resources: FontResources;
+		}
+	>();
+	private fontRevisions = new Map<string, number>();
+	readonly typographyRevision = writable(0);
 
 	private langBubbles: { [key: string]: Bubble[] } = {};
 	private sourceLanguages = new Map<string, string>();
@@ -101,25 +115,86 @@ export class Comic {
 
 	async prepareTypography(
 		language: string,
-		overlay: { font: Font; faces: ResourceFace[]; bubbles: Bubble[] },
+		overlay: {
+			font: Font;
+			pageFont?: Font;
+			albumFont?: Font;
+			pageFaces?: Face[];
+			albumFaces?: Face[];
+			faces: ResourceFace[];
+			bubbles: Bubble[];
+		},
 		resources: FontResources
 	) {
+		this.fontContexts.set(language, {
+			font: overlay.font,
+			pageFont: overlay.pageFont,
+			albumFont: overlay.albumFont,
+			pageFaces: overlay.pageFaces,
+			albumFaces: overlay.albumFaces,
+			faces: overlay.faces,
+			resources
+		});
+		await this.refreshTypography(language, overlay.bubbles);
+	}
+
+	async refreshTypography(language: string, bubbles: Pick<Bubble, 'font'>[]) {
+		const context = this.fontContexts.get(language);
+		if (!context) return;
+		const revision = (this.fontRevisions.get(language) ?? 0) + 1;
+		this.fontRevisions.set(language, revision);
 		const values = new Map<string, Font>();
-		const overrides = [undefined, ...overlay.bubbles.map((b) => b.font)];
+		const overrides = [undefined, ...bubbles.map((b) => b.font)];
 		await Promise.all(
 			overrides.map(async (override) => {
 				values.set(
 					JSON.stringify(override ?? {}),
-					await resources.resolve({ ...overlay.font, ...override }, overlay.faces)
+					await context.resources.resolve({ ...context.font, ...override }, context.faces)
 				);
 			})
 		);
-		this.typography.set(language, values);
+		if (this.fontRevisions.get(language) === revision) {
+			this.typography.set(language, values);
+			this.typographyRevision.update((value) => value + 1);
+		}
+	}
+
+	pageFont(language: string): Font {
+		return this.fontContexts.get(language)?.pageFont ?? {};
+	}
+	albumFont(language: string): Font {
+		return this.fontContexts.get(language)?.albumFont ?? {};
+	}
+	fontFaces(language: string, scope: FontScope): Face[] {
+		const context = this.fontContexts.get(language);
+		return scope === 'album'
+			? (context?.albumFaces ?? [])
+			: scope === 'page'
+				? (context?.pageFaces ?? [])
+				: [];
+	}
+	async editFontFaces(language: string, scope: FontScope, faces: Face[]): Promise<void> {
+		if (scope !== 'bubble')
+			await this.store.editFontFaces?.(this, language, faces, scope === 'album');
+	}
+	typographyLanguages(): string[] {
+		return [...this.fontContexts.keys()];
+	}
+	async editAlbumFont(font: Font): Promise<void> {
+		await this.store.editAlbumFont?.(this, font);
+	}
+	defaultFont(language: string): Font {
+		return this.fontContexts.get(language)?.font ?? {};
+	}
+	fontFamilies(language: string): string[] {
+		return [...new Set(this.fontContexts.get(language)?.faces.map((face) => face.family) ?? [])];
 	}
 
 	textFont(language: string, bubble: Bubble): Font {
 		const values = this.typography.get(language);
-		return values?.get(JSON.stringify(bubble.font ?? {})) ?? values?.get('{}') ?? bubble.font ?? {};
+		return (
+			values?.get(JSON.stringify(bubble.font ?? {})) ?? { ...values?.get('{}'), ...bubble.font }
+		);
 	}
 
 	// Retain the editor's reactive array when revisiting a page or language.
@@ -128,8 +203,8 @@ export class Comic {
 		if (language !== 'org') this.langBubbles[language] = bubbles;
 	}
 
-	async editBubbles(language: string, bubbles: Bubble[]): Promise<void> {
-		if (language !== 'org') await this.store.editBubbles?.(this, language, bubbles);
+	async editBubbles(language: string, bubbles: Bubble[], font?: Font): Promise<void> {
+		if (language !== 'org') await this.store.editBubbles?.(this, language, bubbles, font);
 	}
 }
 

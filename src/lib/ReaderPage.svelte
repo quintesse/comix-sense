@@ -5,6 +5,7 @@
 	import ComicBubble from './ComicBubble.svelte';
 	import { BblShapeType, type Bubble, type Comic } from './types/Comic';
 	import { svgPoint } from './types/funcs';
+	import type { Font, FontScope, Face } from './bbl/metadata';
 
 	let {
 		comic,
@@ -13,7 +14,8 @@
 		loadedBubbles,
 		showBubbles = true,
 		editable,
-		selectedShape
+		selectedShape,
+		onfontselect
 	}: {
 		comic: Comic;
 		language: string;
@@ -22,10 +24,66 @@
 		showBubbles?: boolean;
 		editable: boolean;
 		selectedShape: BblShapeType;
+		onfontselect?: () => void;
 	} = $props();
 	let container: HTMLDivElement;
 	let bubbles = $state<Bubble[]>([]);
 	let activeBubble = $state<Bubble>();
+	let typographyRevision = $derived(comic.typographyRevision);
+	let bubbleFonts = $derived.by(() => {
+		$typographyRevision;
+		return new Map(bubbles.map((bubble) => [bubble, comic.textFont(language, bubble)]));
+	});
+
+	export function pagePath() {
+		return comic.path;
+	}
+	export function fontTarget(scope: FontScope) {
+		$typographyRevision;
+		return {
+			font:
+				scope === 'album'
+					? comic.albumFont(language)
+					: scope === 'page'
+						? comic.pageFont(language)
+						: (activeBubble?.font ?? {}),
+			defaults: scope === 'album' ? {} : comic.defaultFont(language),
+			families: comic.fontFamilies(language),
+			faces: comic.fontFaces(language, scope),
+			faceKey: `${scope === 'album' ? comic.albumPath : comic.path}:${language}:${scope}`,
+			disabled: language === 'org' || (scope === 'bubble' && !activeBubble)
+		};
+	}
+	export async function setFont(scope: FontScope, font: Font) {
+		if (!editable || language === 'org') return;
+		if (scope === 'album') {
+			await comic.editAlbumFont(font);
+		} else if (scope === 'bubble') {
+			if (activeBubble) activeBubble.font = font;
+		} else {
+			await comic.editBubbles(language, $state.snapshot(bubbles), font);
+		}
+	}
+	function activateBubble(bubble: Bubble) {
+		activeBubble = bubble;
+		onfontselect?.();
+	}
+	export async function setFontFaces(scope: FontScope, faces: Face[]) {
+		if (editable && language !== 'org' && scope !== 'bubble')
+			await comic.editFontFaces(language, scope, faces);
+	}
+	$effect(() => {
+		const lang = language;
+		const page = comic;
+		const fonts = bubbles.map((bubble) => $state.snapshot(bubble.font));
+		untrack(
+			() =>
+				void page.refreshTypography(
+					lang,
+					fonts.map((font) => ({ font }))
+				)
+		);
+	});
 	let indexedBubbles = $derived(bubbles.map((bubble, index) => ({ bubble, index })));
 	let orderedBubbles = $derived(
 		indexedBubbles.toSorted(
@@ -52,6 +110,7 @@
 
 	function deselectOutside(event: MouseEvent) {
 		if (!activeBubble || !(event.target instanceof Element)) return;
+		if (event.target.closest('[data-font-settings], [data-font-settings-toggle]')) return;
 		if (getBubble(event.target)?.bubble === activeBubble) return;
 		const editor = document.activeElement;
 		if (editor instanceof HTMLElement && container.contains(editor) && editor.isContentEditable) {
@@ -96,7 +155,7 @@
 			) {
 				document.activeElement.blur();
 			}
-			activeBubble = bubble;
+			activateBubble(bubble);
 			function move(event: MouseEvent) {
 				if (!(event.buttons & (button === 1 ? 4 : 1))) {
 					stop();
@@ -160,11 +219,11 @@
 			{#if showBubbles}
 				{#each orderedBubbles as { bubble, index } (bubble)}
 					<ComicBubble
-						font={comic.textFont(language, bubble)}
+						font={bubbleFonts.get(bubble)}
 						bind:bubble={bubbles[index]}
 						bubbleIndex={index}
 						active={bubble === activeBubble}
-						onactivate={() => (activeBubble = bubble)}
+						onactivate={() => activateBubble(bubble)}
 						{renderMode}
 						{editable}
 					/>
