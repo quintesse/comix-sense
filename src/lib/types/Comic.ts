@@ -91,7 +91,7 @@ export class Comic {
 		if (language === 'org') {
 			return Promise.resolve([]);
 		}
-		const lang = language ? language : this.languages[0];
+		const lang = language !== undefined ? language : this.languages[0];
 		if (lang in this.langBubbles) {
 			return Promise.resolve(this.langBubbles[lang]);
 		} else {

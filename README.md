@@ -178,6 +178,33 @@ the same browser backup and Save/Discard workflow as manual edits. Use **Save Ch
 to write each affected document to disk. This feature uses a small HTTP adapter
 without LangChain or an SDK.
 
+### Render translated pages
+
+In Edit Mode, select a translated language and click **Render Page**. In
+**OCR Settings → AI provider**, configure a Render image model and optionally
+edit its prompt. Quality offers `low`, `medium` (default), and `high`, and also
+accepts custom values. Output format offers `jpg`, `png` (default), and `webp`.
+The selected provider must support the OpenAI image edits endpoint and browser
+requests through CORS.
+
+Render sends the original page image together with the prompt and a JSON document
+containing `sourceLanguage`, `targetLanguage`, and indexed `source`/`target` text
+pairs. Source text comes from MRG when its bubble count matches the translation,
+otherwise OCR; original language metadata can come from either overlay. The
+requested dimensions equal the original dimensions rounded up to multiples of 16.
+Choose an image model that supports these custom dimensions.
+
+The notification shows elapsed seconds and offers cancellation. After validating
+and saving the returned image as `<page>.<language>.<format>` beside the original,
+the selected page automatically switches to Reading Mode to display it. Rendering
+again replaces the image at that output path. Original images and BBL documents
+are preserved. Render is available for directory pages with a translated overlay;
+ORG, OCR, MRG, and archive members cannot be rendered. Requests time out after ten
+minutes. This workflow sends images to the configured provider and writes results
+directly to disk, independently of **Save Changes** for bubble edits.
+
+### Extract bubble text
+
 To extract the same cleanup JSON from a `.bbl` file without calling a provider:
 
 ```sh
