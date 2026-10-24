@@ -46,7 +46,8 @@ test('AI settings migrate a shared model to independent task settings and retain
 		url: 'https://example.com/v1',
 		apiKey: 'secret',
 		cleanup: { model: 'shared' },
-		translation: { model: 'shared' }
+		translation: { model: 'shared' },
+		render: { model: '', quality: 'medium', format: 'png' }
 	});
 	const customized = normalizeAiSettings({
 		...migrated,

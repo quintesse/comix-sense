@@ -294,7 +294,7 @@ test('reader uses rendered language images and falls back per page; editing uses
 			)
 		)
 		.toContain('Original');
-	await expect(page.getByRole('button', { name: 'Render Page', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Render Page', exact: true })).toBeEnabled();
 	await expect(
 		page
 			.getByRole('button', { name: 'Render Page', exact: true })

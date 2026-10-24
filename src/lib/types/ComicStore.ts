@@ -152,6 +152,34 @@ export class DirectoryComicStore implements ComicStore {
 		return URL.createObjectURL(await handle.getFile());
 	}
 
+	/** Save only direct directory pages; archive members cannot be written as loose paths. */
+	canRender(comic: Comic): boolean {
+		return !this.disposed && this.pageMetadata.has(comic.path);
+	}
+
+	async saveRendered(comic: Comic, language: string, image: Blob): Promise<string> {
+		if (!this.canRender(comic))
+			throw new Error('Rendering requires a page in a writable directory.');
+		if (!/^[a-z]{2,3}(?:-[a-z0-9]+)*$/i.test(language)) throw new Error('Invalid target language.');
+		const format = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[image.type];
+		if (!format) throw new Error('Unsupported rendered image format.');
+		const path = `${baseNameExt(comic.path)[0]}.${language.toLowerCase()}.${format}`;
+		const parts = path.split('/');
+		let directory = this.dir;
+		for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+		const handle = await directory.getFileHandle(parts.at(-1)!, { create: true });
+		const writable = await handle.createWritable();
+		try {
+			await writable.write(image);
+			await writable.close();
+		} catch (error) {
+			await writable.abort().catch(() => {});
+			throw error;
+		}
+		comic.renderedImages.set(language.toLowerCase(), new Comic(path, [], this));
+		return path;
+	}
+
 	private async discoverMetadata(comics: Comic[]) {
 		const read = async (path: string) => (await resolveFile(this.dir, path)).getFile();
 		// Browser documents participate in the same discovery and precedence as disk files.

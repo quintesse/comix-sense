@@ -28,8 +28,8 @@
 	} = $props();
 	const storageKey = 'comix-sense.google-vision-api-key';
 	const aiStorageKey = 'comix-sense.ai-settings';
-	const tasks = ['cleanup', 'translation'] as const;
-	const taskLabels = { cleanup: 'Cleanup', translation: 'Translation' };
+	const tasks = ['cleanup', 'translation', 'render'] as const;
+	const taskLabels = { cleanup: 'Cleanup', translation: 'Translation', render: 'Render' };
 	let aiDraft = $state<AiSettings>(normalizeAiSettings(undefined));
 	let rememberAi = $state(false);
 	let savedRememberAi = false;
@@ -49,12 +49,19 @@
 		void open;
 		modelsNotificationDismissed = false;
 	});
-	let modelOpen = $state<Record<AiTask, boolean>>({ cleanup: false, translation: false });
+	let modelOpen = $state<Record<AiTask, boolean>>({
+		cleanup: false,
+		translation: false,
+		render: false
+	});
 	let modelSelections = $state<Record<AiTask, string | undefined>>({
 		cleanup: undefined,
-		translation: undefined
+		translation: undefined,
+		render: undefined
 	});
 	let modelItems = $derived(availableModels.map((id) => ({ id, text: id })));
+	let qualityOpen = $state(false);
+	let qualitySelection = $state<string | undefined>();
 
 	onMount(() => {
 		try {
@@ -81,7 +88,9 @@
 				rememberAi = savedRememberAi;
 				editor = undefined;
 				error = '';
-				modelSelections = { cleanup: undefined, translation: undefined };
+				qualityOpen = false;
+				qualitySelection = undefined;
+				modelSelections = { cleanup: undefined, translation: undefined, render: undefined };
 			});
 	});
 
@@ -91,8 +100,8 @@
 		const key = aiDraft.apiKey.trim();
 		availableModels = [];
 		loadingModels = false;
-		modelOpen = { cleanup: false, translation: false };
-		modelSelections = { cleanup: undefined, translation: undefined };
+		modelOpen = { cleanup: false, translation: false, render: false };
+		modelSelections = { cleanup: undefined, translation: undefined, render: undefined };
 		if (!active || !url) return;
 		let cancelled = false;
 		const controller = new AbortController();
@@ -117,7 +126,7 @@
 	});
 
 	async function editPrompt(task: AiTask) {
-		modelOpen = { cleanup: false, translation: false };
+		modelOpen = { cleanup: false, translation: false, render: false };
 		editor = task;
 		promptDraft = aiDraft[task].prompt ?? defaultPrompts[task];
 		error = '';
@@ -154,6 +163,13 @@
 
 	function modelKeydown(event: KeyboardEvent) {
 		if (!open || editor || event.key !== 'Escape') return;
+		if ((event.target as HTMLElement)?.id === 'ai-render-quality') {
+			event.preventDefault();
+			event.stopPropagation();
+			if (qualityOpen) qualityOpen = false;
+			else open = false;
+			return;
+		}
 		const task = tasks.find((task) => (event.target as HTMLElement)?.id === `ai-${task}-model`);
 		if (!task) return;
 		// Carbon clears custom input on Escape; closing suggestions must preserve the model ID.
@@ -349,9 +365,38 @@
 							bind:selectedId={modelSelections[task]}
 							bind:open={modelOpen[task]}
 							allowCustomValue
-							on:focus={() => (modelOpen[task === 'cleanup' ? 'translation' : 'cleanup'] = false)}
+							on:focus={() => {
+								qualityOpen = false;
+								for (const other of tasks) if (other !== task) modelOpen[other] = false;
+							}}
 							on:input={() => (modelSelections[task] = undefined)}
 						/>
+						{#if task === 'render'}
+							<ComboBox
+								id="ai-render-quality"
+								labelText="Quality"
+								items={['low', 'medium', 'high'].map((id) => ({ id, text: id }))}
+								bind:value={aiDraft.render.quality}
+								bind:selectedId={qualitySelection}
+								bind:open={qualityOpen}
+								allowCustomValue
+								on:input={() => (qualitySelection = undefined)}
+								on:focus={() => {
+									for (const task of tasks) modelOpen[task] = false;
+								}}
+							/>
+							<p>Choose a quality or enter a value supported by your image model.</p>
+							<label for="ai-render-format">Output format</label>
+							<select id="ai-render-format" bind:value={aiDraft.render.format}>
+								<option value="jpg">jpg</option>
+								<option value="png">png</option>
+								<option value="webp">webp</option>
+							</select>
+							<p>
+								Uses the original page size rounded up to multiples of 16. Choose an image edit
+								model that supports custom dimensions.
+							</p>
+						{/if}
 						<div class="prompt-row">
 							<span
 								>Prompt <span class="prompt-state"
@@ -368,8 +413,9 @@
 					</section>
 				{/each}
 				<p>
-					Set a model for each tool you want to use. Models must support strict JSON Schema output.
-					The provider must allow browser requests (CORS).
+					Set a model for each tool you want to use. Cleanup and Translation models must support
+					strict JSON Schema output. Render uses the OpenAI image edits API. The provider must allow
+					browser requests (CORS).
 				</p>
 			</div>
 		{:else}

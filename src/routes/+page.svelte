@@ -56,11 +56,101 @@
 		type AiSettings
 	} from '#lib/textCleanup.js';
 	import { scanImage } from '#lib/ocr.js';
+	import { isRenderLanguage, prepareRender, requestRender } from '#lib/render.js';
 	import { mergeBubbles } from '#lib/mergeBubbles.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
 
 	let ai = $state<AiSettings>(normalizeAiSettings(undefined));
+	let rendering = $state(false);
+	let renderElapsed = $state(0);
+	$effect(() => {
+		if (!rendering) return;
+		const started = performance.now();
+		renderElapsed = 0;
+		const timer = window.setInterval(() => {
+			renderElapsed = Math.floor((performance.now() - started) / 1000);
+		}, 1000);
+		return () => window.clearInterval(timer);
+	});
+	let renderMessage = $state('');
+	let renderError = $state('');
+	let renderController: AbortController | undefined;
+	let renderedRevision = $state(0);
+
+	async function renderPage() {
+		const comic = $selectedComic;
+		const folder = activeFolder;
+		const language = selectedLanguage;
+		if (!canRender || !comic || !folder) return;
+		if (!ai.render.model.trim()) {
+			settingsTab = 'ai';
+			ocrSettingsOpen = true;
+			return;
+		}
+		const settings = normalizeAiSettings(ai);
+		const controller = new AbortController();
+		renderController = controller;
+		rendering = true;
+		renderError = '';
+		renderMessage = `Rendering ${comic.displayName} in ${language.toUpperCase()}…`;
+		const timeout = window.setTimeout(() => controller.abort('timeout'), 600000);
+		let url: string | undefined;
+		try {
+			if ((await folder.directory.requestPermission({ mode: 'readwrite' })) !== 'granted')
+				throw new Error('Write access to the page directory is required.');
+			const document = await prepareRender(comic, language);
+			url = await comic.getImageUrl();
+			const original = new Image();
+			original.src = url;
+			await original.decode();
+			// Normalize supported reader formats to an API-supported PNG without resizing.
+			const canvas = window.document.createElement('canvas');
+			canvas.width = original.naturalWidth;
+			canvas.height = original.naturalHeight;
+			const context = canvas.getContext('2d');
+			if (!context) throw new Error('Could not read the original page image.');
+			context.drawImage(original, 0, 0);
+			const image = await new Promise<Blob>((resolve, reject) =>
+				canvas.toBlob(
+					(blob) =>
+						blob ? resolve(blob) : reject(new Error('Could not encode the original page.')),
+					'image/png'
+				)
+			);
+			controller.signal.throwIfAborted();
+			const result = await requestRender(
+				document,
+				image,
+				{ width: canvas.width, height: canvas.height },
+				settings,
+				controller.signal
+			);
+			controller.signal.throwIfAborted();
+			const decoded = await createImageBitmap(result);
+			decoded.close();
+			controller.signal.throwIfAborted();
+			if (!folders.includes(folder))
+				throw new Error('The page directory was disconnected during rendering.');
+			const path = await folder.store.saveRendered(comic, language, result);
+			renderedRevision++;
+			comics.update((values) => [...values]);
+			if ($selectedComic === comic && selectedLanguage === language) selectedEdit = 'no';
+			renderMessage = `Saved rendered page to “${path}”.`;
+		} catch (error) {
+			renderMessage = '';
+			renderError = controller.signal.aborted
+				? controller.signal.reason === 'timeout'
+					? 'Render timed out. No image was saved.'
+					: 'Render cancelled. No image was saved.'
+				: 'Render failed: ' + (error instanceof Error ? error.message : String(error));
+		} finally {
+			if (url) releaseImageUrl(url);
+			window.clearTimeout(timeout);
+			rendering = false;
+			renderController = undefined;
+		}
+	}
 	let settingsTab = $state('ocr');
 	let cleanupOpen = $state(false);
 	let cleanupScope = $state('page');
@@ -94,6 +184,7 @@
 		if (
 			!$selectedComic ||
 			cleaning ||
+			rendering ||
 			scanning ||
 			loadingPages ||
 			!editable ||
@@ -110,6 +201,7 @@
 		if (
 			!$selectedComic ||
 			cleaning ||
+			rendering ||
 			scanning ||
 			loadingPages ||
 			!editable ||
@@ -142,7 +234,7 @@
 		const language = selectedLanguage;
 		const translating = targetLanguage !== undefined;
 		const action = translating ? 'Translation' : 'Cleanup';
-		if (!comic || cleaning || scanning || !editable || language === 'org') return;
+		if (!comic || cleaning || rendering || scanning || !editable || language === 'org') return;
 		if (!ai.url.trim() || !ai[translating ? 'translation' : 'cleanup'].model.trim()) {
 			cleanupOpen = false;
 			translationOpen = false;
@@ -258,7 +350,7 @@
 
 	async function scanPage(confirmedComic?: Comic) {
 		const comic = $selectedComic;
-		if (!comic || scanning || cleaning || !editable || loadingPages) return;
+		if (!comic || scanning || cleaning || rendering || !editable || loadingPages) return;
 		const key = effectiveOcrKey;
 		const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
 		const mergedLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'mrg') ?? 'MRG';
@@ -392,6 +484,7 @@
 	});
 
 	onDestroy(() => {
+		renderController?.abort();
 		scanController?.abort();
 		cleanupController?.abort();
 		pageImages.retain([]);
@@ -400,6 +493,7 @@
 
 	$effect(() => {
 		const requested = visiblePages;
+		void renderedRevision;
 		const language = selectedLanguage;
 		const editing = editingMode;
 		const imageComics = requested.map((comic) =>
@@ -535,7 +629,7 @@
 	async function saveChanges() {
 		const folder = activeFolder;
 		const document = currentDocument;
-		if (!folder || !document || changesBusy || scanning || cleaning) return;
+		if (!folder || !document || changesBusy || scanning || cleaning || rendering) return;
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
@@ -1134,6 +1228,17 @@
 	let documentDirty = $derived(
 		!!currentDocument && pendingChanges > 0 && !!activeFolder?.store.workspace.has(currentDocument)
 	);
+	let canRender = $derived(
+		!!$selectedComic &&
+			editable &&
+			!loadingPages &&
+			!scanning &&
+			!cleaning &&
+			!rendering &&
+			isRenderLanguage(selectedLanguage) &&
+			pageLanguages.includes(selectedLanguage) &&
+			!!activeFolder?.store.canRender($selectedComic)
+	);
 </script>
 
 <svelte:window onkeydown={handleNavigationKey} onclick={handleNavigationClick} />
@@ -1253,7 +1358,7 @@
 							class="toolbar-button scan-button"
 							aria-label="Scan Full Page"
 							title="Scan Full Page"
-							disabled={!$selectedComic || loadingPages || scanning || cleaning}
+							disabled={!$selectedComic || loadingPages || scanning || cleaning || rendering}
 							aria-busy={scanning}
 							onclick={requestScan}
 						>
@@ -1269,6 +1374,7 @@
 								loadingPages ||
 								scanning ||
 								cleaning ||
+								rendering ||
 								selectedLanguage === 'org'}
 							aria-busy={cleaning}
 							onclick={openCleanup}><ToolbarIcon name="spell-check" /></button
@@ -1282,6 +1388,7 @@
 								loadingPages ||
 								scanning ||
 								cleaning ||
+								rendering ||
 								selectedLanguage === 'org'}
 							onclick={openTranslation}><ToolbarIcon name="globe" /></button
 						>
@@ -1290,7 +1397,9 @@
 							class="toolbar-button"
 							aria-label="Render Page"
 							title="Render Page"
-							disabled><ToolbarIcon name="paint-roller" /></button
+							disabled={!canRender}
+							aria-busy={rendering}
+							onclick={() => void renderPage()}><ToolbarIcon name="paint-roller" /></button
 						>
 					</div>
 				</li>
@@ -1301,7 +1410,12 @@
 							class="toolbar-button"
 							aria-label="Save Changes"
 							title={currentDocument ? `Save changes to ${currentDocument}` : 'Save Changes'}
-							disabled={!documentDirty || changesBusy || scanning || cleaning || loadingPages}
+							disabled={!documentDirty ||
+								changesBusy ||
+								scanning ||
+								cleaning ||
+								rendering ||
+								loadingPages}
 							onclick={saveChanges}><ToolbarIcon name="save" /></button
 						>
 						<button
@@ -1309,7 +1423,12 @@
 							class="toolbar-button"
 							aria-label="Discard Changes"
 							title={currentDocument ? `Discard changes to ${currentDocument}` : 'Discard Changes'}
-							disabled={!documentDirty || changesBusy || scanning || cleaning || loadingPages}
+							disabled={!documentDirty ||
+								changesBusy ||
+								scanning ||
+								cleaning ||
+								rendering ||
+								loadingPages}
 							onclick={() => {
 								discardFolder = activeFolder;
 								discardDocument = currentDocument ?? '';
@@ -1592,6 +1711,24 @@
 								>{aiOperation === 'translation' ? 'Cancel translation' : 'Cancel cleanup'}</button
 							>
 						{/if}
+					</Notification>
+				{/if}
+				{#if renderError || renderMessage}
+					<Notification
+						label="Dismiss render notification"
+						ondismiss={() => {
+							renderMessage = '';
+							renderError = '';
+						}}
+					>
+						{#if renderError}<p role="alert">{renderError}</p>{/if}
+						{#if renderMessage}<p role="status">{renderMessage}</p>{/if}
+						{#if rendering}<p aria-label="Elapsed render time" aria-live="off">
+								Elapsed: {renderElapsed}s
+							</p>{/if}
+						{#if rendering}<button type="button" onclick={() => renderController?.abort()}
+								>Cancel render</button
+							>{/if}
 					</Notification>
 				{/if}
 				{#if scanError || scanMessage}
