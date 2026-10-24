@@ -57,7 +57,6 @@
 	} from '#lib/textCleanup.js';
 	import { scanImage } from '#lib/ocr.js';
 	import { isRenderLanguage, prepareRender, requestRender } from '#lib/render.js';
-	import { mergeBubbles } from '#lib/mergeBubbles.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
 
@@ -353,11 +352,7 @@
 		if (!comic || scanning || cleaning || rendering || !editable || loadingPages) return;
 		const key = effectiveOcrKey;
 		const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
-		const mergedLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'mrg') ?? 'MRG';
-		if (
-			(comic.languages.includes(ocrLanguage) || comic.languages.includes(mergedLanguage)) &&
-			confirmedComic !== comic
-		) {
+		if (comic.languages.includes(ocrLanguage) && confirmedComic !== comic) {
 			overwriteOcrComic = comic;
 			overwriteOcrOpen = true;
 			return;
@@ -370,11 +365,9 @@
 		const release = comic.protectImage();
 		let url: string | undefined;
 		try {
-			const previous = await Promise.all(
-				[ocrLanguage, mergedLanguage].map(async (language) =>
-					comic.languages.includes(language) ? await comic.getBubbles(language) : []
-				)
-			);
+			const previous = comic.languages.includes(ocrLanguage)
+				? await comic.getBubbles(ocrLanguage)
+				: [];
 			const baseline = JSON.stringify(previous);
 			url = await comic.getImageUrl();
 			const response = await fetch(url, { signal: controller.signal });
@@ -386,33 +379,24 @@
 			}
 			if (JSON.stringify(previous) !== baseline)
 				throw new Error('A scan overlay was edited during scanning. Scan again to replace it.');
-			const merged = result.bubbles.some((bubble) => bubble.text.trim())
-				? mergeBubbles(result.bubbles)
-				: undefined;
 			await comic.editBubbles(ocrLanguage, result.bubbles);
-			if (merged) await comic.editBubbles(mergedLanguage, merged);
 			comic.setSourceLanguage(ocrLanguage, result.lang);
-			if (merged) comic.setSourceLanguage(mergedLanguage, result.lang);
 			comic.setBubbles(ocrLanguage, result.bubbles);
-			if (merged) comic.setBubbles(mergedLanguage, merged);
-			comic.languages = [
-				...new Set([...comic.languages, ocrLanguage, ...(merged ? [mergedLanguage] : [])])
-			];
+			comic.languages = [...new Set([...comic.languages, ocrLanguage])];
 			comics.update((values) => [...values]);
 			if ($selectedComic === comic) {
-				selectLanguage(merged ? mergedLanguage : ocrLanguage);
+				selectLanguage(ocrLanguage);
 				showBubbles = true;
-				// Refresh either scan overlay if it is already displayed.
+				// Refresh OCR if it is already displayed.
 				displayedPages = displayedPages.map((page) =>
-					page.comic === comic &&
-					(page.language === ocrLanguage || (merged && page.language === mergedLanguage))
-						? { ...page, bubbles: page.language === ocrLanguage ? result.bubbles : merged! }
+					page.comic === comic && page.language === ocrLanguage
+						? { ...page, bubbles: result.bubbles }
 						: page
 				);
 			}
-			scanMessage = merged
-				? `${comic.displayName}: ${result.bubbles.length} words recognized, ${merged.length} merged regions. Browser backup scheduled.`
-				: `${comic.displayName}: No text recognized. No MRG overlay was created.`;
+			scanMessage = result.bubbles.some((bubble) => bubble.text.trim())
+				? `${comic.displayName}: ${result.bubbles.length} speech bubbles recognized. Browser backup scheduled.`
+				: `${comic.displayName}: No text recognized.`;
 		} catch (error) {
 			if (!controller.signal.aborted)
 				scanError = 'Scan failed: ' + (error instanceof Error ? error.message : String(error));
@@ -1608,7 +1592,7 @@
 
 	<Modal
 		bind:open={overwriteOcrOpen}
-		modalHeading="Overwrite OCR and MRG overlays?"
+		modalHeading="Overwrite OCR overlay?"
 		primaryButtonText="Overwrite and scan"
 		secondaryButtonText="Cancel"
 		size="xs"
@@ -1617,8 +1601,8 @@
 		on:click:button--secondary={() => (overwriteOcrOpen = false)}
 	>
 		<p>
-			“{overwriteOcrComic?.displayName}” already has scan overlays. Scanning again will replace its
-			OCR and MRG text and shapes.
+			“{overwriteOcrComic?.displayName}” already has an OCR overlay. Scanning again will replace its
+			OCR text and shapes.
 		</p>
 	</Modal>
 

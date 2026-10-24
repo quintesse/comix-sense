@@ -1,4 +1,5 @@
 import { BblShapeType, type Bubble } from './types/Comic';
+import { mergeBubbles } from './mergeBubbles';
 
 type Annotation = {
 	description?: string;
@@ -59,5 +60,6 @@ export async function scanImage(image: Blob, apiKey: string, signal?: AbortSigna
 		throw new Error(data.error?.message || `Google Vision request failed (${response.status}).`);
 	if (!Array.isArray(data.responses) || data.responses.length !== 1)
 		throw new Error('Google Vision returned an invalid response.');
-	return visionToBubbles(data.responses[0]);
+	const result = visionToBubbles(data.responses[0]);
+	return { lang: result.lang, bubbles: mergeBubbles(result.bubbles) };
 }

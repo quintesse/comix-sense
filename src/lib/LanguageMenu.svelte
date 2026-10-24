@@ -1,5 +1,4 @@
 <script lang="ts">
-	import ObjectGroupIcon from './icons/ObjectGroupIcon.svelte';
 	import ToolbarIcon from './icons/ToolbarIcon.svelte';
 	import { flag, languageLabel } from './languageFlags';
 
@@ -78,9 +77,7 @@
 		aria-expanded={open}
 		onclick={() => (open = !open)}
 	>
-		{#if selected.toLowerCase() === 'ocr'}<ToolbarIcon
-				name="video"
-			/>{:else if selected.toLowerCase() === 'mrg'}<ObjectGroupIcon />{:else if flag(selected)}<img
+		{#if selected.toLowerCase() === 'ocr'}<ToolbarIcon name="video" />{:else if flag(selected)}<img
 				class:unavailable={!availableLanguages.has(selected)}
 				src={flag(selected)}
 				alt=""
@@ -104,7 +101,6 @@
 					>
 						{#if language.toLowerCase() === 'ocr'}<ToolbarIcon
 								name="video"
-							/>{:else if language.toLowerCase() === 'mrg'}<ObjectGroupIcon
 							/>{:else if flag(language)}<img
 								class:unavailable={!availableLanguages.has(language)}
 								src={flag(language)}

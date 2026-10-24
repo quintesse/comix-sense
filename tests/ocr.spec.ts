@@ -150,7 +150,7 @@ test('merge retains metadata, separates styles, and produces independent editabl
 	expect(mergeBubbles(input)).toHaveLength(2);
 });
 
-test('MRG text removes source whitespace formatting, including singleton and empty OCR boxes', () => {
+test('merged OCR text removes source whitespace formatting, including singleton and empty OCR boxes', () => {
 	const input = [
 		word('  Hello\r\nworld\t ', 0, 0, 90, 20),
 		word(' !\n ', 91, 0, 95, 20),
@@ -167,7 +167,7 @@ test('MRG text removes source whitespace formatting, including singleton and emp
 	expect(JSON.stringify(input)).toBe(snapshot);
 });
 
-test('MRG joins hyphenated line breaks without spaces while preserving hyphens for cleanup', () => {
+test('merged OCR joins hyphenated line breaks without spaces while preserving hyphens for cleanup', () => {
 	const input = [word('A long-', 0, 0, 100, 20), word('word here', 0, 25, 100, 45)];
 	expect(mergeBubbles(input).map((bubble) => bubble.text)).toEqual(['A long-word here']);
 	for (const newline of ['\n', '\r\n', '\r', '\u2028', '\u2029']) {

@@ -71,7 +71,7 @@ const languageNames = new Intl.DisplayNames(['en'], { type: 'language', fallback
 
 export function languageLabel(language: string): string {
 	const code = language.toUpperCase();
-	if (!language || ['org', 'ocr', 'mrg'].includes(language.toLowerCase())) return code;
+	if (!language || ['org', 'ocr'].includes(language.toLowerCase())) return code;
 	try {
 		const name = languageNames.of(language.replaceAll('_', '-'));
 		return name ? `${name} (${code})` : code;

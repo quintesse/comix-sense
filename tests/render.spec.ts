@@ -16,15 +16,15 @@ const bubble = (text: string): Bubble => ({
 	}
 });
 
-test('render uses MRG original metadata and exact indexed text, including empty fields', async () => {
+test('render uses OCR original metadata and exact indexed text, including empty fields', async () => {
 	const reads: (string | undefined)[] = [];
-	const comic = new Comic('01.jpg', ['en', 'MRG'], {
+	const comic = new Comic('01.jpg', ['en', 'OCR'], {
 		list: async () => [],
 		getImageUrl: async () => '',
 		getBubbles: async (_comic, language) => {
 			reads.push(language);
-			comic.setSourceLanguage(language!, language === 'MRG' ? 'nl' : 'en');
-			return language === 'MRG'
+			comic.setSourceLanguage(language!, language === 'OCR' ? 'nl' : 'en');
+			return language === 'OCR'
 				? [bubble('Hallo\nwereld!'), bubble('')]
 				: [bubble('Hello world!'), bubble('')];
 		}
@@ -37,10 +37,10 @@ test('render uses MRG original metadata and exact indexed text, including empty 
 			{ source: '', target: '' }
 		]
 	});
-	expect(reads).toEqual(['MRG', 'en']);
+	expect(reads).toEqual(['OCR', 'en']);
 	comic.setBubbles('en', []);
 	await expect(prepareRender(comic, 'en')).rejects.toThrow('counts must match');
-	for (const language of ['org', 'OCR', 'MRG', '', 'und']) {
+	for (const language of ['org', 'OCR', '', 'und']) {
 		expect(isRenderLanguage(language)).toBe(false);
 		await expect(prepareRender(comic, language)).rejects.toThrow('translated language');
 	}
@@ -58,7 +58,7 @@ test('render rejects missing original language and rounds each edge up without c
 	expect(() => renderSize(0, 100)).toThrow('dimensions');
 });
 
-test('render falls back to OCR text and language, matching overlay names case-insensitively', async () => {
+test('render uses OCR text and language, matching overlay names case-insensitively', async () => {
 	const comic = new Comic('01.jpg', ['en', 'ocr'], {
 		list: async () => [],
 		getImageUrl: async () => '',
@@ -72,16 +72,16 @@ test('render falls back to OCR text and language, matching overlay names case-in
 	});
 });
 
-test('render can use OCR language metadata with MRG text and skips mismatched OCR word counts', async () => {
+test('render requires matching OCR bubbles and ignores legacy MRG overlays', async () => {
+	const reads: (string | undefined)[] = [];
 	const comic = new Comic('01.jpg', ['en', 'OCR', 'MRG'], {
 		list: async () => [],
 		getImageUrl: async () => '',
 		getBubbles: async (_comic, language) => {
-			if (language === 'OCR') {
-				comic.setSourceLanguage('OCR', 'nl');
-				return [bubble('Hallo'), bubble('wereld')];
-			}
-			return [bubble(language === 'MRG' ? 'Hallo wereld' : 'Hello world')];
+			reads.push(language);
+			return language === 'OCR'
+				? [{ ...bubble('Hallo wereld'), lang: 'nl' }]
+				: [bubble('Hello world')];
 		}
 	});
 	expect(await prepareRender(comic, 'en')).toEqual({
@@ -89,8 +89,12 @@ test('render can use OCR language metadata with MRG text and skips mismatched OC
 		targetLanguage: 'en',
 		items: [{ source: 'Hallo wereld', target: 'Hello world' }]
 	});
-	comic.languages = ['en'];
-	await expect(prepareRender(comic, 'en')).rejects.toThrow('OCR or MRG overlay');
+	expect(reads).toEqual(['OCR', 'en']);
+	expect(isRenderLanguage('MRG')).toBe(true);
+	comic.setBubbles('OCR', [bubble('Hallo'), bubble('wereld')]);
+	await expect(prepareRender(comic, 'en')).rejects.toThrow('counts must match');
+	comic.languages = ['en', 'MRG'];
+	await expect(prepareRender(comic, 'en')).rejects.toThrow('An OCR overlay');
 });
 
 test('image edits sends multipart original, prompt plus JSON, model, quality, PNG and rounded size', async () => {
@@ -257,7 +261,7 @@ for (const format of ['png', 'jpg', 'webp'] as const) {
 		);
 		await expect(page.locator('[data-page-path] svg').first()).toHaveAttribute('width', '816');
 		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
-		for (const next of ['ORG', 'OCR', 'MRG']) {
+		for (const next of ['ORG', 'OCR']) {
 			const current = await page.locator('.language-trigger').getAttribute('aria-label');
 			await page.getByRole('menuitem', { name: current!, exact: true }).click();
 			await page.getByRole('menuitemradio', { name: next, exact: true }).click();
