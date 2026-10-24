@@ -1,22 +1,28 @@
-# This workflow automatically builds a Svelte app and deploys it to GitHub Pages
-
 name: Deploy to GitHub Pages
 
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
     branches: ['main']
   pull_request:
     branches: ['main']
 
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR checks can stop; let main deployments finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      playwright-version: ${{ steps.playwright.outputs.version }}
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -24,14 +30,85 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install and Build
-        run: |
-          npm ci
-          npm run lint
-          npm run check
-          npx playwright install --with-deps chromium
-          npm test
-          npm run build
+      # Use the exact locked version so dependency updates also update the browser image.
+      - name: Resolve Playwright image version
+        id: playwright
+        run: node -e "const fs = require('node:fs'); const lock = require('./package-lock.json'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + lock.packages['node_modules/@playwright/test'].version + '\n');"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run lint
+
+      - name: Check types and Svelte components
+        run: npm run check
+
+      - name: Build site
+        run: npm run build
+
+      - name: Upload site
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: build/
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.build.outputs.playwright-version }}-noble
+      options: --init --ipc=host
+    env:
+      CI: 'true'
+      PLAYWRIGHT_HTML_OPEN: never
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run browser tests (shard ${{ matrix.shard }}/2)
+        run: npm test -- --shard=${{ matrix.shard }}/2 --reporter=line,html
+
+      - name: Upload test report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-shard-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  deploy:
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download site
+        uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: build/
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4.7.3
