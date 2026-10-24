@@ -1695,7 +1695,7 @@ test('external Google Vision key overrides saved settings and replaces key contr
 		await route.fulfill({ json: visionResponse });
 	});
 	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
-	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
 	expect(requests).toBe(1);
 	expect(await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))).toBe(
 		'saved-browser-key'
@@ -1723,35 +1723,24 @@ test('scan creates a session OCR overlay and preserves existing translations', a
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-session-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
 	await expect(scan).toBeFocused();
-	await selectMenu(page, 'MRG', 'OCR');
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
 	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
 	expect(requests).toBe(1);
 	expect(
 		await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))
 	).toBeNull();
 	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
-	await expect(
-		page
-			.getByRole('menuitemradio', { name: 'MRG', exact: true })
-			.locator('[data-language-icon="object-group"]')
-	).toBeVisible();
-	await page.getByRole('menuitemradio', { name: 'MRG', exact: true }).click();
-	await expect(
-		page
-			.getByRole('menuitem', { name: 'MRG', exact: true })
-			.locator('[data-language-icon="object-group"]')
-	).toBeVisible();
+	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
+	await page.keyboard.press('Escape');
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await selectMenu(page, 'MRG', 'EN');
+	await selectMenu(page, 'OCR', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
 	await selectMenu(page, 'EN', 'OCR');
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 });
 
 test('Scan label includes all page languages and remembered keys can be forgotten', async ({
@@ -1833,7 +1822,7 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
 	await selectMenu(page, 'EN', 'OCR');
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	await page.unroute('https://vision.googleapis.com/**');
 	let rescans = 0;
 	await page.route('https://vision.googleapis.com/**', (route) => {
@@ -1841,12 +1830,12 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 		return route.fulfill({ json: { responses: [{}] } });
 	});
 	await scan.click();
-	const confirmation = page.getByRole('dialog', { name: 'Overwrite OCR and MRG overlays?' });
-	await expect(confirmation).toContainText('OCR and MRG text and shapes');
+	const confirmation = page.getByRole('dialog', { name: 'Overwrite OCR overlay?' });
+	await expect(confirmation).toContainText('OCR text and shapes');
 	await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
 	await expect(scan).toBeFocused();
 	await expect(scan).toBeEnabled();
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	expect(rescans).toBe(0);
 	await scan.click();
 	await confirmation.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
@@ -1854,8 +1843,8 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await expect(scan).toBeFocused();
 	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
-	await selectMenu(page, 'OCR', 'MRG');
-	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
+	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
 });
 
 test('a scan with no text creates OCR without creating or selecting MRG', async ({ page }) => {
@@ -2203,15 +2192,14 @@ test('failed AI translation leaves the source and language list intact', async (
 
 for (const [overlay, declared, expected] of [
 	['OCR', 'nl', 'Dutch (NL)'],
-	['MRG', 'nl', 'Dutch (NL)'],
 	['OCR', undefined, '(Unknown)'],
-	['MRG', 'und', '(Unknown)']
+	['OCR', 'und', '(Unknown)']
 ] as const) {
 	test(`translation dialog resolves ${overlay} source language ${declared ?? 'missing'} from BBL`, async ({
 		page
 	}) => {
 		await mockDirectory(page, {
-			overlays: overlay === 'OCR' ? 'ocr' : 'mrg',
+			overlays: 'ocr',
 			overlayLanguage: declared
 		});
 		await openComic(page);
@@ -2486,4 +2474,23 @@ test('AI model discovery ignores late responses from an old provider', async ({ 
 	const choices = page.getByRole('listbox', { name: 'Cleanup model', exact: true });
 	await expect(choices.getByRole('option', { name: 'current-model', exact: true })).toBeVisible();
 	await expect(choices.getByRole('option', { name: 'old-model', exact: true })).toHaveCount(0);
+});
+
+test('MRG is an ordinary overlay and scanning only creates OCR', async ({ page }) => {
+	await mockDirectory(page, { overlays: 'mrg', browserLanguages: ['MRG'] });
+	await openComic(page);
+	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
+	await expect(page.locator('[data-language-icon="object-group"]')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Old MRG');
+	await page.route('https://vision.googleapis.com/**', (route) =>
+		route.fulfill({ json: visionResponse })
+	);
+	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
+	await expect(page.locator('foreignObject')).toHaveText('Hello world');
+	await selectMenu(page, 'OCR', 'MRG');
+	await expect(page.locator('foreignObject')).toHaveText('Old MRG');
 });

@@ -31,7 +31,7 @@ function fixture() {
 		getBubbles: async () => [structuredClone(bubble)]
 	};
 	return [
-		new Comic('album/01.png', ['en', 'MRG'], store),
+		new Comic('album/01.png', ['en', 'OCR'], store),
 		new Comic('album/02.png', ['en'], store)
 	];
 }
@@ -166,25 +166,25 @@ test('page IDs use album indexes; applying a complete result only replaces text'
 	expect((await pages[0].getBubbles('en'))[0].text).toBe('He11o!');
 });
 
-test('album cleanup skips missing overlays and resolves the actual MRG language', async () => {
+test('album cleanup skips missing overlays and resolves the actual OCR language', async () => {
 	const pages = fixture();
-	const job = await prepareCleanup(pages, pages, 'MRG');
+	const job = await prepareCleanup(pages, pages, 'OCR');
 	expect(job.document.sourceLanguage).toBe('en');
 	expect(job.document.items).toHaveLength(1);
 });
 
-test('source language uses translation codes, then declared BBL language for OCR/MRG, then bubble metadata', async () => {
+test('source language uses translation codes, then declared BBL language for OCR, then bubble metadata', async () => {
 	const pages = fixture();
-	pages[0].setSourceLanguage('MRG', 'nl');
-	const job = await prepareCleanup(pages, [pages[0]], 'MRG', 'fr');
+	pages[0].setSourceLanguage('OCR', 'nl');
+	const job = await prepareCleanup(pages, [pages[0]], 'OCR', 'fr');
 	expect(job.document.sourceLanguage).toBe('nl');
 	expect(resolveSourceLanguage('fr', [{ bubbles: [], declaredLanguage: 'nl' }])).toBe('fr');
 	expect(resolveSourceLanguage('OCR', [{ bubbles: [], declaredLanguage: 'NL' }])).toBe('nl');
 	expect(resolveSourceLanguage('OCR', [{ bubbles: await pages[0].getBubbles('en') }])).toBe('en');
-	expect(resolveSourceLanguage('MRG', [{ bubbles: [] }])).toBe('und');
-	expect(resolveSourceLanguage('MRG', [{ bubbles: [], declaredLanguage: 'und' }])).toBe('und');
+	expect(resolveSourceLanguage('OCR', [{ bubbles: [] }])).toBe('und');
+	expect(resolveSourceLanguage('OCR', [{ bubbles: [], declaredLanguage: 'und' }])).toBe('und');
 	expect(
-		resolveSourceLanguage('MRG', [
+		resolveSourceLanguage('OCR', [
 			{ bubbles: [], declaredLanguage: 'en' },
 			{ bubbles: [], declaredLanguage: 'nl' }
 		])
@@ -215,7 +215,7 @@ test('translation copies source geometry independently and registers a new targe
 
 test('translation rejects stale target edits and never creates a target from an empty result', async () => {
 	const pages = fixture();
-	const job = await prepareCleanup(pages, [pages[0]], 'MRG', 'fr');
+	const job = await prepareCleanup(pages, [pages[0]], 'OCR', 'fr');
 	expect(job.document.sourceLanguage).toBe('en');
 	await expect(job.apply({ ...job.document, items: [] }, () => true)).rejects.toThrow('IDs');
 	expect(pages[0].languages).not.toContain('fr');
@@ -552,5 +552,12 @@ test('schema rejection does not retry without schema; refusal never applies text
 		await expect(requestCleanup(document, settings)).rejects.toThrow('declined');
 	} finally {
 		globalThis.fetch = originalFetch;
+	}
+});
+
+test('unrecognized overlay codes use the same language resolution as ordinary translations', () => {
+	for (const code of ['MRG', 'zz']) {
+		expect(resolveSourceLanguage(code, [{ bubbles: [], declaredLanguage: 'nl' }])).toBe(code);
+		expect(resolveSourceLanguage(code, [{ bubbles: [] }])).toBe(code);
 	}
 });

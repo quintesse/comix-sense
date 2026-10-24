@@ -13,11 +13,13 @@ public class bubbletext_test {
         var target = doc("en", new String[]{"Hello\nworld!", ""}, new String[]{"Bye"});
         var originalSource = source.deepCopy();
         var originalTarget = target.deepCopy();
-        var single = bubbletext.extract(source, "album-mrg.bbl");
+        check(bubbletext.extract(source, "album-mrg.bbl").get("sourceLanguage").getAsString().equals("mrg"),
+                "MRG uses ordinary suffix precedence");
+        var single = bubbletext.extract(source, "album-ocr.bbl");
         check(single.get("sourceLanguage").getAsString().equals("nl"), "overlay language metadata");
         check(single.get("targetLanguage").equals(single.get("sourceLanguage")), "single-file language");
         check(single.getAsJsonArray("items").get(0).getAsJsonObject().has("text"), "single-file text retained");
-        var paired = bubbletext.extract(source, "album-mrg.bbl", target, "album-en.bbl");
+        var paired = bubbletext.extract(source, "album-ocr.bbl", target, "album-en.bbl");
         check(paired.get("targetLanguage").getAsString().equals("en"), "target language");
         var items = paired.getAsJsonArray("items");
         check(items.size() == 2, "identical empty texts excluded");

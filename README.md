@@ -32,7 +32,7 @@ Choose **ORG** to see the original page, or select a language to show its speech
 
 Enable **EDIT: YES** to edit text or drag a bubble's handles. For a new box, click two opposite corners. For a polygon, click its vertices and then click near the first vertex to close it. Escape cancels a drawing; Backspace removes the last vertex or cancels a box. Right-click bubble text to convert its shape or delete it. The zoom menu supports fit, width, and percentage scales.
 
-Edits to language overlays and new OCR/MRG overlays are backed up in this browser
+Edits to language overlays and new OCR overlays are backed up in this browser
 after a short pause (750 ms). Backups are serialized `.bbl` documents in IndexedDB,
 matched to the original directory handle and document path. Reopening a collection
 prefers its browser copies, using the same `.bbl` parser and rendering pipeline.
@@ -59,7 +59,7 @@ These markers apply across languages and
 remain after browser backup or reload, until the edits are saved to disk or discarded.
 Editing one page in a shared album document leaves its other pages unmarked.
 The language dropdown uses bold text for the selected page's unsaved languages,
-including OCR and MRG. Browser backup does not clear these indicators; disk saving
+including OCR. Browser backup does not clear these indicators; disk saving
 or confirmed discard clears the indicators belonging to that document.
 
 For archive pages, new overlays go into a companion directory named after the
@@ -97,16 +97,14 @@ rebuild after changing the variable. Because this is a static browser app, the
 key is included in the client bundle; use an appropriately restricted browser API
 key. Setting it only when serving an already-built app does not change that build.
 
-Results appear as an editable **OCR** overlay, with one bounding box per word,
-matching `tools/ocr.java` followed by `tools/ocr2bbl.java`. Each successful scan that recognizes text
-also creates an **MRG** overlay using `tools/bubblemerge.java`'s grouping algorithm,
-with line breaks and merged shapes. MRG has a solid object-group icon in the
-language menu. Both overlays use the existing language/bubble model and can be
-edited independently. Scans with text select MRG automatically.
-Scans without text select OCR and leave any existing MRG overlay unchanged.
+Results appear as a single editable **OCR** overlay containing coherent speech
+bubbles. OCR first recognizes words using Google Vision, then groups adjacent words
+using `tools/bubblemerge.java`'s grouping algorithm and enclosing shapes. The scan
+selects OCR automatically, including when no text is recognized.
 
-Rescanning a page with OCR or MRG asks for confirmation before sending a request.
-A rescan with text replaces both overlays; other languages remain unchanged.
+Rescanning a page with OCR asks for confirmation before sending a request.
+A rescan replaces the OCR overlay; other languages remain unchanged. Existing MRG
+files are treated like any other language overlay.
 Results and edits are backed up in the browser and can be written to disk with
 **Save Changes**. In side-by-side mode, only the selected page is scanned.
 
@@ -159,7 +157,7 @@ Remembered keys are stored without encryption in browser localStorage.
 
 Cleanup sends only bubble text in a JSON object with `sourceLanguage`, identical
 `targetLanguage`, and ordered `items` containing `id` and `text`. IDs use
-`/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR/MRG
+`/pages/{albumPageIndex}/bubbles/{bubbleIndex}`, with zero-based indexes. OCR
 language labels use the `.bbl` page/document's `lang` when available, then
 unambiguous bubble language metadata, otherwise `und`.
 The default cleanup prompt repairs only clear mechanical OCR errors, preserving
@@ -193,9 +191,8 @@ requests through CORS.
 
 Render sends the original page image together with the prompt and a JSON document
 containing `sourceLanguage`, `targetLanguage`, and indexed `source`/`target` text
-pairs. Source text comes from MRG when its bubble count matches the translation,
-otherwise OCR; original language metadata can come from either overlay. The
-requested dimensions equal the original dimensions rounded up to multiples of 16.
+pairs. Source text and original language metadata come from OCR, whose bubble
+count must match the translation. The requested dimensions equal the original dimensions rounded up to multiples of 16.
 Choose an image model that supports these custom dimensions.
 
 The notification shows elapsed seconds and offers cancellation. After validating
@@ -203,7 +200,7 @@ and saving the returned image as `<page>.<language>.<format>` beside the origina
 the selected page automatically switches to Reading Mode to display it. Rendering
 again replaces the image at that output path. Original images and BBL documents
 are preserved. Render is available for directory pages with a translated overlay;
-ORG, OCR, MRG, and archive members cannot be rendered. Requests time out after ten
+ORG, OCR, and archive members cannot be rendered. Requests time out after ten
 minutes. This workflow sends images to the configured provider and writes results
 directly to disk, independently of **Save Changes** for bubble edits.
 
@@ -218,7 +215,7 @@ jbang tools/bubbletext.java album.en.bbl > cleanup.json
 The script prints only `sourceLanguage`, `targetLanguage`, and the ordered `items`
 with bubble paths and text, including empty strings. Page indexes start at zero
 within the supplied file. Conventional language suffixes take precedence over
-the document's `lang`; OCR/MRG use bubble language metadata, or `und` when ambiguous.
+the document's `lang`; OCR uses bubble language metadata, or `und` when ambiguous.
 Without a language suffix, the document's `lang` is used, falling back to bubble
 language metadata. Both dot and hyphen suffixes are supported. The input file is never modified.
 
@@ -245,7 +242,7 @@ In Edit Mode, select the source text overlay and click **Translate**. Choose a
 language from the dropdown, then click **OK**. Both language dropdowns show
 Flagpack icons and English language names with codes, such as **Dutch (NL)** and
 **French (FR)**. Names come from `Intl.DisplayNames`; unknown codes and the
-ORG/OCR/MRG overlays keep their code labels. The reader toolbar keeps a compact
+ORG/OCR overlays keep their code labels. The reader toolbar keeps a compact
 code with the full language label in its tooltip. Translation applies only to the
 selected page, including in side-by-side mode. ORG has no extracted text; scan it
 first or choose an existing text overlay.

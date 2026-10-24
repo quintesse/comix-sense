@@ -16,40 +16,27 @@ export type RenderDocument = {
 export function isRenderLanguage(language: string): boolean {
 	return (
 		/^[a-z]{2,3}(?:-[a-z0-9]+)*$/i.test(language) &&
-		!['org', 'ocr', 'mrg', 'und', 'mul'].includes(language.toLowerCase())
+		!['org', 'ocr', 'und', 'mul'].includes(language.toLowerCase())
 	);
 }
 
-/** MRG/OCR contain original lettering and its language; translation preserves bubble indexes. */
+/** OCR contains original lettering and its language; translation preserves bubble indexes. */
 export async function prepareRender(comic: Comic, language: string): Promise<RenderDocument> {
 	if (!isRenderLanguage(language)) throw new Error('Select a translated language to render.');
 	if (!comic.languages.includes(language)) throw new Error('No translated bubbles for this page.');
-	const overlays = ['mrg', 'ocr'].flatMap((code) => {
-		const overlay = comic.languages.find((value) => value.toLowerCase() === code);
-		return overlay ? [overlay] : [];
-	});
-	if (!overlays.length) throw new Error('An OCR or MRG overlay is required before rendering.');
-	const [originals, target] = await Promise.all([
-		Promise.all(
-			overlays.map(async (overlay) => ({
-				overlay,
-				bubbles: await comic.getBubbles(overlay),
-				declaredLanguage: comic.sourceLanguage(overlay)
-			}))
-		),
+	const overlay = comic.languages.find((value) => value.toLowerCase() === 'ocr');
+	if (!overlay) throw new Error('An OCR overlay is required before rendering.');
+	const [source, target] = await Promise.all([
+		comic.getBubbles(overlay),
 		comic.getBubbles(language)
 	]);
-	const original = originals.find(
-		({ bubbles }) => bubbles.length > 0 && bubbles.length === target.length
-	);
-	if (!original)
+	if (!source.length || source.length !== target.length)
 		throw new Error('Original and translated bubble counts must match before rendering.');
-	const source = original.bubbles;
-	const sourceLanguage = [original, ...originals.filter((entry) => entry !== original)]
-		.map((entry) => resolveSourceLanguage(entry.overlay, [entry]))
-		.find((code) => code !== 'und');
-	if (!sourceLanguage)
-		throw new Error('Set the original language in the OCR or MRG information before rendering.');
+	const sourceLanguage = resolveSourceLanguage(overlay, [
+		{ bubbles: source, declaredLanguage: comic.sourceLanguage(overlay) }
+	]);
+	if (sourceLanguage === 'und')
+		throw new Error('Set the original language in the OCR information before rendering.');
 	return {
 		sourceLanguage,
 		targetLanguage: language,

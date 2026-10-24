@@ -18,14 +18,14 @@ export type CleanupDocument = {
 	items: { id: string; text: string }[];
 };
 
-/** OCR/MRG are overlay names; their actual language comes from .bbl metadata. */
+/** OCR is an overlay name; its actual language comes from .bbl metadata. */
 export function resolveSourceLanguage(
 	overlay: string,
 	pages: { bubbles: Bubble[]; declaredLanguage?: string }[]
 ): string {
 	const known = (value: string | undefined) => {
 		const code = value?.trim().replaceAll('_', '-').toLowerCase();
-		return code && !['org', 'ocr', 'mrg', 'und', 'mul'].includes(code) ? code : undefined;
+		return code && !['org', 'ocr', 'und', 'mul'].includes(code) ? code : undefined;
 	};
 	if (known(overlay)) return overlay;
 	const languages = new Set<string>();

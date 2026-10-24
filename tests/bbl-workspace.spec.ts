@@ -342,9 +342,7 @@ test('write denial retains backups and edits, and same-named roots stay independ
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 });
 
-test('scan restores OCR and MRG and saves only the selected language document', async ({
-	page
-}) => {
+test('scan restores and saves a single merged OCR document', async ({ page }) => {
 	await setup(page, { empty: true });
 	await page.route('https://vision.googleapis.com/**', (route) =>
 		route.fulfill({
@@ -383,34 +381,27 @@ test('scan restores OCR and MRG and saves only the selected language document', 
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	await expect
 		.poll(async () => Object.keys(await backups(page)).sort())
-		.toEqual(['album/01.MRG.bbl', 'album/01.OCR.bbl']);
+		.toEqual(['album/01.OCR.bbl']);
 	expect(await disk(page, 'album/01.OCR.bbl')).toBeNull();
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await page.getByRole('menuitem', { name: 'MRG', exact: true }).click();
-	await page.getByRole('menuitemradio', { name: 'OCR', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world']);
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
 	expect(await disk(page, 'album/01.MRG.bbl')).toBeNull();
-	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(2);
-	expect(Object.keys(await backups(page))).toEqual(['album/01.MRG.bbl']);
-	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
-	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCSS(
-		'font-weight',
-		'700'
-	);
-	await expect(page.getByRole('menuitemradio', { name: 'OCR', exact: true })).not.toHaveCSS(
-		'font-weight',
-		'700'
-	);
-	await page.getByRole('menuitemradio', { name: 'MRG', exact: true }).click();
-	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
-	expect(await disk(page, 'album/01.MRG.bbl')).not.toBeNull();
-	expect((await disk(page, 'album/01.MRG.bbl')).pages[0].bubbles[0].text).toBe('Hello world');
+	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
+	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
+		text: 'Hello world',
+		lang: 'en',
+		shape: {
+			type: 'box',
+			vs: [
+				{ x: 80, y: 80 },
+				{ x: 280, y: 120 }
+			]
+		}
+	});
 	expect(await backups(page)).toEqual({});
 });
 

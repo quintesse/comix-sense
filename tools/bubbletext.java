@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  * Page indexes refer to the supplied document, starting at zero.
  */
 public class bubbletext {
-    private static final Set<String> OVERLAYS = Set.of("ocr", "mrg");
+    private static final Set<String> OVERLAYS = Set.of("ocr");
     private static final Pattern LANGUAGE_SUFFIX = Pattern.compile(
             "([.-])([a-z]{2,3}(?:-[a-z0-9]+)*)\\.bbl$", Pattern.CASE_INSENSITIVE);
     private static final Pattern LANGUAGE_CODE = Pattern.compile(
