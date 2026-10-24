@@ -596,7 +596,14 @@ npm run build
 npm run preview
 ```
 
-The static site is generated in `build/` and served under `/comix-sense/` in production. The GitHub Pages workflow runs type checks and browser tests before building and deploying.
+The static site is generated in `build/` and served under `/comix-sense/` in production.
+The GitHub Pages workflow checks formatting and types and builds the site first, then
+runs the full browser suite across two parallel jobs. Each browser job uses the official
+Playwright container matching the exact version in `package-lock.json`, with browsers
+and system dependencies already installed. Test reports and failure traces are uploaded
+as separate artifacts for each shard and retained for seven days. Superseded PR runs
+are cancelled. Deployment uses the checked build artifact only after both shards pass,
+and only for pushes to `main` or manual runs on `main`.
 
 To run the same browser tests against a running preview or another checkout, set `TEST_BASE_URL` to its full URL, including the trailing slash (for example, `http://localhost:4173/comix-sense/`).
 
