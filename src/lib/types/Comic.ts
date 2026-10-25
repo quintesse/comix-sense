@@ -210,9 +210,11 @@ export class Comic {
 
 export type Bubble = {
 	font?: Font;
+	/** Inline mask appearance; text typography is controlled by font. */
+	style?: StrStrMap;
 	text: string;
 	lang?: string;
-	style?: StrStrMap;
+	layout?: BblLayout;
 	shape: BblShape;
 };
 
@@ -220,6 +222,11 @@ export enum BblShapeType {
 	box = 'box',
 	poly = 'poly'
 }
+
+export type BblLayout = {
+	type: BblShapeType.box;
+	vs: [Vertex, Vertex];
+};
 
 export type BblShape = {
 	type: BblShapeType;
@@ -249,10 +256,10 @@ export type Bounds = {
 };
 
 export function bounds(vs: Vertex[]): Bounds {
-	var minX = Number.MAX_SAFE_INTEGER;
-	var maxX = Number.MIN_SAFE_INTEGER;
-	var minY = Number.MAX_SAFE_INTEGER;
-	var maxY = Number.MIN_SAFE_INTEGER;
+	var minX = Infinity;
+	var maxX = -Infinity;
+	var minY = Infinity;
+	var maxY = -Infinity;
 	for (let v of vs) {
 		minX = Math.min(minX, v.x);
 		maxX = Math.max(maxX, v.x);
@@ -347,4 +354,43 @@ export class Poly implements Shape {
 	poly(): Poly {
 		throw new Error('Method not implemented.');
 	}
+}
+
+/** Optional metadata is retained verbatim; only valid rectangles affect rendering. */
+export function validLayout(value: unknown): value is BblLayout {
+	if (!value || typeof value !== 'object') return false;
+	const layout = value as BblLayout;
+	return (
+		layout.type === 'box' &&
+		Array.isArray(layout.vs) &&
+		layout.vs.length === 2 &&
+		layout.vs.every(
+			(v) =>
+				typeof v?.x === 'number' &&
+				Number.isFinite(v.x) &&
+				typeof v?.y === 'number' &&
+				Number.isFinite(v.y)
+		) &&
+		Number.isFinite(bounds(layout.vs).w) &&
+		Number.isFinite(bounds(layout.vs).h) &&
+		bounds(layout.vs).w > 0 &&
+		bounds(layout.vs).h > 0
+	);
+}
+export function textBounds(bubble: Bubble): Bounds {
+	return bounds(validLayout(bubble.layout) ? bubble.layout.vs : bubble.shape.vs);
+}
+export function separateText(bubble: Bubble) {
+	const layout = { type: BblShapeType.box, vs: boundsv(bubble.shape.vs) };
+	if (!validLayout(layout)) return false;
+	bubble.layout = layout;
+	return true;
+}
+export function convertMask(bubble: Bubble, type: BblShapeType) {
+	const b = bounds(bubble.shape.vs);
+	bubble.shape.vs =
+		type === BblShapeType.box
+			? boundsv(b)
+			: [vertex(b.x1, b.y1), vertex(b.x2, b.y1), vertex(b.x2, b.y2), vertex(b.x1, b.y2)];
+	bubble.shape.type = type;
 }

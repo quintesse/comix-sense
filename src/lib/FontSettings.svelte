@@ -1,7 +1,11 @@
 <script lang="ts">
+	import type { Bubble } from './types/Comic';
 	import { tick } from 'svelte';
 	import type { Font, FontScope, Face } from './bbl/metadata';
 	import FontFaces from './FontFaces.svelte';
+	import AlbumIcon from './icons/AlbumIcon.svelte';
+	import PageIcon from './icons/PageIcon.svelte';
+	import ToolbarIcon from './icons/ToolbarIcon.svelte';
 
 	let {
 		font = {},
@@ -14,8 +18,14 @@
 		scope = $bindable('page'),
 		onchange,
 		onfaceschange,
-		onclose
+		onclose,
+		bubble,
+		part = 'mask',
+		ongeometry
 	}: {
+		bubble?: Bubble;
+		part?: 'text' | 'mask';
+		ongeometry: (action: 'separate' | 'link' | 'text' | 'mask' | 'box' | 'poly') => void;
 		font: Font;
 		defaults: Font;
 		families: string[];
@@ -158,7 +168,7 @@
 	role="dialog"
 	tabindex="-1"
 	aria-modal="false"
-	aria-label="Font Settings"
+	aria-label="Text &amp; Layout Settings"
 	aria-busy={busy}
 	data-font-settings
 	style:left="{x}px"
@@ -171,35 +181,92 @@
 			bind:this={handle}
 			type="button"
 			class="drag-handle"
-			aria-label="Move Font Settings"
+			aria-label="Move Text &amp; Layout Settings"
 			title="Drag to move; use arrow keys when focused"
 			onpointerdown={start}
 			onpointermove={move}
 			onpointerup={stop}
 			onpointercancel={stop}
 			onlostpointercapture={stop}
-			onkeydown={moveKey}>Font Settings</button
+			onkeydown={moveKey}>Text &amp; Layout Settings</button
 		>
 		<button
 			type="button"
 			class="close"
-			aria-label="Close Font Settings"
+			aria-label="Close Text &amp; Layout Settings"
 			title="Close (Esc)"
 			onclick={onclose}>×</button
 		>
 	</header>
 	<div class="form">
-		<label for="{id}-scope">Apply to</label>
-		<select id="{id}-scope" bind:value={scope} disabled={busy}>
-			<option value="album">Current album</option>
-			<option value="page">Current page</option>
-			<option value="bubble">Selected bubble</option>
-		</select>
+		<div class="scope-label" id="{id}-scope">Apply to</div>
+		<div class="scope-buttons" role="group" aria-labelledby="{id}-scope">
+			<button
+				type="button"
+				aria-label="Current album"
+				title="Current album"
+				aria-pressed={scope === 'album'}
+				disabled={busy}
+				onclick={() => (scope = 'album')}
+			>
+				<AlbumIcon regular />Album
+			</button>
+			<button
+				type="button"
+				aria-label="Current page"
+				title="Current page"
+				aria-pressed={scope === 'page'}
+				disabled={busy}
+				onclick={() => (scope = 'page')}
+			>
+				<PageIcon regular />Page
+			</button>
+			<button
+				type="button"
+				aria-label="Selected bubble"
+				title="Selected bubble"
+				aria-pressed={scope === 'bubble'}
+				disabled={busy}
+				onclick={() => (scope = 'bubble')}
+			>
+				<ToolbarIcon name="comments" />Bubble
+			</button>
+		</div>
 		{#if disabled}<p class="hint">
 				{scope === 'bubble'
-					? 'Select a bubble on the page to edit its font.'
+					? 'Select a bubble on the page to edit its text and geometry.'
 					: 'Select a text overlay to edit its font.'}
 			</p>{/if}
+		{#if scope === 'bubble' && bubble}
+			<fieldset disabled={disabled || busy} aria-label="Bubble geometry">
+				{#if bubble.layout === undefined}
+					<p>Text follows mask</p>
+					<button type="button" onclick={() => ongeometry('separate')}
+						>Separate text and mask</button
+					>
+				{:else}
+					<div role="group" aria-label="Edit geometry">
+						Edit:
+						<button type="button" aria-pressed={part === 'text'} onclick={() => ongeometry('text')}
+							>Text area</button
+						>
+						<button type="button" aria-pressed={part === 'mask'} onclick={() => ongeometry('mask')}
+							>Mask</button
+						>
+					</div>
+					<button type="button" onclick={() => ongeometry('link')}
+						>Fit text area to mask and link</button
+					>
+				{/if}
+				{#if bubble.layout === undefined || part === 'mask'}
+					<button
+						type="button"
+						onclick={() => ongeometry(bubble.shape.type === 'box' ? 'poly' : 'box')}
+						>Convert mask to {bubble.shape.type === 'box' ? 'polygon' : 'box'}</button
+					>
+				{/if}
+			</fieldset>
+		{/if}
 		<fieldset disabled={disabled || busy}>
 			<label for="{id}-family">Font families</label>
 			<input
@@ -350,6 +417,34 @@
 	.form {
 		padding: 1rem;
 	}
+	.scope-label {
+		margin-bottom: 0.375rem;
+	}
+	.scope-buttons {
+		display: flex;
+	}
+	.scope-buttons button {
+		flex: 1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.375rem;
+		padding: 0.625rem 0.375rem;
+		border: 1px solid #8d8d8d;
+		font: inherit;
+	}
+	.scope-buttons button + button {
+		border-left: 0;
+	}
+	.scope-buttons button :global(svg) {
+		width: 20px;
+		height: 20px;
+		flex-shrink: 0;
+	}
+	.scope-buttons button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
 	label {
 		display: block;
 		margin-bottom: 0.375rem;
@@ -389,6 +484,15 @@
 	.reset {
 		padding: 0.5rem 0;
 		color: #0f62fe;
+	}
+	button[aria-pressed='true'] {
+		background: #d0e2ff;
+		outline: 2px solid #0f62fe;
+	}
+	[aria-label='Bubble geometry'] button {
+		padding: 0.5rem;
+		border: 1px solid #8d8d8d;
+		margin: 0.25rem 0;
 	}
 	button:hover {
 		background: #e8e8e8;

@@ -133,8 +133,17 @@ test('merged sample is invariant under shuffled input, scaling and translation',
 
 test('merge retains metadata, separates styles, and produces independent editable results', () => {
 	const input = [
-		{ ...word('one', 0, 0, 40, 20), lang: 'nl', font: { size: 18 }, style: { fill: 'red' } },
-		{ ...word('two', 42, 0, 80, 20), lang: 'nl', style: { fill: 'red' } }
+		{
+			...word('one', 0, 0, 40, 20),
+			lang: 'nl',
+			font: { size: 18 },
+			style: { fill: 'red' }
+		},
+		{
+			...word('two', 42, 0, 80, 20),
+			lang: 'nl',
+			style: { fill: 'red' }
+		}
 	];
 	const merged = mergeBubbles(input);
 	expect(merged).toHaveLength(1);

@@ -23,6 +23,11 @@ not averaged from per-bubble or per-page medians. Missing measurements print
 `n/a`. These are rough OCR diagnostics only; they add no fields to the output
 BBL or review report.
 
+Both this helper and the app's OCR grouping compare bubble-level `style`, preserving
+matching mask styles on merged outputs. Inputs with explicit `layout`
+remain separate so grouping never picks one input's independent text placement.
+The app calls grouping only for newly recognized, linked OCR bubbles.
+
 ## Approach
 
 The old `groupWords` implementation uses a margin of 0.75 times word height and

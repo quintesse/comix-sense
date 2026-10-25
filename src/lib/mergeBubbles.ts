@@ -40,7 +40,11 @@ function equal(a: unknown, b: unknown): boolean {
 	);
 }
 const compatible = (a: Word, b: Word) =>
-	a.bubble.lang === b.bubble.lang && equal(a.bubble.style, b.bubble.style);
+	// Independently positioned inputs are never combined: retain each placement intact.
+	a.bubble.layout === undefined &&
+	b.bubble.layout === undefined &&
+	a.bubble.lang === b.bubble.lang &&
+	equal(a.bubble.style, b.bubble.style);
 const punctuation = (text: string) => text.length > 0 && !/[\p{L}\p{Nd}]/u.test(text);
 function rows(input: Word[]): Line[] {
 	const sorted = input.toSorted(

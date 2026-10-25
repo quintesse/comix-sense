@@ -456,6 +456,10 @@
 		pageViews.find((page) => page?.pagePath() === fontPagePath) ?? pageViews[0]
 	);
 	let fontPanelTarget = $derived(fontPage?.fontTarget(fontScope));
+	function toggleFontSettings() {
+		if (!fontSettingsOpen && fontPage?.fontTarget('bubble').bubble) fontScope = 'bubble';
+		fontSettingsOpen = !fontSettingsOpen;
+	}
 	function closeFontSettings() {
 		fontSettingsOpen = false;
 		readerUi
@@ -941,7 +945,7 @@
 	function handlePageNavigationKey(event: KeyboardEvent) {
 		const key = event.key.toLowerCase();
 		if (
-			(key === 'l' || key === 'r' || key === 'e' || key === 'f') &&
+			(key === 'l' || key === 'r' || key === 'e' || key === 't') &&
 			!(
 				event.target instanceof Element &&
 				event.target.closest(
@@ -965,8 +969,8 @@
 			event.stopPropagation();
 			if (!event.repeat) {
 				if (key === 'l') void locatePage();
-				else if (key === 'f') {
-					if (editable) fontSettingsOpen = !fontSettingsOpen;
+				else if (key === 't') {
+					if (editable) toggleFontSettings();
 				} else selectedEdit = key === 'e' ? 'yes' : 'no';
 			}
 			return;
@@ -1121,6 +1125,8 @@
 
 	let menuTargetBubble: Bubble | undefined = $state();
 	let menuTargetBubbles: Bubble[] = [];
+	let menuTargetView: ReaderPage | undefined;
+	let menuTargetPart = $state('mask');
 	let menuTargetPointIndex = $state<number>();
 
 	function setupMenu(evt: CustomEvent<Element>) {
@@ -1130,6 +1136,9 @@
 		for (const view of pageViews) {
 			const target = view?.getBubble(evt.detail);
 			if (target) {
+				menuTargetView = view;
+				view.activateBubble(target.bubble);
+				menuTargetPart = target.part;
 				menuTargetBubble = target.bubble;
 				menuTargetBubbles = target.bubbles;
 				menuTargetPointIndex = target.pointIndex;
@@ -1274,6 +1283,7 @@
 		bind:scope={fontScope}
 		onchange={(font) => fontPage.setFont(fontScope, font)}
 		onfaceschange={(faces) => fontPage.setFontFaces(fontScope, faces)}
+		ongeometry={(action) => fontPage.geometry(action)}
 		onclose={closeFontSettings}
 	/>
 {/if}
@@ -1390,13 +1400,12 @@
 					<button
 						type="button"
 						class="toolbar-button"
-						aria-label="Font Settings"
-						title="Font Settings (F)"
-						aria-keyshortcuts="f"
+						aria-label="Text &amp; Layout Settings"
+						title="Text &amp; Layout Settings (T)"
+						aria-keyshortcuts="t"
 						aria-expanded={fontSettingsOpen}
 						data-font-settings-toggle
-						onclick={() => (fontSettingsOpen = !fontSettingsOpen)}
-						><ToolbarIcon name="font" /></button
+						onclick={toggleFontSettings}><ToolbarIcon name="font" /></button
 					>
 				</li>
 				<li role="none" class="toolbar-group">
@@ -1858,18 +1867,34 @@
 		{#if !fullscreen}
 			<ContextMenu on:open={setupMenu}>
 				{#if menuTargetBubble}
-					{#if menuTargetBubble.shape.type === BblShapeType.poly}
-						{#if menuTargetPointIndex != null && menuTargetBubble.shape.vs.length > 3}
-							<ContextMenuOption
-								kind="danger"
-								labelText="Delete point"
-								on:click={handlePointDelete}
-							/>
-							<ContextMenuDivider />
+					<ContextMenuOption
+						labelText="Bubble settings"
+						on:click={() => {
+							fontPagePath = menuTargetView?.pagePath() ?? '';
+							fontScope = 'bubble';
+							fontSettingsOpen = true;
+						}}
+					/>
+					{#if menuTargetBubble.layout === undefined}
+						<ContextMenuOption
+							labelText="Separate text and mask"
+							on:click={() => menuTargetView?.geometry('separate')}
+						/>
+					{/if}
+					{#if menuTargetPart !== 'text'}
+						{#if menuTargetBubble.shape.type === BblShapeType.poly}
+							{#if menuTargetPointIndex != null && menuTargetBubble.shape.vs.length > 3}
+								<ContextMenuOption
+									kind="danger"
+									labelText="Delete point"
+									on:click={handlePointDelete}
+								/>
+								<ContextMenuDivider />
+							{/if}
+							<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
+						{:else if menuTargetBubble.shape.type === BblShapeType.box}
+							<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
 						{/if}
-						<ContextMenuOption labelText="Convert to Box" on:click={handleConvertToBox} />
-					{:else if menuTargetBubble.shape.type === BblShapeType.box}
-						<ContextMenuOption labelText="Convert to Poly" on:click={handleConvertToPoly} />
 					{/if}
 					<ContextMenuOption labelText="Scan Text" />
 					<ContextMenuDivider />
