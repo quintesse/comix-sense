@@ -18,7 +18,6 @@
 	interface Props {
 		folders?: ComicFolder[];
 		selectedLanguage?: string;
-		editingMode?: boolean;
 		selectedComic?: Comic | null;
 		expandedIds?: string[];
 		onselect?: (comic: Comic) => void;
@@ -29,7 +28,6 @@
 	let {
 		folders = [],
 		selectedLanguage = 'org',
-		editingMode = false,
 		selectedComic = $bindable(null),
 		expandedIds = $bindable([]),
 		onselect,
@@ -248,8 +246,7 @@
 			</span>
 		{:else if (node as TreeChild).page}
 			{@const page = (node as TreeChild).page!}
-			{@const translated =
-				selectedLanguage !== 'org' && page.hasTranslation(selectedLanguage, editingMode)}
+			{@const translated = selectedLanguage !== 'org' && page.hasTranslation(selectedLanguage)}
 			{@const flagUrl = translated ? flag(selectedLanguage) : undefined}
 			{@const unsaved = (node as TreeChild).unsaved}
 			<span class="page-row" data-page-id={node.id}>
