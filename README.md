@@ -170,8 +170,9 @@ from your comic files: **Save Changes** is required to write edits to disk.
 Closing the browser before a backup completes can lose the latest edits, and
 clearing site data removes backups.
 
-Pages with unsaved changes have bold names and outline icons in the tree; their
-parent albums and collections are marked too. Unsaved languages appear in bold
+Pages with unsaved changes have bold names in the tree and keep their normal
+page, language, or OCR icons. Their parent albums and collections have bold names
+and outline icons. Unsaved languages appear in bold
 in the language menu. Browser backup does not clear these indicators. The tree
 includes edits in every language, while Save and Discard follow the selected
 language. On a marked page, select a bold language entry to save or discard its

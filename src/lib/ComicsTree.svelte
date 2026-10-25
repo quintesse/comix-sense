@@ -251,9 +251,7 @@
 			{@const unsaved = (node as TreeChild).unsaved}
 			<span class="page-row" data-page-id={node.id}>
 				<span class="page-icon bx--tree-node__icon" aria-hidden="true">
-					{#if unsaved}
-						<PageIcon regular />
-					{:else if translated && selectedLanguage.toLowerCase() === 'ocr'}
+					{#if translated && selectedLanguage.toLowerCase() === 'ocr'}
 						<ToolbarIcon name="video" />
 					{:else if flagUrl}
 						<img src={flagUrl} alt="" width="16" height="16" />
