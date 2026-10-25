@@ -253,7 +253,10 @@ public class bubblemerge {
     }
 
     static boolean compatible(Word a, Word b) {
-        return Objects.equals(a.json.get("lang"),b.json.get("lang")) && Objects.equals(a.json.get("style"),b.json.get("style"));
+        // Explicit text placements stay separate, including layouts equal to mask bounds.
+        return !a.json.has("layout") && !b.json.has("layout")
+                && Objects.equals(a.json.get("lang"),b.json.get("lang"))
+                && Objects.equals(a.json.get("style"),b.json.get("style"));
     }
     static boolean punctuation(String text) {
         return !text.isEmpty() && text.codePoints().noneMatch(Character::isLetterOrDigit);

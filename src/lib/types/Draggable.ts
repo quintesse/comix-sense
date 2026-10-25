@@ -45,7 +45,7 @@ export function draggable(node: SVGGraphicsElement) {
 	}
 
 	function startDrag(event: MouseEvent) {
-		if (event.button !== 0) return;
+		if (event.button !== 0 || event.shiftKey || event.defaultPrevented) return;
 		event.preventDefault();
 		start = node.ownerSVGElement
 			? svgPoint(node.ownerSVGElement, event)

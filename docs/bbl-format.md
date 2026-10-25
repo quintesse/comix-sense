@@ -51,7 +51,59 @@ The fields in the shape-based format are listed below. Paths are relative to the
 | Bubble `shape.vs`   | array of objects | Two opposite corners for a box; an ordered list of vertices for a polygon, closed by the renderer.                                                                                         |
 | Vertex `x`, `y`     | number           | Coordinates in the original image's pixel coordinate system, with the origin at the top left, x increasing rightward and y downward.                                                       |
 
-The current `Bubble` type additionally supports an optional `style` object mapping CSS property names to string values, for example `"style": { "fill": "white", "opacity": "0.8" }`. It is applied to the SVG rectangle or polygon, not the text element. No `style` fields were found in the inspected collection. This example and the field inventory describe the available files and implementation; the format has no version field or formal schema in this project.
+The optional bubble-level `style` object maps CSS property names to string values,
+for example `"style": { "fill": "white", "opacity": "0.8" }`. It applies inline
+CSS only to the mask's SVG rectangle or polygon, never to the text. `font` is also
+at bubble level and controls text typography; `shape` and `layout` contain only
+geometry. Page/album mask-style inheritance is not implemented; each bubble uses
+its own style or the renderer's default mask appearance. `shape.style` is not used
+as a fallback.
+
+A bubble can have an optional independent rectangular text placement:
+
+```json
+{
+	"text": "Hello!",
+	"shape": {
+		"type": "poly",
+		"vs": [
+			{ "x": 80, "y": 80 },
+			{ "x": 300, "y": 90 },
+			{ "x": 280, "y": 190 },
+			{ "x": 90, "y": 180 }
+		]
+	},
+	"style": { "fill": "#fff4cc", "opacity": "1" },
+	"layout": {
+		"type": "box",
+		"vs": [
+			{ "x": 100, "y": 100 },
+			{ "x": 270, "y": 170 }
+		]
+	}
+}
+```
+
+`shape` defines the original-artwork mask and blur clipping. `layout` defines
+text position and wrapping bounds in original-image pixels. Only `box` with
+exactly two opposite finite vertices and finite positive width and height is
+valid for layout; either corner order is accepted. Layout can extend outside or
+be completely separate from the mask. Typography, whitespace and overflow rules
+are unchanged; text is not clipped to either geometry.
+
+Without `layout`, text follows the current mask bounding box. Legacy files remain
+visually unchanged and opening or saving does not create implicit layouts.
+The presence of `layout` is the independence setting, even if it equals the mask
+bounds. No linking flag is stored. Invalid optional layouts emit a deduplicated
+`[bbl]` diagnostic and render using mask bounds; their source metadata is retained
+without repair. Relinking explicitly removes layout.
+
+The Text & Layout Settings panel separates by copying current mask bounds, and
+relinks by removing layout. The active geometry target is transient editor state.
+Mask conversion preserves bubble-level `style` and explicit layout. Whole-bubble
+movement translates both geometries. OCR-created bubbles have no layout.
+Grouping compares bubble-level mask styles and keeps independently positioned bubbles
+separate, preserving their placement rather than choosing one input's layout.
 
 ## Typography and album indexes
 
@@ -92,7 +144,7 @@ words, automatic text fitting, and named styles are outside this initial design.
 
 ### Font resources
 
-In edit mode, open **Font Settings** with **F** and expand **Advanced font
+In edit mode, open **Text & Layout Settings** with **T** and expand **Advanced font
 resources** to add, edit, or remove face definitions. This section is collapsed
 by default and available for page and album scopes only. Page definitions go
 in the page sidecar's root-level `fontFaces`, creating a sidecar if needed;

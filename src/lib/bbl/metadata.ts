@@ -1,4 +1,4 @@
-import type { Bubble } from '../types/Comic';
+import { validLayout, type Bubble } from '../types/Comic';
 
 export type FontScope = 'album' | 'page' | 'bubble';
 export type Font = {
@@ -163,6 +163,12 @@ export function parseDocument(
 						diagnostics.warn(`${context}.bubbles[${j}]`, 'invalid bubble', 'skip bubble');
 						return [];
 					}
+					if (b.layout !== undefined && !validLayout(b.layout))
+						diagnostics.warn(
+							`${context}.bubbles[${j}].layout`,
+							'invalid optional layout',
+							'use mask bounds; preserve metadata'
+						);
 					return [{ ...b, font: font(b.font, `${context}.bubbles[${j}].font`, diagnostics) }];
 				});
 			else

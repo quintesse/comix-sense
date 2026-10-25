@@ -64,7 +64,7 @@ or forward. Navigation stops at the album's ends.
 | `L`                                     | Locate the current page in the sidebar |
 | `R` / `E`                               | Reading Mode / Edit Mode               |
 | `B`                                     | Show or hide translation bubbles       |
-| `F` in Edit Mode                        | Open or close Font Settings            |
+| `T` in Edit Mode                        | Open or close Text & Layout Settings   |
 
 Typing fields retain their editing keys; arrow keys also retain their normal
 behavior in menus and the sidebar tree.
@@ -131,16 +131,30 @@ bubbles before saving. You can cancel an AI text request while it runs.
 
 With a text overlay selected in **Edit Mode**:
 
-- Click bubble text to edit it, and drag its handles to adjust the shape.
+- Click bubble text to edit it. On a linked bubble, drag its handles to adjust
+  the mask and the text bounds together.
 - Hold **Shift** and drag, or use the middle mouse button, to move a whole bubble.
-- Choose **Draw Boxes** and click two opposite corners to add a box.
-- Choose **Draw Polygons**, click its vertices, and click near the first to close it.
+- Choose **Draw Boxes** and drag between two opposite corners to add a box.
+- Choose **Draw Polygons**, drag the first edge, click more vertices, and click near the first to close it.
 - Press **Escape** to cancel drawing. **Backspace** removes the last polygon vertex
   or cancels a box.
 - Right-click bubble text to convert its shape or delete it.
-- Open **Font Settings** (`F`) and choose album, page, or selected-bubble scope to
+- Open **Text & Layout Settings** (`T`) and use the **Album**, **Page**, or **Bubble** scope buttons to
   adjust family, size, weight, style, line height, and spacing. Select a bubble
-  before changing its individual font.
+  before changing its individual font. Selecting a bubble updates the open panel's
+  target without changing your chosen scope or opening the panel. Opening the
+  panel with a bubble selected automatically chooses **Bubble** scope.
+- Right-click a bubble and choose **Bubble settings** to open the panel at
+  selected-bubble scope. **Separate text and mask** creates an independent rectangular
+  text area at the current mask bounds; it is also available in the context menu.
+- For independent bubbles, choose **Text area** or **Mask**, then drag that part's
+  resize handles or visible move grip. The dashed text outline and solid mask
+  outline have labels. Click text to edit it and select the text area.
+- Convert the mask between box and polygon in the panel while editing the mask.
+  **Fit text area to mask and link** removes independent placement and makes text
+  follow the mask again. Neither action changes typography.
+- **Shift-drag** or middle-button drag moves both parts together, preserving their
+  relative positions. New bubbles start with text following the mask.
 
 Font properties inherit from broader scopes unless overridden. Advanced font
 resources let you register local font files or HTTPS font URLs for page and album

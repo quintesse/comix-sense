@@ -16,14 +16,21 @@ function fixture() {
 	const bubble: Bubble = {
 		text: 'He11o!',
 		lang: 'en',
+		style: { fill: 'red' },
+		layout: {
+			type: BblShapeType.box,
+			vs: [
+				{ x: 100, y: 100 },
+				{ x: 200, y: 200 }
+			]
+		},
 		shape: {
 			type: BblShapeType.box,
 			vs: [
 				{ x: 1, y: 2 },
 				{ x: 30, y: 40 }
 			]
-		},
-		style: { fill: 'red' }
+		}
 	};
 	const store = {
 		list: async () => [],
@@ -209,6 +216,7 @@ test('translation copies source geometry independently and registers a new targe
 	expect(translated).toEqual([{ ...source[0], text: 'Bonjour !', lang: 'fr' }]);
 	translated[0].shape.vs[0].x = 999;
 	translated[0].style!.fill = 'blue';
+	translated[0].layout!.vs[0].x = -100;
 	expect(await pages[1].getBubbles('en')).toEqual(source);
 	expect(pages[0].languages).not.toContain('fr');
 });

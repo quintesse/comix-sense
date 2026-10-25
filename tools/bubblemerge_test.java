@@ -45,8 +45,16 @@ public class bubblemerge_test {
         var en = word("English",0,0,40,20); en.addProperty("lang","en");
         var nl = word("Dutch",41,0,80,20); nl.addProperty("lang","nl");
         doc = document(en,nl); bubblemerge.merge(doc); check(bubbles(doc).size()==2,"language boundary");
-        en.remove("lang"); nl.remove("lang"); en.addProperty("style","bold");
+        en.remove("lang"); nl.remove("lang"); en.add("style", JsonParser.parseString("{\"fill\":\"red\"}"));
         doc = document(en,nl); bubblemerge.merge(doc); check(bubbles(doc).size()==2,"style boundary");
+
+        var styled = en.get("style").deepCopy();
+        nl.add("style", styled.deepCopy());
+        doc = document(en,nl); bubblemerge.merge(doc);
+        check(bubbles(doc).size()==1 && bubbles(doc).get(0).getAsJsonObject().get("style").equals(styled), "merged mask style preserved");
+        en.add("layout", bubblemerge.shape(new bubblemerge.Box(100,100,150,150)));
+        doc = document(en,nl); bubblemerge.merge(doc);
+        check(bubbles(doc).size()==2 && bubbles(doc).get(0).getAsJsonObject().get("layout").equals(en.get("layout")), "independent layout not merged");
 
         var polygon = word("poly",50,50,60,60);
         polygon.getAsJsonObject("shape").addProperty("type","poly");

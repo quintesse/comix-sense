@@ -230,9 +230,15 @@ for (const archive of [false, true]) {
 			if (!archive && scope === 'album')
 				await writeDocuments(page, { 'album/album.en.bbl': { ...original, font: {} } });
 			await page.getByRole('button', { name: 'Side by Side', exact: true }).click();
-			await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-			const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-			await panel.getByLabel('Apply to', { exact: true }).selectOption(scope);
+			await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+			const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+			await panel
+				.getByRole('group', { name: 'Apply to', exact: true })
+				.getByRole('button', {
+					name: { album: 'Current album', page: 'Current page', bubble: 'Selected bubble' }[scope],
+					exact: true
+				})
+				.click();
 			await expect(panel.getByLabel('Face family', { exact: true })).not.toBeVisible();
 			await panel.getByText('Advanced font resources', { exact: true }).click();
 			await panel.getByLabel('Face family', { exact: true }).fill('Demo Face');
@@ -246,7 +252,7 @@ for (const archive of [false, true]) {
 			await expect(texts.first()).toHaveCSS('font-family', /bbl-face-/);
 			if (scope === 'album') await expect(texts.last()).toHaveCSS('font-family', /bbl-face-/);
 			else await expect(texts.last()).not.toHaveCSS('font-family', /bbl-face-/);
-			await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+			await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 			await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 			await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 			const path =
@@ -259,21 +265,21 @@ for (const archive of [false, true]) {
 						: 'album/01.png.en.bbl';
 			const face = { family: 'Demo Face', src: 'fonts/demo.ttf', style: 'normal', weight: 400 };
 			expect((await disk(page, path)).fontFaces).toEqual([face]);
-			await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
+			await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
 			await panel.getByText('Advanced font resources', { exact: true }).click();
 			await panel.getByRole('button', { name: 'Edit font face 1', exact: true }).click();
 			await panel.getByLabel('Face weight', { exact: true }).fill('700');
 			await panel.getByRole('button', { name: 'Update font face', exact: true }).click();
 			await expect(panel.getByRole('list', { name: 'Defined font faces' })).toContainText('700');
 			await panel.screenshot({ path: test.info().outputPath('advanced-font-resources.png') });
-			await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+			await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 			await confirmDiscard(page);
-			await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
+			await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
 			await panel.getByText('Advanced font resources', { exact: true }).click();
 			await expect(panel.getByRole('list', { name: 'Defined font faces' })).toContainText('400');
 			await panel.getByRole('button', { name: 'Remove font face 1', exact: true }).click();
 			await expect(panel.getByRole('list', { name: 'Defined font faces' })).toHaveCount(0);
-			await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+			await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 			await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 			await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 			expect((await disk(page, path)).fontFaces).toEqual([]);
@@ -294,11 +300,17 @@ test('font faces stay hidden for bubbles and reject invalid sources without crea
 }) => {
 	await setup(page);
 	await page.getByRole('textbox', { name: 'Bubble text' }).first().focus();
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('bubble');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Selected bubble', exact: true })
+		.click();
 	await expect(panel.getByText('Advanced font resources', { exact: true })).toHaveCount(0);
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('page');
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Current page', exact: true })
+		.click();
 	await panel.getByText('Advanced font resources', { exact: true }).click();
 	await panel.getByLabel('Face family', { exact: true }).fill('Bad Font');
 	await panel.getByLabel('Font source', { exact: true }).fill('../outside.ttf');
@@ -321,9 +333,12 @@ for (const archive of [false, true]) {
 		await page.getByRole('button', { name: 'Side by Side', exact: true }).click();
 		const album = page.getByRole('treeitem', { name: archive ? 'book' : 'album', exact: true });
 		const icon = album.locator(':scope > div [data-comic-icon="album"]');
-		await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-		const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-		await panel.getByLabel('Apply to', { exact: true }).selectOption('album');
+		await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+		const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+		await panel
+			.getByRole('group', { name: 'Apply to', exact: true })
+			.getByRole('button', { name: 'Current album', exact: true })
+			.click();
 		await panel.getByLabel('Size (px)', { exact: true }).fill('30');
 		for (const text of await page.getByRole('textbox', { name: 'Bubble text' }).all())
 			await expect(text).toHaveCSS('font-size', '30px');
@@ -346,10 +361,13 @@ for (const archive of [false, true]) {
 		await expect(icon).toHaveAttribute('data-icon-style', 'solid');
 		expect(await disk(page, path)).toEqual({ font: { size: 30 }, pages: [] });
 		await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
-		await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-		await panel.getByLabel('Apply to', { exact: true }).selectOption('album');
+		await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+		await panel
+			.getByRole('group', { name: 'Apply to', exact: true })
+			.getByRole('button', { name: 'Current album', exact: true })
+			.click();
 		await panel.getByLabel('Size (px)', { exact: true }).fill('40');
-		await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+		await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 		await confirmDiscard(page);
 		await expect(page.getByRole('textbox', { name: 'Bubble text' }).first()).toHaveCSS(
 			'font-size',
@@ -380,14 +398,17 @@ test('album edits preserve metadata and page overrides, and Save combines album 
 	await page.getByRole('button', { name: 'Side by Side', exact: true }).click();
 	const texts = page.getByRole('textbox', { name: 'Bubble text' });
 	await texts.first().fill('Keep this page edit');
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('album');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Current album', exact: true })
+		.click();
 	await expect(panel.getByLabel('Size (px)', { exact: true })).toHaveValue('20');
 	await panel.getByLabel('Size (px)', { exact: true }).fill('28');
 	await expect(texts.first()).toHaveCSS('font-size', '28px');
 	await expect(texts.last()).toHaveCSS('font-size', '35px');
-	await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 	await expect.poll(async () => Object.keys(await backups(page)).length).toBe(2);
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
@@ -407,9 +428,12 @@ test('discarding a new album font draft clears album and ancestor indicators wit
 	page
 }) => {
 	await setup(page, { nested: true });
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('album');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Current album', exact: true })
+		.click();
 	await panel.getByLabel('Letter spacing (px)', { exact: true }).fill('2');
 	for (const title of ['series', 'collection', 'album']) {
 		await expect(
@@ -418,7 +442,7 @@ test('discarding a new album font draft clears album and ancestor indicators wit
 				.locator(`:scope > div span[title="${title}"]`)
 		).toHaveCSS('font-weight', '700');
 	}
-	await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 	await confirmDiscard(page);
 	await expect(page.locator('.folder-name')).not.toHaveCSS('font-weight', '700');
 	expect(await disk(page, 'series/collection/album/album.bbl')).toBeNull();
@@ -432,11 +456,11 @@ for (const archive of [false, true]) {
 		await setup(page, { archive, archiveIndex: archive });
 		const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
 		await expect(text).toHaveCSS('font-size', '24px');
-		const toggle = page.getByRole('button', { name: 'Font Settings', exact: true });
-		await expect(toggle).toHaveAttribute('aria-keyshortcuts', 'f');
+		const toggle = page.getByRole('button', { name: 'Text & Layout Settings', exact: true });
+		await expect(toggle).toHaveAttribute('aria-keyshortcuts', 't');
 		await toggle.focus();
-		await page.keyboard.press('f');
-		const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
+		await page.keyboard.press('t');
+		const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
 		await expect(panel).toBeVisible();
 		await panel.getByLabel('Size (px)', { exact: true }).fill('32');
 		await panel.getByLabel('Weight', { exact: true }).fill('650');
@@ -451,7 +475,7 @@ for (const archive of [false, true]) {
 		await expect(text).toHaveCSS('letter-spacing', '-0.5px');
 		await expect(text).toHaveCSS('font-family', /monospace, serif/);
 		const before = (await panel.boundingBox())!;
-		const handle = panel.getByRole('button', { name: 'Move Font Settings' });
+		const handle = panel.getByRole('button', { name: 'Move Text & Layout Settings' });
 		const rect = (await handle.boundingBox())!;
 		await page.mouse.move(rect.x + 40, rect.y + 20);
 		await page.mouse.down();
@@ -460,7 +484,7 @@ for (const archive of [false, true]) {
 		await expect.poll(async () => (await panel.boundingBox())?.x).toBe(before.x - 120);
 		await expect.poll(async () => (await panel.boundingBox())?.y).toBe(before.y + 40);
 		await panel.screenshot({ path: test.info().outputPath('font-settings.png') });
-		await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+		await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 		await expect(toggle).toBeFocused();
 		await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 		await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
@@ -484,7 +508,7 @@ for (const archive of [false, true]) {
 		await toggle.click();
 		await panel.getByLabel('Size (px)', { exact: true }).fill('42');
 		await expect(text).toHaveCSS('font-size', '42px');
-		await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+		await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 		await confirmDiscard(page);
 		await expect(text).toHaveCSS('font-size', '32px');
 	});
@@ -496,15 +520,46 @@ test('font panel edits selected bubbles without changing defaults and leaves tex
 	await setup(page);
 	const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
 	await text.click();
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('bubble');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	const scopes = panel.getByRole('group', { name: 'Apply to', exact: true });
+	await expect(scopes.getByRole('button')).toHaveCount(3);
+	await expect(
+		scopes
+			.getByRole('button', { name: 'Current album', exact: true })
+			.locator('[data-comic-icon="album"]')
+	).toBeVisible();
+	await expect(
+		scopes
+			.getByRole('button', { name: 'Current page', exact: true })
+			.locator('[data-comic-icon="page"]')
+	).toBeVisible();
+	await expect(
+		scopes
+			.getByRole('button', { name: 'Selected bubble', exact: true })
+			.locator('[data-toolbar-icon="comments"]')
+	).toBeVisible();
+	await scopes.getByRole('button', { name: 'Selected bubble', exact: true }).focus();
+	await page.keyboard.press('Space');
+	await expect(
+		scopes.getByRole('button', { name: 'Selected bubble', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await expect(scopes.getByRole('button', { name: 'Current page', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	await panel.getByLabel('Size (px)', { exact: true }).fill('36');
 	await expect(text).toHaveCSS('font-size', '36px');
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('page');
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Current page', exact: true })
+		.click();
 	await panel.getByLabel('Size (px)', { exact: true }).fill('28');
 	await expect(text).toHaveCSS('font-size', '36px');
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('bubble');
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Selected bubble', exact: true })
+		.click();
 	await panel.getByRole('button', { name: 'Reset to inherited font' }).click();
 	await expect(text).toHaveCSS('font-size', '28px');
 	await panel.getByLabel('Font families', { exact: true }).pressSequentially('serif, monospace');
@@ -513,11 +568,11 @@ test('font panel edits selected bubbles without changing defaults and leaves tex
 	await page.keyboard.press('Escape');
 	await expect(panel).toHaveCount(0);
 	await text.focus();
-	await page.keyboard.press('f');
-	await expect(text).toContainText('f');
+	await page.keyboard.press('t');
+	await expect(text).toContainText('t');
 	await expect(panel).toHaveCount(0);
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).focus();
-	await page.keyboard.press('f');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).focus();
+	await page.keyboard.press('t');
 	await expect(panel).toBeVisible();
 });
 
@@ -533,12 +588,12 @@ test('font arrows start at inherited values without overriding fields merely on 
 	});
 	const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
 	const save = page.getByRole('button', { name: 'Save Changes', exact: true });
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
 	const size = panel.getByLabel('Size (px)', { exact: true });
 	await size.focus();
 	await expect(size).toHaveValue('');
-	await panel.getByRole('button', { name: 'Move Font Settings' }).focus();
+	await panel.getByRole('button', { name: 'Move Text & Layout Settings' }).focus();
 	await expect(size).toHaveValue('');
 	await expect(save).toBeDisabled();
 	// Click the native spinner before the input has focus.
@@ -563,7 +618,10 @@ test('font arrows start at inherited values without overriding fields merely on 
 	await spacing.press('ArrowDown');
 	await expect(spacing).toHaveValue('-1.5');
 	await expect(text).toHaveCSS('letter-spacing', '-1.5px');
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('bubble');
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Selected bubble', exact: true })
+		.click();
 	await text.focus();
 	await weight.press('ArrowDown');
 	await expect(weight).toHaveValue('600');
@@ -575,8 +633,8 @@ test('font arrows adopt useful first values for missing or zero inherited settin
 }) => {
 	await setup(page);
 	await writeDocuments(page, { 'album/album.en.bbl': { ...original, font: { letterSpacing: 0 } } });
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
 	for (const [label, value] of [
 		['Size (px)', '24'],
 		['Weight', '400'],
@@ -614,13 +672,21 @@ test('font panel follows the selected bubble in a two-page spread without changi
 	const left = page.locator('[data-page-path="album/01.png"]').getByRole('textbox');
 	const right = page.locator('[data-page-path="album/02.png"]').getByRole('textbox');
 	await right.focus();
-	await page.getByRole('button', { name: 'Font Settings', exact: true }).click();
-	const panel = page.getByRole('dialog', { name: 'Font Settings', exact: true });
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
 	await expect(panel).not.toContainText('2 · EN');
+	await expect(panel.getByRole('button', { name: 'Selected bubble', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await panel.getByRole('button', { name: 'Current page', exact: true }).click();
 	await panel.getByLabel('Size (px)', { exact: true }).fill('30');
 	await expect(right).toHaveCSS('font-size', '30px');
 	await expect(left).toHaveCSS('font-size', '24px');
-	await panel.getByLabel('Apply to', { exact: true }).selectOption('bubble');
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Selected bubble', exact: true })
+		.click();
 	await panel.getByLabel('Style', { exact: true }).selectOption('oblique');
 	await expect(right).toHaveCSS('font-style', 'oblique');
 	await expect(left).toHaveCSS('font-style', 'normal');
@@ -629,7 +695,7 @@ test('font panel follows the selected bubble in a two-page spread without changi
 	await panel.getByLabel('Weight', { exact: true }).fill('700');
 	await expect(left).toHaveCSS('font-weight', '700');
 	await expect(right).toHaveCSS('font-weight', '400');
-	await panel.getByRole('button', { name: 'Close Font Settings' }).click();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 	const saved = await disk(page);
@@ -742,6 +808,7 @@ test('save text and geometry to the original document, preserving other pages an
 	});
 	expect(result.pages[0].note).toBe('First page');
 	expect(result.pages[0].bubbles[0].text).toBe('Saved edit');
+	expect(result.pages[0].bubbles[0]).not.toHaveProperty('layout');
 	expect(result.pages[0].bubbles[0].shape).not.toEqual(original.pages[0].bubbles[0].shape);
 	expect(result.pages[1]).toEqual(original.pages[1]);
 	expect(await backups(page)).toEqual({});
@@ -1230,6 +1297,12 @@ test('Save and Discard affect only the selected page-language source file', asyn
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
 	expect((await disk(page, 'album/01.png.nl.bbl')).pages[0].bubbles[0].text).toBe('Dutch edit');
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Discard Changes', exact: true })).toBeDisabled();
+	// The tree reports all languages; the active Dutch document is saved, but English is not.
+	for (const name of ['01.png', '02.png']) {
+		await expect(page.locator(`.comic-tree span[title="${name}"]`)).toHaveCSS('font-weight', '700');
+	}
+
 	expect((await disk(page, 'album/01.png.en.bbl')).pages[0].bubbles[0].text).toBe('Original');
 	expect((await disk(page, 'album/02.png.en.bbl')).pages[0].bubbles[0].text).toBe('Untouched');
 	await expect
@@ -1252,6 +1325,9 @@ test('Save and Discard affect only the selected page-language source file', asyn
 	).not.toHaveCSS('font-weight', '700');
 	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('English edit');
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeEnabled();
+	await expect(page.getByRole('button', { name: 'Discard Changes', exact: true })).toBeEnabled();
+
 	await confirmDiscard(page);
 	await expect(page.locator('foreignObject')).toHaveText('Original');
 	expect(Object.keys(await backups(page))).toEqual(['album/02.png.en.bbl']);
@@ -1478,4 +1554,254 @@ test('AI page translation backs up and saves a new language without changing the
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
+});
+
+test('independent text and mask editing, whole movement, relinking and persistence', async ({
+	page
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	page.on('console', (message) => {
+		if (/ownership_invalid|effect_update_depth/.test(message.text())) errors.push(message.text());
+	});
+	await setup(page);
+	await page.getByRole('menuitem', { name: 'FIT', exact: true }).click();
+	await page
+		.getByRole('menu', { name: 'FIT', exact: true })
+		.getByText('100%', { exact: true })
+		.click();
+	const styled = {
+		...bubble('Original'),
+		style: { fill: '#fff4cc' }
+	};
+	await writeDocuments(page, {
+		'album/album.en.bbl': {
+			...original,
+			pages: [{ filename: '01.png', bubbles: [styled] }, original.pages[1]]
+		}
+	});
+	const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
+	const foreign = page.locator('foreignObject').first();
+	const mask = page.locator('.svgcontent > rect').first();
+	await text.click();
+	const toggle = page.getByRole('button', { name: 'Text & Layout Settings', exact: true });
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await expect(panel).toHaveCount(0);
+	await toggle.click();
+	await expect(panel.getByRole('button', { name: 'Selected bubble', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await panel
+		.getByRole('group', { name: 'Apply to', exact: true })
+		.getByRole('button', { name: 'Selected bubble', exact: true })
+		.click();
+	await panel.getByRole('button', { name: 'Separate text and mask', exact: true }).click();
+	await expect(foreign).toHaveAttribute('x', '80');
+	await expect(foreign).toHaveAttribute('width', '220');
+	await expect(panel.getByRole('button', { name: 'Text area', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const drag = async (
+		locator: import('@playwright/test').Locator,
+		dx: number,
+		dy: number,
+		button: 'left' | 'middle' = 'left'
+	) => {
+		const box = (await locator.boundingBox())!;
+		const scale = await page
+			.getByRole('img', { name: 'Comic page' })
+			.first()
+			.evaluate((el) => el.getBoundingClientRect().width / Number(el.getAttribute('width')));
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down({ button });
+		await page.mouse.move(box.x + box.width / 2 + dx * scale, box.y + box.height / 2 + dy * scale, {
+			steps: 5
+		});
+		await page.mouse.up({ button });
+	};
+	const area = page.locator('[data-geometry="Text area"]');
+	const geometryMask = page.locator('[data-geometry="Mask"]');
+	await drag(area.locator('[data-resize="2"]'), 40, 30);
+	await expect(foreign).toHaveAttribute('width', '260');
+	await expect(mask).toHaveAttribute('width', '220');
+	await drag(area.locator('[data-move-grip]'), 20, 10);
+	await expect(foreign).toHaveAttribute('x', '100');
+	await expect(mask).toHaveAttribute('x', '80');
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	await drag(geometryMask.locator('[data-move-grip]'), 30, 20);
+	await expect(mask).toHaveAttribute('x', '110');
+	await expect(foreign).toHaveAttribute('x', '100');
+	await drag(geometryMask.locator('[data-resize="2"]'), 10, 10);
+	await expect(mask).toHaveAttribute('width', '230');
+	await expect(foreign).toHaveAttribute('width', '260');
+	await panel.getByRole('button', { name: 'Convert mask to polygon' }).click();
+	await expect(page.locator('.svgcontent > polygon')).toHaveCSS('fill', 'rgb(255, 244, 204)');
+	await expect(foreign).toHaveAttribute('x', '100');
+	await page.screenshot({
+		path: test.info().outputPath('independent-layout.png'),
+		animations: 'disabled'
+	});
+	// Clicking overlapping text selects its area and preserves normal caret editing.
+	await text.click({ position: { x: 50, y: 15 } });
+	await page.keyboard.press('End');
+	await page.keyboard.type('!');
+	await expect(text).toHaveText('Original!');
+	await expect(panel.getByRole('button', { name: 'Text area', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await drag(area.locator('[data-move-grip]'), 15, 25, 'middle');
+	await expect(foreign).toHaveAttribute('x', '115');
+	await expect(page.locator('.svgcontent > polygon')).toHaveAttribute(
+		'points',
+		'125,125 355,125 355,235 125,235'
+	);
+	await page.keyboard.down('Shift');
+	await drag(area.locator('[data-move-grip]'), 10, 10);
+	await page.keyboard.up('Shift');
+	await expect(foreign).toHaveAttribute('x', '125');
+	await panel.getByLabel('Size (px)', { exact: true }).fill('30');
+	await expect(text).toHaveCSS('font-size', '30px');
+	await expect(area).toHaveCount(1);
+	await expect(page.locator('.drawing-target')).toHaveCount(0);
+	await expect
+		.poll(async () => (await backups(page))['album/album.en.bbl']?.pages[0].bubbles[0].layout)
+		.toBeTruthy();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	const saved = (await disk(page)).pages[0].bubbles[0];
+	expect(saved.layout.vs).toEqual([
+		{ x: 125, y: 125 },
+		{ x: 385, y: 255 }
+	]);
+	expect(saved.style).toEqual({ fill: '#fff4cc' });
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(foreign).toHaveAttribute('x', '125');
+	await text.click({ button: 'right' });
+	await page.getByText('Bubble settings', { exact: true }).click();
+	await expect(panel.getByRole('button', { name: 'Selected bubble', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await panel.getByRole('button', { name: 'Fit text area to mask and link' }).click();
+	await expect(panel.getByText('Text follows mask', { exact: true })).toBeVisible();
+	await expect(foreign).toHaveAttribute('x', '135');
+	await expect(text).toHaveCSS('font-size', '30px');
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await confirmDiscard(page);
+	await expect(foreign).toHaveAttribute('x', '125');
+	await text.click({ button: 'right' });
+	await page.getByText('Bubble settings', { exact: true }).click();
+	await panel.getByRole('button', { name: 'Fit text area to mask and link' }).click();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect((await disk(page)).pages[0].bubbles[0]).not.toHaveProperty('layout');
+	expect(errors).toEqual([]);
+});
+
+for (const archive of [false, true]) {
+	test(`explicit layout and mask styling survive backup restoration and sidecar saving (${archive ? 'archive' : 'directory'})`, async ({
+		page
+	}) => {
+		await setup(page, { archive });
+		const path = archive ? 'book.cbz.bbl/pages/01.png.en.bbl' : 'album/01.png.en.bbl';
+		// Directory sidecars and archive companion sidecars use the same lossless document workflow.
+		const b = {
+			...bubble('Placed'),
+			layout: {
+				type: 'box',
+				vs: [
+					{ x: 500, y: 400 },
+					{ x: 350, y: 300 }
+				]
+			},
+			style: { fill: '#fff4cc', opacity: '1' }
+		};
+		await writeDocuments(page, { [path]: { pages: [{ bubbles: [b] }] } }, !archive);
+		const text = page.getByRole('textbox').first();
+		const foreign = page.locator('foreignObject').first();
+		await expect(foreign).toHaveAttribute('x', '350');
+		await expect(foreign).toHaveAttribute('width', '150');
+		await expect(page.locator('.svgcontent > rect').first()).toHaveAttribute('x', '80');
+		await expect(page.locator('.svgcontent > rect').first()).toHaveCSS(
+			'fill',
+			'rgb(255, 244, 204)'
+		);
+		await text.fill('Backed up');
+		await expect
+			.poll(async () => (await backups(page))[path]?.pages[0].bubbles[0].text)
+			.toBe('Backed up');
+		await page.reload();
+		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await expect(text).toHaveText('Backed up');
+		await expect(foreign).toHaveAttribute('x', '350');
+		await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+		await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+		expect((await disk(page, path)).pages[0].bubbles[0]).toMatchObject({ ...b, text: 'Backed up' });
+	});
+}
+
+test('malformed optional layout renders mask bounds and survives an unrelated text save', async ({
+	page
+}) => {
+	await setup(page);
+	const warnings: string[] = [];
+	page.on('console', (message) => {
+		if (message.text().includes('invalid optional layout')) warnings.push(message.text());
+	});
+	const layout = {
+		type: 'poly',
+		vs: [
+			{ x: 500, y: 400 },
+			{ x: 350, y: 300 }
+		]
+	};
+	await writeDocuments(page, {
+		'album/album.en.bbl': {
+			...original,
+			pages: [{ filename: '01.png', bubbles: [{ ...bubble('Invalid'), layout }] }]
+		}
+	});
+	await expect(page.locator('foreignObject').first()).toHaveAttribute('x', '80');
+	await expect(page.locator('foreignObject').first()).toHaveAttribute('width', '220');
+	expect(warnings).toHaveLength(1);
+	await page.getByRole('textbox').fill('Still editable');
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	expect((await disk(page)).pages[0].bubbles[0].layout).toEqual(layout);
+});
+
+test('opening settings uses the selected bubble while an open panel retains its chosen scope', async ({
+	page
+}) => {
+	await setup(page);
+	const toggle = page.getByRole('button', { name: 'Text & Layout Settings', exact: true });
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
+	const album = panel.getByRole('button', { name: 'Current album', exact: true });
+	const bubble = panel.getByRole('button', { name: 'Selected bubble', exact: true });
+	const currentPage = panel.getByRole('button', { name: 'Current page', exact: true });
+	await toggle.click();
+	await expect(currentPage).toHaveAttribute('aria-pressed', 'true');
+	await album.click();
+	await text.click();
+	await expect(album).toHaveAttribute('aria-pressed', 'true');
+	await toggle.click();
+	await expect(panel).toHaveCount(0);
+	await toggle.click();
+	await expect(bubble).toHaveAttribute('aria-pressed', 'true');
+	await expect(panel.getByText('Text follows mask', { exact: true })).toBeVisible();
+	await currentPage.click();
+	await text.click();
+	await expect(currentPage).toHaveAttribute('aria-pressed', 'true');
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings', exact: true }).click();
+	await toggle.click();
+	await expect(bubble).toHaveAttribute('aria-pressed', 'true');
 });

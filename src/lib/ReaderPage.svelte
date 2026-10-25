@@ -3,7 +3,14 @@
 	import ComicPage from './ComicPage.svelte';
 	import type { PageImage } from './PageImages';
 	import ComicBubble from './ComicBubble.svelte';
-	import { BblShapeType, type Bubble, type Comic } from './types/Comic';
+	import {
+		BblShapeType,
+		separateText,
+		convertMask,
+		validLayout,
+		type Bubble,
+		type Comic
+	} from './types/Comic';
 	import { svgPoint } from './types/funcs';
 	import type { Font, FontScope, Face } from './bbl/metadata';
 
@@ -29,6 +36,7 @@
 	let container: HTMLDivElement;
 	let bubbles = $state<Bubble[]>([]);
 	let activeBubble = $state<Bubble>();
+	let geometryPart = $state<'text' | 'mask'>('mask');
 	let typographyRevision = $derived(comic.typographyRevision);
 	let bubbleFonts = $derived.by(() => {
 		$typographyRevision;
@@ -41,6 +49,8 @@
 	export function fontTarget(scope: FontScope) {
 		$typographyRevision;
 		return {
+			bubble: scope === 'bubble' ? activeBubble : undefined,
+			part: geometryPart,
 			font:
 				scope === 'album'
 					? comic.albumFont(language)
@@ -64,9 +74,20 @@
 			await comic.editBubbles(language, $state.snapshot(bubbles), font);
 		}
 	}
-	function activateBubble(bubble: Bubble) {
+	export function activateBubble(bubble: Bubble) {
+		if (activeBubble !== bubble) geometryPart = 'mask';
 		activeBubble = bubble;
 		onfontselect?.();
+	}
+	export function geometry(action: 'separate' | 'link' | 'text' | 'mask' | 'box' | 'poly') {
+		if (!editable || !activeBubble) return;
+		if (action === 'separate') {
+			if (separateText(activeBubble)) geometryPart = 'text';
+		} else if (action === 'link') {
+			delete activeBubble.layout;
+			geometryPart = 'mask';
+		} else if (action === 'text' || action === 'mask') geometryPart = action;
+		else convertMask(activeBubble, action === 'box' ? BblShapeType.box : BblShapeType.poly);
 	}
 	export async function setFontFaces(scope: FontScope, faces: Face[]) {
 		if (editable && language !== 'org' && scope !== 'bubble')
@@ -92,7 +113,10 @@
 	);
 
 	$effect(() => {
-		if (!editable || !showBubbles) activeBubble = undefined;
+		if (!editable || !showBubbles || (activeBubble && !bubbles.includes(activeBubble))) {
+			activeBubble = undefined;
+			geometryPart = 'mask';
+		}
 	});
 
 	export function getBubble(target: Element) {
@@ -104,13 +128,24 @@
 			return {
 				bubble: bubbles[Number(index)],
 				bubbles,
-				pointIndex: pointIndex != null ? Number(pointIndex) : undefined
+				pointIndex:
+					element?.closest('[data-geometry]')?.getAttribute('data-geometry') === 'Text area'
+						? undefined
+						: pointIndex != null
+							? Number(pointIndex)
+							: undefined,
+				part:
+					element?.closest('[data-geometry]')?.getAttribute('data-geometry') === 'Text area' ||
+					(bubbles[Number(index)].layout !== undefined && target.closest('foreignObject'))
+						? 'text'
+						: 'mask'
 			};
 	}
 
 	function deselectOutside(event: MouseEvent) {
 		if (!activeBubble || !(event.target instanceof Element)) return;
-		if (event.target.closest('[data-font-settings], [data-font-settings-toggle]')) return;
+		if (event.target.closest('[data-font-settings], [data-font-settings-toggle], [role=menu]'))
+			return;
 		if (getBubble(event.target)?.bubble === activeBubble) return;
 		const editor = document.activeElement;
 		if (editor instanceof HTMLElement && container.contains(editor) && editor.isContentEditable) {
@@ -148,6 +183,9 @@
 			const bubble = hit.bubble;
 			const origin = svgPoint(svg, event);
 			const vertices = bubble.shape.vs.map((v) => ({ ...v }));
+			const layout = validLayout(bubble.layout)
+				? bubble.layout.vs.map((v) => ({ ...v }))
+				: undefined;
 			const button = event.button;
 			if (
 				document.activeElement instanceof HTMLElement &&
@@ -163,6 +201,11 @@
 				}
 				event.preventDefault();
 				const point = svgPoint(svg!, event);
+				if (layout && validLayout(bubble.layout))
+					bubble.layout.vs = layout.map((v) => ({
+						x: v.x + point.x - origin.x,
+						y: v.y + point.y - origin.y
+					})) as [(typeof layout)[number], (typeof layout)[number]];
 				bubble.shape.vs = vertices.map((v) => ({
 					...v,
 					x: v.x + point.x - origin.x,
@@ -193,6 +236,7 @@
 		const lang = language;
 		bubbles = loadedBubbles;
 		activeBubble = undefined;
+		geometryPart = 'mask';
 		untrack(() => page.setBubbles(lang, bubbles));
 		let initial = true;
 		$effect(() => {
@@ -224,6 +268,11 @@
 						bubbleIndex={index}
 						active={bubble === activeBubble}
 						onactivate={() => activateBubble(bubble)}
+						part={geometryPart}
+						onpart={(part) => {
+							activateBubble(bubble);
+							geometryPart = part;
+						}}
 						{renderMode}
 						{editable}
 					/>

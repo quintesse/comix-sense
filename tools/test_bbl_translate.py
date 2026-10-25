@@ -73,6 +73,25 @@ class TranslationWorkflowTest(unittest.TestCase):
         self.assertEqual(result["pages"][0]["font"], {"style": "italic"})
         self.assertEqual(result["pages"][0]["bubbles"][0]["font"], {"weight": 400})
 
+    def test_independent_layout_and_bubble_mask_style_preserved(self):
+        data = {"lang": "es", "pages": [{"bubbles": [{"text": "Hola",
+                "shape": {"type": "poly", "vs": [{"x": 1, "y": 2}, {"x": 30, "y": 2},
+                           {"x": 30, "y": 40}]}, "style": {"fill": "#fff4cc", "opacity": "1"},
+                "layout": {"type": "box", "vs": [{"x": 200, "y": 100}, {"x": 100, "y": 50}]}}]}]}
+        self.source.write_text(json.dumps(data), encoding="utf-8")
+        self.batch.write_text(json.dumps({self.source.name: ["Bonjour"]}), encoding="utf-8")
+        self.translate()
+        self.run_tool("validate")
+        result = json.loads(self.target.read_text(encoding="utf-8"))
+        source = data["pages"][0]["bubbles"][0]
+        target = result["pages"][0]["bubbles"][0]
+        self.assertEqual(target["shape"], source["shape"])
+        self.assertEqual(target["style"], source["style"])
+        self.assertEqual(target["layout"], source["layout"])
+        target["layout"]["vs"][0]["x"] += 1
+        self.target.write_text(json.dumps(result), encoding="utf-8")
+        self.run_tool("validate", succeeds=False)
+
     def test_incomplete_batch_writes_nothing(self):
         self.run_tool("init")
         self.batch.write_text(json.dumps({self.source.name: []}), encoding="utf-8")

@@ -249,17 +249,20 @@ test('browser fonts load real local bytes, isolate, reuse, override installed na
 			}
 		];
 		const selected = { family: ['arial', 'SERIF'], size: 30 };
-		const baseline = document.fonts.size;
+		// The app may register CSS fonts concurrently; count only the resources under test.
+		const countFaces = () =>
+			[...document.fonts].filter((face) => face.family.startsWith('bbl-face-')).length;
+		const baseline = countFaces();
 		const [a, b] = await Promise.all([
 			first.resolve(selected, faces),
 			first.resolve(selected, faces)
 		]);
 		const c = await second.resolve(selected, faces);
 		const loaded = document.fonts.check(`30px "${a.family[0]}"`, 'AB');
-		const count = document.fonts.size - baseline;
+		const count = countFaces() - baseline;
 		first.dispose();
 		second.dispose();
-		return { a, b, c, loaded, count, reads, remaining: document.fonts.size - baseline };
+		return { a, b, c, loaded, count, reads, remaining: countFaces() - baseline };
 	}, fixtureFont);
 	expect(result.a).toEqual(result.b);
 	expect(result.a.family[0]).toMatch(/^bbl-face-/);
