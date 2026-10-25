@@ -1,3 +1,26 @@
+# README maintenance
+
+Keep `README.md` current when changes affect how users understand or use the app.
+Use this structure, in order:
+
+1. An introduction explaining the project's purpose, who it helps, and how it
+   handles original artwork and editable translations.
+2. An overview of the most important implemented features, focused on user benefits.
+3. A practical user guide covering setup/access, opening comics, reading, editing,
+   optional OCR and AI tools, and saving or discarding work.
+
+Write for app users, use current UI labels, and verify behavior against the
+implementation. Use page, album, and collection for the comic hierarchy; reserve
+folder and directory for filesystem details. Distinguish implemented features
+from planned capabilities. Explain permissions, external data transfers, and the
+difference between browser backups and saving to disk where relevant.
+
+Keep the README focused and easy to scan. Put detailed file-format specifications,
+developer workflows, decoder internals, benchmarks, and diagnostic tables in linked
+documents under `docs/`. Update those references alongside relevant changes and
+avoid duplicating their details or appending a running implementation history to
+the README.
+
 # Pull request workflow
 
 Apply this workflow only when the user explicitly asks for a pull request (PR).
