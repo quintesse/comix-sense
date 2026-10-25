@@ -464,9 +464,7 @@ async function chooseLanguage(page: Page, current: string, language: string) {
 	await page.getByRole('menuitem', { name: language, exact: true }).click();
 }
 
-test('tree page icons use images in reading mode and images or BBL in edit mode', async ({
-	page
-}) => {
+test('tree page icons reflect images or BBL in both reading and edit modes', async ({ page }) => {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	await setupDirectory(page, false, true, true);
@@ -480,8 +478,7 @@ test('tree page icons use images in reading mode and images or BBL in edit mode'
 	const otherFirst = other.getByRole('treeitem', { name: /^0?1$/, exact: true });
 	const flag = first.locator('.page-icon img');
 	// EN exists only as BBL on the first page and only as an image on the second.
-	await expect(first.locator('[data-comic-icon="page"]')).toBeVisible();
-	await expect(flag).toHaveCount(0);
+	await expect(flag).toBeVisible();
 	await expect(second.locator('.page-icon img')).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(flag).toHaveAttribute(
@@ -518,7 +515,8 @@ test('tree page icons use images in reading mode and images or BBL in edit mode'
 	await expect(flag).toHaveAttribute('src', dutchFlag);
 	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
 	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
-	await expect(page.locator('.comic-tree .page-icon img')).toHaveCount(0);
+	await expect(flag).toHaveAttribute('src', dutchFlag);
+	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(flag).toHaveAttribute('src', dutchFlag);
 	await expect(otherFirst.locator('.page-icon img')).toHaveAttribute('src', dutchFlag);
@@ -526,8 +524,7 @@ test('tree page icons use images in reading mode and images or BBL in edit mode'
 	await select('NL', 'OCR');
 	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
 	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
-	await expect(first.locator('[data-toolbar-icon="video"]')).toHaveCount(0);
-	await expect(first.locator('[data-comic-icon="page"]')).toBeVisible();
+	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(first.locator('[data-toolbar-icon="video"]')).toBeVisible();
 	await expect(second.locator('[data-comic-icon="page"]')).toBeVisible();
@@ -1120,7 +1117,7 @@ test('shorten collection and album page headings in both panes while keeping sou
 	);
 });
 
-test('language dropdown flags reflect the selected page and reader mode without disabling languages', async ({
+test('language dropdown flags reflect image or overlay availability in both reader modes', async ({
 	page
 }) => {
 	await setupDirectory(page, false, true, true);
@@ -1142,7 +1139,7 @@ test('language dropdown flags reflect the selected page and reader mode without 
 		await page.keyboard.press('Escape');
 	}
 	// The first page has BBL files, while the second has an EN image and no BBL files.
-	await expectFlags('EN', 'grayscale(1)', 'grayscale(1)');
+	await expectFlags('EN', 'none', 'none');
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expectFlags('EN', 'none', 'none');
 	await second.click();
@@ -1153,7 +1150,7 @@ test('language dropdown flags reflect the selected page and reader mode without 
 	await page.keyboard.press('Escape');
 	await expectFlags('NL', 'none', 'grayscale(1)');
 	await first.click();
-	await expectFlags('NL', 'grayscale(1)', 'grayscale(1)');
+	await expectFlags('NL', 'none', 'none');
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expectFlags('NL', 'none', 'none');
 });

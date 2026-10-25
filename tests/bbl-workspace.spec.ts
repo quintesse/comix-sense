@@ -1739,6 +1739,14 @@ for (const archive of [false, true]) {
 			.toBe('Backed up');
 		await page.reload();
 		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+		await expect(foreign).toHaveText('Backed up');
+		await expect(foreign).toHaveAttribute('x', '350');
+		await expect(foreign).toHaveAttribute('width', '150');
+		await expect(page.getByRole('textbox')).toHaveCount(0);
+		await expect(page.locator('.svgcontent > rect').first()).toHaveCSS(
+			'fill',
+			'rgb(255, 244, 204)'
+		);
 		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 		await expect(text).toHaveText('Backed up');
 		await expect(foreign).toHaveAttribute('x', '350');
@@ -1804,4 +1812,34 @@ test('opening settings uses the selected bubble while an open panel retains its 
 	await panel.getByRole('button', { name: 'Close Text & Layout Settings', exact: true }).click();
 	await toggle.click();
 	await expect(bubble).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('reading overlays and switching languages or modes never creates unsaved indicators', async ({
+	page
+}) => {
+	await setup(page);
+	await writeDocuments(page, {
+		'album/album.nl.bbl': { ...original, lang: 'nl' }
+	});
+	await page.getByRole('button', { name: 'Reading Mode', exact: true }).click();
+	const firstName = page.locator('.comic-tree span[title="01.png"]');
+	const secondName = page.locator('.comic-tree span[title="02.png"]');
+	for (const language of ['NL', 'EN', 'NL', 'EN']) {
+		await selectLanguage(page, language === 'NL' ? 'EN' : 'NL', language);
+		await expect(page.locator('foreignObject')).toHaveText('Original');
+		await expect(page.getByRole('textbox')).toHaveCount(0);
+		await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText('Untouched');
+		await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText('Original');
+		await expect(firstName).not.toHaveCSS('font-weight', '700');
+		await expect(secondName).not.toHaveCSS('font-weight', '700');
+	}
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('Original');
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Discard Changes', exact: true })).toBeDisabled();
+	expect(await backups(page)).toEqual({});
+	await expect(firstName).not.toHaveCSS('font-weight', '700');
+	await expect(secondName).not.toHaveCSS('font-weight', '700');
 });

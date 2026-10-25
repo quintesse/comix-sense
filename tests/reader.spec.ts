@@ -276,12 +276,24 @@ test('reader uses rendered language images and falls back per page; editing uses
 	for (const language of ['English (EN)', 'French (FR)', 'Dutch (NL)']) {
 		await expect(page.getByRole('menuitemradio', { name: language, exact: true })).toHaveCount(1);
 	}
+	await expect(
+		page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).locator('img')
+	).not.toHaveClass(/unavailable/);
 	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
 	await expect(image).not.toHaveAttribute('href', original!);
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await expect(page.getByRole('region', { name: 'Album pages' }).getByRole('button')).toHaveCount(
 		2
 	);
+	await page.getByRole('button', { name: 'Side by Side', exact: true }).click();
+	await expect(page.locator('[data-page-path="album/01.png"] foreignObject')).toHaveCount(0);
+	await expect(page.locator('[data-page-path="album/02.png"] foreignObject')).toHaveText(
+		'Second page'
+	);
+	await expect(page.getByRole('textbox')).toHaveCount(0);
+	await expect(page.locator('.svgcontent circle')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Single Page', exact: true }).click();
+
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
 	expect(await page.evaluate(() => window.__filesRead.at(-1))).not.toBe('album/01.en.jpg');
@@ -321,6 +333,8 @@ test('reader uses rendered language images and falls back per page; editing uses
 		.toContain('Rendered French');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveCount(0);
+	// A language with neither a rendered image nor overlay keeps the original.
+
 	await expect
 		.poll(async () =>
 			page.evaluate(
@@ -329,8 +343,16 @@ test('reader uses rendered language images and falls back per page; editing uses
 			)
 		)
 		.toContain('Original');
-	await selectMenu(page, 'FR', 'ORG');
+	await selectMenu(page, 'FR', 'EN');
+	await expect(page.locator('foreignObject')).toHaveText('Second page');
+	await expect(page.locator('foreignObject [contenteditable]')).toHaveCount(0);
+	await selectMenu(page, 'EN', 'NL');
+	await expect(page.locator('foreignObject')).toHaveText('Tweede pagina');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText('Hallo');
+	await selectMenu(page, 'NL', 'ORG');
+	await expect(page.locator('foreignObject')).toHaveCount(0);
+
 	await expect
 		.poll(async () =>
 			page.evaluate(
@@ -619,7 +641,7 @@ test('context menu choices update the reader and save zoom', async ({ page }) =>
 	await image.click({ button: 'right', position: { x: 10, y: 10 } });
 	await page.getByRole('menuitem', { name: 'Language', exact: true }).click();
 	await page.getByRole('menuitemradio', { name: 'Dutch (NL)', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveCount(0);
+	await expect(page.locator('foreignObject')).toHaveText('Hallo');
 	await expect(page.getByRole('menuitem', { name: 'NL', exact: true })).toBeVisible();
 	await expect
 		.poll(() => page.evaluate(() => localStorage.getItem('comix-sense.zoom')))

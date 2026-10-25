@@ -72,7 +72,10 @@ behavior in menus and the sidebar tree.
 Choose **ORG** in the language menu to see the original page, or choose a language
 to display its overlays. **Show Translations** toggles the bubbles without changing
 the selected language. When a rendered image exists for that language, Reading
-Mode displays it; Edit Mode uses the original image with editable bubbles.
+Mode displays it. Otherwise, Reading Mode shows the original image with the selected
+language’s `.bbl` overlay when available, or just the original if neither exists.
+This fallback applies to each page separately, including two-page layouts. Edit
+Mode always uses the original image with editable bubbles.
 
 ### Scan a page
 
@@ -169,7 +172,10 @@ clearing site data removes backups.
 
 Pages with unsaved changes have bold names and outline icons in the tree; their
 parent albums and collections are marked too. Unsaved languages appear in bold
-in the language menu. Browser backup does not clear these indicators.
+in the language menu. Browser backup does not clear these indicators. The tree
+includes edits in every language, while Save and Discard follow the selected
+language. On a marked page, select a bold language entry to save or discard its
+changes.
 
 - **Save Changes** writes the document supplying the selected page and language,
   requesting write permission if needed. If that document covers several pages,

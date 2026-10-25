@@ -488,6 +488,8 @@ test('empty archive and malformed overlay errors leave adjacent archive albums u
 	await expect(page.getByRole('alert')).toContainText('no supported images');
 	await page.getByRole('treeitem', { name: 'bad', exact: true }).click();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await expect(page.getByRole('alert')).toContainText('Could not read bubbles');
+	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('Could not read bubbles');
 	await page.getByRole('treeitem', { name: 'good', exact: true }).click();

@@ -475,6 +475,7 @@
 			editing: boolean;
 			bubbles: Bubble[];
 			language: string;
+			overlayError?: string;
 		}[]
 	>([]);
 	let pageLoadError = $state('');
@@ -512,16 +513,27 @@
 		void Promise.all(
 			requested.map(async (comic, index) => {
 				const imageComic = imageComics[index];
+				let overlayError: string | undefined;
 				const [image, bubbles] = await Promise.all([
 					pageImages.load(imageComic),
-					editing ? comic.getBubbles(language) : Promise.resolve([])
+					editing || imageComic === comic
+						? comic.getBubbles(language).catch((error) => {
+								if (editing) throw error;
+								overlayError = String(error);
+								return [];
+							})
+						: Promise.resolve([])
 				]);
-				return { comic, image, imageComic, editing, bubbles, language };
+				return { comic, image, imageComic, editing, bubbles, language, overlayError };
 			})
 		)
 			.then(async (pages) => {
 				if (cancelled) return;
 				displayedPages = pages;
+				pageLoadError = pages
+					.map((page) => page.overlayError)
+					.filter(Boolean)
+					.join('\n');
 				loadingPages = false;
 				// Let the outgoing SVGs leave the DOM before revoking their image URLs.
 				await tick();
@@ -1234,7 +1246,7 @@
 		)
 	);
 	let availableLanguages = $derived(
-		new Set(languages.filter((language) => $selectedComic?.hasTranslation(language, editingMode)))
+		new Set(languages.filter((language) => $selectedComic?.hasTranslation(language)))
 	);
 	let selectedLanguage = $derived(
 		preferredLanguage(readingPosition?.albumLanguages?.[albumPath], languages, browserLanguages)
@@ -1543,7 +1555,6 @@
 							<ComicsTree
 								bind:this={comicsTree}
 								{selectedLanguage}
-								{editingMode}
 								onarchive={openArchive}
 								{folders}
 								selectedComic={$selectedComic}
@@ -1830,7 +1841,7 @@
 		{#if displayedPages.length}
 			<Zoom level={selectedZoom} contentSize={spreadSize} centered={fullscreen}>
 				{#each displayedPages as page, i (page.comic)}
-					{#if editingMode && page.editing}
+					{#if page.imageComic === page.comic && !page.overlayError}
 						<ReaderPage
 							bind:this={pageViews[i]}
 							comic={page.comic}
@@ -1838,7 +1849,7 @@
 							loadedBubbles={page.bubbles}
 							language={page.language}
 							{showBubbles}
-							{editable}
+							editable={editable && page.editing}
 							{selectedShape}
 							onfontselect={() => (fontPagePath = page.comic.path)}
 						/>

@@ -81,11 +81,11 @@ export class Comic {
 	/** Rendered images are variants of this page, never separate reader pages. */
 	readonly renderedImages = new Map<string, Comic>();
 
-	hasTranslation(language: string, editingMode = false): boolean {
+	hasTranslation(language: string): boolean {
 		const code = language.toLowerCase();
 		return (
 			this.renderedImages.has(code) ||
-			(editingMode && this.languages.some((language) => language.toLowerCase() === code))
+			this.languages.some((language) => language.toLowerCase() === code)
 		);
 	}
 
