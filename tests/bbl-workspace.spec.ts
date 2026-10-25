@@ -1110,7 +1110,7 @@ test('scoped saves retain other documents and preserve saved page edits on later
 	expect(await backups(page)).toEqual({});
 });
 
-test('unsaved pages and albums have outline icons and bold names until saved or discarded', async ({
+test('unsaved pages keep their language icons and bold names until saved or discarded', async ({
 	page
 }) => {
 	await setup(page);
@@ -1123,16 +1123,15 @@ test('unsaved pages and albums have outline icons and bold names until saved or 
 	const albumIcon = album.locator(':scope > div [data-comic-icon="album"]');
 	await expect(albumIcon).toHaveAttribute('data-icon-style', 'solid');
 	await expect(firstName).not.toHaveCSS('font-weight', '700');
+	const pageFlag = first.locator('.page-icon img');
+	const flagUrl = await pageFlag.getAttribute('src');
 	await page.getByRole('textbox').fill('Unsaved page');
 	await expect(firstName).toHaveCSS('font-weight', '700');
-	await expect(first.locator('[data-comic-icon="page"]')).toHaveAttribute(
-		'data-icon-style',
-		'regular'
-	);
+	await expect(pageFlag).toHaveAttribute('src', flagUrl!);
 	await expect(albumName).toHaveCSS('font-weight', '700');
 	await expect(albumIcon).toHaveAttribute('data-icon-style', 'regular');
 	await expect(albumIcon).toHaveCSS('fill', 'none');
-	await expect(first.locator('[data-comic-icon="page"]')).toHaveCSS('fill', 'none');
+
 	await expect(secondName).not.toHaveCSS('font-weight', '700');
 	await expect
 		.poll(async () => (await backups(page))['album/album.en.bbl']?.pages[0].bubbles[0].text)
@@ -1141,6 +1140,7 @@ test('unsaved pages and albums have outline icons and bold names until saved or 
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(firstName).toHaveCSS('font-weight', '700');
+	await expect(pageFlag).toHaveAttribute('src', flagUrl!);
 	await expect(secondName).not.toHaveCSS('font-weight', '700');
 	await expect(albumIcon).toHaveAttribute('data-icon-style', 'regular');
 	// Unsaved work remains visible even while displaying the original image.
@@ -1148,7 +1148,7 @@ test('unsaved pages and albums have outline icons and bold names until saved or 
 	await page.getByRole('menuitemradio', { name: 'ORG', exact: true }).click();
 	await expect(first.locator('[data-comic-icon="page"]')).toHaveAttribute(
 		'data-icon-style',
-		'regular'
+		'solid'
 	);
 	await page.getByRole('menuitem', { name: 'ORG', exact: true }).click();
 	await page.getByRole('menuitemradio', { name: 'English (EN)', exact: true }).click();
