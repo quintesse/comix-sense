@@ -76,7 +76,7 @@ class TranslationWorkflowTest(unittest.TestCase):
     def test_independent_layout_and_bubble_mask_style_preserved(self):
         data = {"lang": "es", "pages": [{"bubbles": [{"text": "Hola",
                 "shape": {"type": "poly", "vs": [{"x": 1, "y": 2}, {"x": 30, "y": 2},
-                           {"x": 30, "y": 40}]}, "style": {"fill": "#fff4cc", "opacity": "1"},
+                           {"x": 30, "y": 40}]}, "style": {"fill": "#fff4cc", "opacity": "1", "cornerRadius": "12", "stroke": "black", "stroke-width": "2"},
                 "layout": {"type": "box", "vs": [{"x": 200, "y": 100}, {"x": 100, "y": 50}]}}]}]}
         self.source.write_text(json.dumps(data), encoding="utf-8")
         self.batch.write_text(json.dumps({self.source.name: ["Bonjour"]}), encoding="utf-8")

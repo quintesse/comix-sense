@@ -1296,6 +1296,7 @@
 		onchange={(font) => fontPage.setFont(fontScope, font)}
 		onfaceschange={(faces) => fontPage.setFontFaces(fontScope, faces)}
 		ongeometry={(action) => fontPage.geometry(action)}
+		onappearance={(changes) => fontPage.setAppearance(changes)}
 		onclose={closeFontSettings}
 	/>
 {/if}

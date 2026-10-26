@@ -1688,6 +1688,7 @@ test('independent text and mask editing, whole movement, relinking and persisten
 		'aria-pressed',
 		'true'
 	);
+	await panel.getByRole('button', { name: 'Text area', exact: true }).click();
 	await panel.getByRole('button', { name: 'Fit text area to mask and link' }).click();
 	await expect(panel.getByText('Text follows mask', { exact: true })).toBeVisible();
 	await expect(foreign).toHaveAttribute('x', '135');
@@ -1697,6 +1698,7 @@ test('independent text and mask editing, whole movement, relinking and persisten
 	await expect(foreign).toHaveAttribute('x', '125');
 	await text.click({ button: 'right' });
 	await page.getByText('Bubble settings', { exact: true }).click();
+	await panel.getByRole('button', { name: 'Text area', exact: true }).click();
 	await panel.getByRole('button', { name: 'Fit text area to mask and link' }).click();
 	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
@@ -1721,7 +1723,13 @@ for (const archive of [false, true]) {
 					{ x: 350, y: 300 }
 				]
 			},
-			style: { fill: '#fff4cc', opacity: '1' }
+			style: {
+				fill: '#fff4cc',
+				opacity: '1',
+				cornerRadius: '12',
+				stroke: '#123456',
+				'stroke-width': '2'
+			}
 		};
 		await writeDocuments(page, { [path]: { pages: [{ bubbles: [b] }] } }, !archive);
 		const text = page.getByRole('textbox').first();
@@ -1743,6 +1751,7 @@ for (const archive of [false, true]) {
 		await expect(foreign).toHaveAttribute('x', '350');
 		await expect(foreign).toHaveAttribute('width', '150');
 		await expect(page.getByRole('textbox')).toHaveCount(0);
+		await expect(page.locator('.svgcontent > rect').first()).toHaveAttribute('rx', '12');
 		await expect(page.locator('.svgcontent > rect').first()).toHaveCSS(
 			'fill',
 			'rgb(255, 244, 204)'
@@ -1842,4 +1851,271 @@ test('reading overlays and switching languages or modes never creates unsaved in
 	expect(await backups(page)).toEqual({});
 	await expect(firstName).not.toHaveCSS('font-weight', '700');
 	await expect(secondName).not.toHaveCSS('font-weight', '700');
+});
+
+test('mask appearance controls, rounded clipping, persistence and polygon interaction', async ({
+	page
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (e) => errors.push(e.message));
+	page.on('console', (m) => {
+		if (/ownership_invalid/.test(m.text())) errors.push(m.text());
+	});
+	await setup(page);
+	const styled = {
+		...bubble('Appearance'),
+		font: { size: 24 },
+		layout: {
+			type: 'box',
+			vs: [
+				{ x: 100, y: 90 },
+				{ x: 270, y: 140 }
+			]
+		},
+		style: { fill: 'rgb(255, 244, 204)', 'fill-rule': 'evenodd' }
+	};
+	await writeDocuments(page, {
+		'album/album.en.bbl': {
+			...original,
+			pages: [{ filename: '01.png', bubbles: [styled] }, original.pages[1]]
+		}
+	});
+	const text = page.getByRole('textbox', { name: 'Bubble text' }).first();
+	const mask = page.locator('.svgcontent > rect').first();
+	await expect(mask).toHaveCSS('opacity', '0.8');
+	await expect(mask).toHaveCSS('stroke', 'none');
+	await text.click();
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await expect(panel.getByLabel('Font families', { exact: true })).toBeVisible();
+	await expect(panel.getByRole('group', { name: 'Mask appearance', exact: true })).toHaveCount(0);
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	await expect(panel.getByLabel('Font families', { exact: true })).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'Fit text area to mask and link' })).toHaveCount(
+		0
+	);
+	await expect(panel.getByRole('button', { name: 'Convert mask to polygon' })).toBeVisible();
+	await panel.getByRole('button', { name: 'Text area', exact: true }).click();
+	await expect(panel.getByLabel('Font families', { exact: true })).toBeVisible();
+	await expect(panel.getByRole('button', { name: 'Convert mask to polygon' })).toHaveCount(0);
+	expect(await backups(page)).toEqual({});
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	const appearance = panel.getByRole('group', { name: 'Mask appearance', exact: true });
+	await expect(appearance.getByLabel('Fill colour', { exact: true })).toHaveValue(
+		'rgb(255, 244, 204)'
+	);
+	await appearance.getByLabel('Corner radius (image px)', { exact: true }).fill('500');
+	await expect(mask).toHaveAttribute('rx', '50');
+	await expect(page.locator('clipPath rect').first()).toHaveAttribute('rx', '50');
+	await expect(mask).not.toHaveAttribute('style', /cornerRadius/);
+	await expect
+		.poll(async () => (await backups(page))['album/album.en.bbl']?.pages[0].bubbles[0].style)
+		.toEqual({ ...styled.style, cornerRadius: '500' });
+	await appearance.getByLabel('Corner radius (image px)', { exact: true }).fill('18');
+	await appearance.getByLabel('Fill colour', { exact: true }).fill('#ffedcc');
+	await appearance.getByLabel('Outline', { exact: true }).check();
+	await expect(mask).toHaveCSS('stroke', 'rgb(0, 0, 0)');
+	await appearance.getByLabel('Outline colour', { exact: true }).fill('#224488');
+	await appearance.getByLabel('Outline width (image px)', { exact: true }).fill('3');
+	await appearance.getByLabel('Outline', { exact: true }).uncheck();
+	await expect(mask).toHaveCSS('stroke', 'none');
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	await appearance.getByLabel('Outline', { exact: true }).check();
+	await expect(mask).toHaveCSS('stroke', 'rgb(34, 68, 136)');
+	await expect(mask).toHaveCSS('stroke-width', '3px');
+	await appearance.getByLabel('Opacity (%)', { exact: true }).fill('60');
+	await expect(mask).toHaveCSS('opacity', '0.6');
+	await expect(text).toHaveCSS('opacity', '1');
+	await expect(text).toHaveCSS('font-size', '24px');
+	const expectedStyle = {
+		...styled.style,
+		cornerRadius: '18',
+		fill: '#ffedcc',
+		stroke: '#224488',
+		'stroke-width': '3',
+		opacity: '0.6'
+	};
+	await expect
+		.poll(async () => (await backups(page))['album/album.en.bbl']?.pages[0].bubbles[0].style)
+		.toEqual(expectedStyle);
+	const backed = (await backups(page))['album/album.en.bbl'].pages[0].bubbles[0];
+	expect(backed.layout).toEqual(styled.layout);
+	expect(backed.font).toEqual(styled.font);
+	expect(backed.shape).toEqual(styled.shape);
+	await page.screenshot({ path: test.info().outputPath('rounded-box.png') });
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	await panel.getByRole('button', { name: 'Convert mask to polygon' }).click();
+	const path = page.locator('.svgcontent > path').first();
+	await expect(path).toHaveAttribute('d', /A /);
+	await expect(page.locator('clipPath path').first()).toHaveAttribute(
+		'd',
+		(await path.getAttribute('d')) as string
+	);
+	// Hit the exposed rounded mask, then drag its path using the existing whole-bubble gesture.
+	const point = await path.evaluate((el) => {
+		const svg = el.closest('svg')!;
+		const p = new DOMPoint(90, 120).matrixTransform(svg.getScreenCTM()!);
+		return { x: p.x, y: p.y };
+	});
+	await page.mouse.click(point.x, point.y);
+	await expect(panel.getByRole('button', { name: 'Selected bubble', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const beforeDrag = await path.getAttribute('d');
+	await page.mouse.move(point.x, point.y);
+	await page.mouse.down({ button: 'middle' });
+	await page.mouse.move(point.x + 10, point.y + 10, { steps: 4 });
+	await page.mouse.up({ button: 'middle' });
+	await expect(path).not.toHaveAttribute('d', beforeDrag!);
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+	const saved = (await disk(page)).pages[0].bubbles[0];
+	expect(saved.style).toEqual(expectedStyle);
+	expect(saved.font).toEqual(styled.font);
+	await page.reload();
+	await expect(path).toHaveAttribute('d', /A /);
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await text.click();
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	await appearance.getByLabel('Corner radius (image px)', { exact: true }).fill('0');
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await confirmDiscard(page);
+	await expect(path).toHaveAttribute('d', /A /);
+	// Render and inspect a bubble tail and a concave contour through the real renderer.
+	for (const [name, vs] of [
+		[
+			'tail',
+			[
+				{ x: 80, y: 80 },
+				{ x: 320, y: 80 },
+				{ x: 320, y: 180 },
+				{ x: 240, y: 180 },
+				{ x: 290, y: 250 },
+				{ x: 190, y: 180 },
+				{ x: 80, y: 180 }
+			]
+		],
+		[
+			'concave',
+			[
+				{ x: 80, y: 80 },
+				{ x: 320, y: 80 },
+				{ x: 320, y: 220 },
+				{ x: 200, y: 150 },
+				{ x: 80, y: 220 }
+			]
+		]
+	] as const) {
+		await writeDocuments(page, {
+			'album/album.en.bbl': {
+				...original,
+				pages: [
+					{
+						filename: '01.png',
+						bubbles: [{ ...styled, style: expectedStyle, shape: { type: 'poly', vs } }]
+					},
+					original.pages[1]
+				]
+			}
+		});
+		await expect(path).toHaveAttribute('d', /A /);
+		const d = await path.getAttribute('d');
+		expect(d).not.toMatch(/NaN|Infinity/);
+		await expect(page.locator('clipPath path').first()).toHaveAttribute('d', d!);
+		await expect.poll(async () => (await disk(page)).pages[0].bubbles[0].shape.vs).toEqual(vs);
+		await page.screenshot({ path: test.info().outputPath(`rounded-${name}.png`) });
+	}
+	expect(errors).toEqual([]);
+});
+
+test('mask eyedroppers apply samples, preserve settings, cancel and report failures', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		Object.defineProperty(window, 'EyeDropper', {
+			configurable: true,
+			value: class {
+				async open({ signal }: { signal: AbortSignal }) {
+					const mode = localStorage.getItem('sampleMode');
+					if (mode === 'cancel') throw new DOMException('Cancelled', 'AbortError');
+					if (mode === 'fail') throw new DOMException('Unavailable', 'OperationError');
+					if (mode === 'pending')
+						return new Promise<{ sRGBHex: string }>((resolve, reject) => {
+							signal.addEventListener('abort', () => {
+								localStorage.setItem('sampleAborted', 'yes');
+								reject(new DOMException('Cancelled', 'AbortError'));
+							});
+						});
+					return { sRGBHex: localStorage.getItem('sampleColour') ?? '#123456' };
+				}
+			}
+		});
+	});
+	await setup(page);
+	await page.getByRole('textbox', { name: 'Bubble text' }).first().click();
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	const appearance = panel.getByRole('group', { name: 'Mask appearance', exact: true });
+	const fill = appearance.getByRole('button', { name: 'Fill colour eyedropper', exact: true });
+	await fill.click();
+	await expect(appearance.getByLabel('Fill colour', { exact: true })).toHaveValue('#123456');
+	await expect(page.locator('.svgcontent > rect').first()).toHaveCSS('fill', 'rgb(18, 52, 86)');
+	await appearance.getByLabel('Outline', { exact: true }).check();
+	await appearance.getByLabel('Outline width (image px)', { exact: true }).fill('4');
+	await page.evaluate(() => localStorage.setItem('sampleColour', '#abcdef'));
+	await appearance.getByRole('button', { name: 'Outline colour eyedropper', exact: true }).click();
+	await expect(appearance.getByLabel('Outline colour', { exact: true })).toHaveValue('#abcdef');
+	await expect(appearance.getByLabel('Outline width (image px)', { exact: true })).toHaveValue('4');
+	await expect(page.getByRole('textbox', { name: 'Bubble text' })).toHaveText('Original');
+	await expect
+		.poll(async () => (await backups(page))['album/album.en.bbl']?.pages[0].bubbles[0].style)
+		.toEqual({ fill: '#123456', stroke: '#abcdef', 'stroke-width': '4' });
+	await page.evaluate(() => localStorage.setItem('sampleMode', 'cancel'));
+	await fill.click();
+	await expect(fill).toBeEnabled();
+	await expect(appearance.getByRole('alert')).toHaveCount(0);
+	await expect(appearance.getByLabel('Fill colour', { exact: true })).toHaveValue('#123456');
+	await page.evaluate(() => localStorage.setItem('sampleMode', 'fail'));
+	await fill.click();
+	await expect(appearance.getByRole('alert')).toContainText('Could not pick a screen colour');
+	await expect(fill).toBeEnabled();
+	await expect(appearance.getByLabel('Fill colour', { exact: true })).toHaveValue('#123456');
+	await page.evaluate(() => localStorage.setItem('sampleMode', 'pending'));
+	await fill.click();
+	await expect(fill).toBeDisabled();
+	await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+	await expect.poll(() => page.evaluate(() => localStorage.getItem('sampleAborted'))).toBe('yes');
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	await expect(fill).toBeEnabled();
+	await expect(appearance.getByLabel('Fill colour', { exact: true })).toHaveValue('#123456');
+	await page.screenshot({ path: test.info().outputPath('eyedropper-controls.png') });
+});
+
+test('unsupported screen sampling keeps colour editing available', async ({ page }) => {
+	await page.addInitScript(() =>
+		Object.defineProperty(window, 'EyeDropper', { value: undefined, configurable: true })
+	);
+	await setup(page);
+	await page.getByRole('textbox', { name: 'Bubble text' }).first().click();
+	await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+	const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+	await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+	await expect(
+		panel.getByRole('button', { name: 'Fill colour eyedropper', exact: true })
+	).toBeDisabled();
+	await expect(
+		panel.getByText('Screen colour picking is unavailable;', { exact: false })
+	).toBeVisible();
+	await panel.getByLabel('Fill colour', { exact: true }).fill('#ffaa00');
+	await expect(page.locator('.svgcontent > rect').first()).toHaveCSS('fill', 'rgb(255, 170, 0)');
+	await panel.getByLabel('Outline', { exact: true }).check();
+	await expect(
+		panel.getByRole('button', { name: 'Outline colour eyedropper', exact: true })
+	).toBeDisabled();
+	await expect(panel.getByLabel('Outline colour picker', { exact: true })).toBeEnabled();
 });

@@ -53,7 +53,8 @@ The fields in the shape-based format are listed below. Paths are relative to the
 
 The optional bubble-level `style` object maps CSS property names to string values,
 for example `"style": { "fill": "white", "opacity": "0.8" }`. It applies inline
-CSS only to the mask's SVG rectangle or polygon, never to the text. `font` is also
+CSS only to the mask's SVG rectangle, polygon, or rounded path, never to the text.
+The app-specific `cornerRadius` key is excluded from inline CSS. `font` is also
 at bubble level and controls text typography; `shape` and `layout` contain only
 geometry. Page/album mask-style inheritance is not implemented; each bubble uses
 its own style or the renderer's default mask appearance. `shape.style` is not used
@@ -104,6 +105,49 @@ Mask conversion preserves bubble-level `style` and explicit layout. Whole-bubble
 movement translates both geometries. OCR-created bubbles have no layout.
 Grouping compares bubble-level mask styles and keeps independently positioned bubbles
 separate, preserving their placement rather than choosing one input's layout.
+
+### Mask appearance
+
+Bubble-level `style` supports `cornerRadius`, `fill`, `stroke`, `stroke-width`,
+and `opacity`, all stored as strings. For example:
+
+```json
+"style": {
+  "cornerRadius": "12",
+  "fill": "#ffffff",
+  "stroke": "#000000",
+  "stroke-width": "2",
+  "opacity": "1"
+}
+```
+
+Absent values mean square corners, white fill, no outline, and opacity `0.8`.
+`stroke: "none"` explicitly disables the outline. Fill and stroke accept CSS
+colours; stroke width and corner radius use original-image pixels. Opacity uses
+SVG/CSS semantics and affects fill and outline together, leaving text unchanged.
+Other existing style properties survive appearance edits.
+
+`cornerRadius` is a custom nonnegative finite numeric string, not a CSS property.
+Invalid values produce a `[bbl]` diagnostic and square corners while preserving
+source metadata. Boxes apply the same radius on both axes, capped for rendering
+at half the shorter dimension; the requested radius remains stored.
+
+Polygons use circular fillets tangent to the incoming and outgoing edges. For a
+signed turn angle θ between edge directions, the tangent distance is
+`radius * tan(abs(θ) / 2)`, capped at half each incident edge's length. The actual
+local arc radius is the capped distance divided by `tan(abs(θ) / 2)`. This prevents
+adjacent transitions from overlapping along a shared edge and handles either
+winding and concave turns. Consecutive duplicate vertices (including a repeated
+closing vertex) are omitted only in the render copy. Collinear, reversing, or
+numerically unsafe corners remain pointed. Zero radius retains the ordinary
+polygon. Rounding can soften speech-bubble tails; it does not guarantee that
+self-intersecting polygons become simple or prevent interactions across unrelated
+edges in very narrow shapes.
+
+The visible mask and artwork-blur clip share the rounded contour. Clipping uses
+the filled contour without stroke expansion or appearance CSS. Stored vertices,
+bounding boxes, editing handles, and text layout do not change. Conversion,
+translation, browser recovery, and disk persistence retain bubble-level style.
 
 ## Typography and album indexes
 
