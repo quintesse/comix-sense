@@ -200,6 +200,13 @@ test('source language uses translation codes, then declared BBL language for OCR
 
 test('translation copies source geometry independently and registers a new target overlay', async () => {
 	const pages = fixture();
+	(await pages[1].getBubbles('en'))[0].style = {
+		fill: 'red',
+		cornerRadius: '12',
+		stroke: 'black',
+		'stroke-width': '2',
+		opacity: '0.7'
+	};
 	const source = structuredClone(await pages[1].getBubbles('en'));
 	const job = await prepareCleanup(pages, [pages[1]], 'en', 'fr');
 	expect(job.document).toEqual({

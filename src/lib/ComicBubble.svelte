@@ -13,7 +13,7 @@
 		type BblLayout,
 		BblShapeType
 	} from './types/Comic';
-	import type { StrStrMap } from './types/funcs';
+	import { cornerRadius, boxRadius, maskStyle, roundedPolygon } from './maskAppearance';
 
 	interface Props {
 		bubble: Bubble;
@@ -51,8 +51,8 @@
 			range.collapse(false);
 		}
 		const { startContainer, startOffset, endContainer, endOffset } = range;
-		onpart?.('text');
 		onactivate?.();
+		onpart?.('text');
 		await tick();
 		// SVG reordering can blur the editor; retain its focus and caret after raising it.
 		if (!editor.isConnected || !active || document.activeElement === editor) return;
@@ -78,14 +78,9 @@
 		};
 	}
 
-	function styleString(style: StrStrMap | undefined): string {
-		return Object.entries(style || {})
-			.map((e) => e[0] + ':' + e[1] + ';')
-			.join('');
-	}
-
 	let cursor = $derived(bubble.shape.type === BblShapeType.box ? 'nw-resize' : 'move');
-	let shapeStyle = $derived(styleString(bubble.style));
+	let shapeStyle = $derived(renderMode === 'clippath' ? '' : maskStyle(bubble.style));
+	let radius = $derived(cornerRadius(bubble.style));
 	let bb = $derived(bounds(bubble.shape.vs));
 	let tb = $derived(textBounds(bubble));
 </script>
@@ -99,6 +94,8 @@
 			y={bb.y1}
 			width={bb.w}
 			height={bb.h}
+			rx={boxRadius(bubble.shape.vs, radius)}
+			ry={boxRadius(bubble.shape.vs, radius)}
 			class="bubble"
 			style={shapeStyle}
 		>
@@ -106,6 +103,16 @@
 				<title>{bubble.text}</title>
 			{/if}
 		</rect>
+	{:else if bubble.shape.type === BblShapeType.poly && radius > 0}
+		<path
+			data-bubble-index={bubbleIndex}
+			use:selectMask
+			d={roundedPolygon(bubble.shape.vs, radius)}
+			class="bubble"
+			style={shapeStyle}
+		>
+			{#if bubble.text && renderMode !== 'clippath'}<title>{bubble.text}</title>{/if}
+		</path>
 	{:else if bubble.shape.type === BblShapeType.poly}
 		<polygon
 			data-bubble-index={bubbleIndex}
@@ -134,12 +141,12 @@
 				bind:textContent={bubble.text}
 				onfocus={activateEditor}
 				onclick={() => {
-					onpart?.('text');
 					onactivate?.();
+					onpart?.('text');
 				}}
 				onkeydown={() => {
-					onpart?.('text');
 					onactivate?.();
+					onpart?.('text');
 				}}
 			></div>
 		{:else}
@@ -172,8 +179,8 @@
 				active={part === 'text'}
 				{bubbleIndex}
 				onactivate={() => {
-					onpart?.('text');
 					onactivate?.();
+					onpart?.('text');
 				}}
 			/>
 		{/if}

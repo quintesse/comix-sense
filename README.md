@@ -150,9 +150,24 @@ With a text overlay selected in **Edit Mode**:
 - Right-click a bubble and choose **Bubble settings** to open the panel at
   selected-bubble scope. **Separate text and mask** creates an independent rectangular
   text area at the current mask bounds; it is also available in the context menu.
-- For independent bubbles, choose **Text area** or **Mask**, then drag that part's
+- At **Bubble** scope, **Edit: Text area | Mask** switches the panel's controls.
+  **Text area** shows text linking/separation and **Text appearance** font settings; **Mask** shows shape
+  conversion and mask appearance. These buttons are available for linked text too.
+  For independent bubbles, choose a part, then drag that part's
   resize handles or visible move grip. The dashed text outline and solid mask
   outline have labels. Click text to edit it and select the text area.
+- With **Mask** selected, **Mask appearance** adjusts **Corner radius** (slider or image-pixel
+  value), **Fill colour**, **Outline** colour and image-pixel width, and **Opacity**
+  (0–100%). Use the **Fill colour eyedropper** or **Outline colour eyedropper** to
+  sample a colour from the screen, then click the desired pixel; press Esc to cancel.
+  Screen sampling requires browser support and a secure connection (or localhost).
+  If unavailable, use the colour picker or editable value. Sampling happens locally
+  and does not upload screen contents.
+  Changes appear immediately and affect only the selected mask, leaving
+  text layout and typography unchanged. Rounding also softens polygon tails.
+  Enlarging a mask covers artwork; it does not reconstruct artwork or erase old
+  borders outside the mask's area. Save these edits with **Save Changes**, or use
+  **Discard Changes** to revert them; browser backups are recovery copies, not disk saves.
 - Convert the mask between box and polygon in the panel while editing the mask.
   **Fit text area to mask and link** removes independent placement and makes text
   follow the mask again. Neither action changes typography.

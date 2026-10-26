@@ -3,6 +3,7 @@
 	import { tick } from 'svelte';
 	import type { Font, FontScope, Face } from './bbl/metadata';
 	import FontFaces from './FontFaces.svelte';
+	import MaskAppearance from './MaskAppearance.svelte';
 	import AlbumIcon from './icons/AlbumIcon.svelte';
 	import PageIcon from './icons/PageIcon.svelte';
 	import ToolbarIcon from './icons/ToolbarIcon.svelte';
@@ -21,8 +22,10 @@
 		onclose,
 		bubble,
 		part = 'mask',
+		onappearance,
 		ongeometry
 	}: {
+		onappearance: (changes: Record<string, string>) => void;
 		bubble?: Bubble;
 		part?: 'text' | 'mask';
 		ongeometry: (action: 'separate' | 'link' | 'text' | 'mask' | 'box' | 'poly') => void;
@@ -41,7 +44,7 @@
 	const id = $props.id();
 	let panel: HTMLDivElement;
 	let handle: HTMLButtonElement;
-	let familyInput: HTMLInputElement;
+	let familyInput = $state<HTMLInputElement>();
 	let familyText = $state('');
 	let draft = $state<Font>({});
 	let error = $state('');
@@ -239,26 +242,27 @@
 			</p>{/if}
 		{#if scope === 'bubble' && bubble}
 			<fieldset disabled={disabled || busy} aria-label="Bubble geometry">
-				{#if bubble.layout === undefined}
-					<p>Text follows mask</p>
-					<button type="button" onclick={() => ongeometry('separate')}
-						>Separate text and mask</button
+				<div role="group" aria-label="Edit geometry">
+					Edit:
+					<button type="button" aria-pressed={part === 'text'} onclick={() => ongeometry('text')}
+						>Text area</button
 					>
+					<button type="button" aria-pressed={part === 'mask'} onclick={() => ongeometry('mask')}
+						>Mask</button
+					>
+				</div>
+				{#if part === 'text'}
+					{#if bubble.layout === undefined}
+						<p>Text follows mask</p>
+						<button type="button" onclick={() => ongeometry('separate')}
+							>Separate text and mask</button
+						>
+					{:else}
+						<button type="button" onclick={() => ongeometry('link')}
+							>Fit text area to mask and link</button
+						>
+					{/if}
 				{:else}
-					<div role="group" aria-label="Edit geometry">
-						Edit:
-						<button type="button" aria-pressed={part === 'text'} onclick={() => ongeometry('text')}
-							>Text area</button
-						>
-						<button type="button" aria-pressed={part === 'mask'} onclick={() => ongeometry('mask')}
-							>Mask</button
-						>
-					</div>
-					<button type="button" onclick={() => ongeometry('link')}
-						>Fit text area to mask and link</button
-					>
-				{/if}
-				{#if bubble.layout === undefined || part === 'mask'}
 					<button
 						type="button"
 						onclick={() => ongeometry(bubble.shape.type === 'box' ? 'poly' : 'box')}
@@ -266,102 +270,109 @@
 					>
 				{/if}
 			</fieldset>
+			{#if part === 'mask'}
+				<MaskAppearance {bubble} disabled={disabled || busy} onchange={onappearance} />
+			{/if}
 		{/if}
-		<fieldset disabled={disabled || busy}>
-			<label for="{id}-family">Font families</label>
-			<input
-				bind:this={familyInput}
-				bind:value={familyText}
-				id="{id}-family"
-				type="text"
-				list="{id}-families"
-				placeholder={defaults.family?.join(', ') ?? 'Inherit'}
-				oninput={(event) => {
-					const names = event.currentTarget.value
-						.split(',')
-						.map((name) => name.trim())
-						.filter(Boolean);
-					void update('family', names.length ? names : undefined);
-				}}
-			/>
-			<datalist id="{id}-families"
-				>{#each [...new Set( [...families, 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui'] )] as family}<option
-						value={family}
-					></option>{/each}</datalist
-			>
-			<p class="hint">Comma-separated families, in fallback order.</p>
-			<div class="fields">
-				<label
-					>Size (px)<input
-						use:inheritedNumber={'size'}
-						type="number"
-						min="0.01"
-						step="any"
-						value={draft.size ?? ''}
-						placeholder={String(defaults.size ?? 'Inherit')}
-						oninput={(event) => numberInput('size', event)}
-					/></label
+		{#if scope !== 'bubble' || part === 'text'}
+			<fieldset disabled={disabled || busy} class:text-appearance={scope === 'bubble'}>
+				{#if scope === 'bubble'}<legend>Text appearance</legend>{/if}
+				<label for="{id}-family">Font families</label>
+				<input
+					bind:this={familyInput}
+					bind:value={familyText}
+					id="{id}-family"
+					type="text"
+					list="{id}-families"
+					placeholder={defaults.family?.join(', ') ?? 'Inherit'}
+					oninput={(event) => {
+						const names = event.currentTarget.value
+							.split(',')
+							.map((name) => name.trim())
+							.filter(Boolean);
+						void update('family', names.length ? names : undefined);
+					}}
+				/>
+				<datalist id="{id}-families"
+					>{#each [...new Set( [...families, 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui'] )] as family}<option
+							value={family}
+						></option>{/each}</datalist
 				>
-				<label
-					>Weight<input
-						use:inheritedNumber={'weight'}
-						type="number"
-						min="1"
-						max="1000"
-						step="1"
-						value={draft.weight ?? ''}
-						placeholder={String(defaults.weight ?? 'Inherit')}
-						oninput={(event) => numberInput('weight', event)}
-					/></label
+				<p class="hint">Comma-separated families, in fallback order.</p>
+				<div class="fields">
+					<label
+						>Size (px)<input
+							use:inheritedNumber={'size'}
+							type="number"
+							min="0.01"
+							step="any"
+							value={draft.size ?? ''}
+							placeholder={String(defaults.size ?? 'Inherit')}
+							oninput={(event) => numberInput('size', event)}
+						/></label
+					>
+					<label
+						>Weight<input
+							use:inheritedNumber={'weight'}
+							type="number"
+							min="1"
+							max="1000"
+							step="1"
+							value={draft.weight ?? ''}
+							placeholder={String(defaults.weight ?? 'Inherit')}
+							oninput={(event) => numberInput('weight', event)}
+						/></label
+					>
+					<label
+						>Style<select
+							aria-label="Style"
+							value={draft.style ?? ''}
+							onchange={(event) =>
+								void update('style', (event.currentTarget.value || undefined) as Font['style'])}
+							><option value="">Inherit{defaults.style ? ` (${defaults.style})` : ''}</option
+							><option value="normal">Normal</option><option value="italic">Italic</option><option
+								value="oblique">Oblique</option
+							></select
+						></label
+					>
+					<label
+						>Line height<input
+							use:inheritedNumber={'lineHeight'}
+							type="number"
+							min="0.1"
+							step="0.1"
+							value={draft.lineHeight ?? ''}
+							placeholder={String(defaults.lineHeight ?? 'Inherit')}
+							oninput={(event) => numberInput('lineHeight', event)}
+						/></label
+					>
+					<label
+						>Letter spacing (px)<input
+							use:inheritedNumber={'letterSpacing'}
+							type="number"
+							step="any"
+							value={draft.letterSpacing ?? ''}
+							placeholder={String(defaults.letterSpacing ?? 'Inherit')}
+							oninput={(event) => numberInput('letterSpacing', event)}
+						/></label
+					>
+				</div>
+				<p class="hint">
+					Changes apply immediately. Empty fields inherit defaults.
+					{scope === 'album'
+						? 'Album defaults are shared across languages. Language, page, and bubble overrides take precedence.'
+						: 'Bubble overrides take precedence over page settings.'}
+				</p>
+				<button
+					type="button"
+					class="reset"
+					onclick={() => {
+						draft = {};
+						void update('family', undefined);
+					}}>Reset to inherited font</button
 				>
-				<label
-					>Style<select
-						aria-label="Style"
-						value={draft.style ?? ''}
-						onchange={(event) =>
-							void update('style', (event.currentTarget.value || undefined) as Font['style'])}
-						><option value="">Inherit{defaults.style ? ` (${defaults.style})` : ''}</option><option
-							value="normal">Normal</option
-						><option value="italic">Italic</option><option value="oblique">Oblique</option></select
-					></label
-				>
-				<label
-					>Line height<input
-						use:inheritedNumber={'lineHeight'}
-						type="number"
-						min="0.1"
-						step="0.1"
-						value={draft.lineHeight ?? ''}
-						placeholder={String(defaults.lineHeight ?? 'Inherit')}
-						oninput={(event) => numberInput('lineHeight', event)}
-					/></label
-				>
-				<label
-					>Letter spacing (px)<input
-						use:inheritedNumber={'letterSpacing'}
-						type="number"
-						step="any"
-						value={draft.letterSpacing ?? ''}
-						placeholder={String(defaults.letterSpacing ?? 'Inherit')}
-						oninput={(event) => numberInput('letterSpacing', event)}
-					/></label
-				>
-			</div>
-			<p class="hint">
-				Changes apply immediately. Empty fields inherit defaults.
-				{scope === 'album'
-					? 'Album defaults are shared across languages. Language, page, and bubble overrides take precedence.'
-					: 'Bubble overrides take precedence over page settings.'}
-			</p>
-			<button
-				type="button"
-				class="reset"
-				onclick={() => {
-					draft = {};
-					void update('family', undefined);
-				}}>Reset to inherited font</button
-			>
-		</fieldset>
+			</fieldset>
+		{/if}
 		{#if scope !== 'bubble'}
 			<details class="advanced">
 				<summary>Advanced font resources</summary>
@@ -466,6 +477,13 @@
 		margin: 1rem 0 0;
 		padding: 0;
 		min-width: 0;
+	}
+	.text-appearance {
+		border-top: 1px solid #e0e0e0;
+		padding-top: 0.75rem;
+	}
+	.text-appearance legend {
+		font-weight: 600;
 	}
 	fieldset:disabled {
 		opacity: 0.5;

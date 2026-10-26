@@ -79,13 +79,17 @@
 		activeBubble = bubble;
 		onfontselect?.();
 	}
+	export function setAppearance(changes: Record<string, string>) {
+		if (editable && language !== 'org' && activeBubble)
+			activeBubble.style = { ...activeBubble.style, ...changes };
+	}
 	export function geometry(action: 'separate' | 'link' | 'text' | 'mask' | 'box' | 'poly') {
 		if (!editable || !activeBubble) return;
 		if (action === 'separate') {
 			if (separateText(activeBubble)) geometryPart = 'text';
 		} else if (action === 'link') {
 			delete activeBubble.layout;
-			geometryPart = 'mask';
+			geometryPart = 'text';
 		} else if (action === 'text' || action === 'mask') geometryPart = action;
 		else convertMask(activeBubble, action === 'box' ? BblShapeType.box : BblShapeType.poly);
 	}

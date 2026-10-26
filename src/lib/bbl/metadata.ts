@@ -1,3 +1,4 @@
+import { validCornerRadius } from '../maskAppearance';
 import { validLayout, type Bubble } from '../types/Comic';
 
 export type FontScope = 'album' | 'page' | 'bubble';
@@ -163,6 +164,12 @@ export function parseDocument(
 						diagnostics.warn(`${context}.bubbles[${j}]`, 'invalid bubble', 'skip bubble');
 						return [];
 					}
+					if (b.style?.cornerRadius !== undefined && !validCornerRadius(b.style.cornerRadius))
+						diagnostics.warn(
+							`${context}.bubbles[${j}].style.cornerRadius`,
+							'invalid corner radius',
+							'use square corners; preserve metadata'
+						);
 					if (b.layout !== undefined && !validLayout(b.layout))
 						diagnostics.warn(
 							`${context}.bubbles[${j}].layout`,
