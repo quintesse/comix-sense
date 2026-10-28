@@ -407,7 +407,12 @@
 					}
 					if (JSON.stringify(previous) !== baseline)
 						throw new Error('A scan overlay was edited during scanning. Scan again to replace it.');
+					const font = { ...comic.pageFont(ocrLanguage) };
+					if (merge) delete font.whiteSpace;
+					else font.whiteSpace = 'nowrap';
+					// Font edits preserve pending bubble data, so replace the geometry first.
 					await comic.editBubbles(ocrLanguage, result.bubbles);
+					await comic.editBubbles(ocrLanguage, result.bubbles, font);
 					comic.setSourceLanguage(ocrLanguage, result.lang);
 					comic.setBubbles(ocrLanguage, result.bubbles);
 					comic.languages = [...new Set([...comic.languages, ocrLanguage])];
@@ -458,7 +463,10 @@
 		scanMessage = '';
 		try {
 			const bubbles = mergeOcrBubbles(await comic.getBubbles(language));
+			const font = { ...comic.pageFont(language) };
+			delete font.whiteSpace;
 			await comic.editBubbles(language, bubbles);
+			await comic.editBubbles(language, bubbles, font);
 			comic.setBubbles(language, bubbles);
 			if ($selectedComic === comic) {
 				selectLanguage(language);

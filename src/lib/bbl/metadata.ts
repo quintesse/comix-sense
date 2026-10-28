@@ -9,6 +9,7 @@ export type Font = {
 	weight?: number;
 	lineHeight?: number;
 	letterSpacing?: number;
+	whiteSpace?: 'normal' | 'nowrap';
 };
 export type Face = {
 	family: string;
@@ -66,11 +67,13 @@ export function font(value: unknown, context: string, diagnostics: Diagnostics):
 				? Array.isArray(v) && v.length > 0 && v.every((f) => typeof f === 'string' && f.trim())
 				: key === 'style'
 					? ['normal', 'italic', 'oblique'].includes(v as string)
-					: key === 'weight'
-						? finite && Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 1000
-						: key === 'size' || key === 'lineHeight'
-							? finite && (v as number) > 0
-							: key === 'letterSpacing' && finite;
+					: key === 'whiteSpace'
+						? ['normal', 'nowrap'].includes(v as string)
+						: key === 'weight'
+							? finite && Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 1000
+							: key === 'size' || key === 'lineHeight'
+								? finite && (v as number) > 0
+								: key === 'letterSpacing' && finite;
 		if (valid) result[key] = v;
 		else
 			diagnostics.warn(

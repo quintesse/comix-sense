@@ -59,6 +59,11 @@ test('property validation preserves valid fields, explicit resets and family rep
 		font({ family: ['serif'], style: 'normal', weight: 1, size: 3 }, 'test.font', diagnostics)
 	).toEqual({ family: ['serif'], style: 'normal', weight: 1, size: 3 });
 	expect(textStyle({})).toBe('');
+	for (const whiteSpace of ['normal', 'nowrap'] as const) {
+		expect(font({ whiteSpace }, 'test.font', diagnostics)).toEqual({ whiteSpace });
+		expect(textStyle({ whiteSpace })).toBe(`white-space:${whiteSpace}`);
+	}
+	expect(font({ whiteSpace: 'invalid' }, 'test.font', diagnostics)).toEqual({});
 	expect(textStyle({ family: ['SERIF'] })).toBe('font-family:SERIF');
 	expect(textStyle({ size: 30, lineHeight: 1.2, letterSpacing: -1 })).toBe(
 		'font-size:30px;line-height:1.2;letter-spacing:-1px'

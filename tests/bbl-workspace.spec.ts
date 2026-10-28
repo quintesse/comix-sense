@@ -911,9 +911,12 @@ for (const mergeDuringScan of [true, false]) {
 		await page.getByRole('button', { name: 'Use key', exact: true }).click();
 		if (!mergeDuringScan) {
 			await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world', '123?!']);
+			await expect(page.locator('foreignObject div').first()).toHaveCSS('white-space', 'nowrap');
 			await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 			await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 			const raw = await disk(page, 'album/01.OCR.bbl');
+			expect(raw.pages[0].font).toEqual({ whiteSpace: 'nowrap' });
+			expect(raw.pages[0].bubbles.every((bubble: { font?: unknown }) => !bubble.font)).toBe(true);
 			expect(raw.pages[0].bubbles.map((bubble: { text: string }) => bubble.text)).toEqual([
 				'Hello',
 				'world',
@@ -921,6 +924,7 @@ for (const mergeDuringScan of [true, false]) {
 			]);
 			await page.getByRole('button', { name: 'Merge', exact: true }).click();
 			await expect(page.locator('foreignObject')).toHaveText('Hello world');
+			await expect(page.locator('foreignObject div')).toHaveCSS('white-space', 'normal');
 			expect(await disk(page, 'album/01.OCR.bbl')).toEqual(raw);
 			await page.getByRole('button', { name: 'Discard Changes', exact: true }).click();
 			await page
@@ -928,9 +932,11 @@ for (const mergeDuringScan of [true, false]) {
 				.getByRole('button', { name: 'Discard Changes', exact: true })
 				.click();
 			await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world', '123?!']);
+			await expect(page.locator('foreignObject div').first()).toHaveCSS('white-space', 'nowrap');
 			await page.getByRole('button', { name: 'Merge', exact: true }).click();
 		}
 		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		await expect(page.locator('foreignObject div')).toHaveCSS('white-space', 'normal');
 		await expect
 			.poll(async () => Object.keys(await backups(page)).sort())
 			.toEqual(['album/01.OCR.bbl']);
@@ -942,6 +948,7 @@ for (const mergeDuringScan of [true, false]) {
 		await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 		await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
 		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
+		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].font).not.toHaveProperty('whiteSpace');
 		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
 			text: 'Hello world',
 			lang: 'en',

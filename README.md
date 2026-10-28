@@ -94,6 +94,8 @@ Scanning is optional if your comic already has text overlays.
    or symbols). Uncheck it to keep the original OCR word shapes and text.
    OCR preserves Google's exact coordinates, using boxes for axis-aligned rectangles
    and polygons for other shapes. Merging replaces grouped words with a combined outline.
+   Unmerged OCR pages use a page-level text style that prevents wrapping; merging
+   removes that setting so text wraps normally again.
 4. Click **Scan**. Recognized text appears in an editable **OCR** overlay on each scanned page.
 5. Review the text and bubble shapes before translating.
 
