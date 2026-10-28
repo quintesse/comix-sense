@@ -315,7 +315,14 @@
 	let effectiveOcrKey = $derived(externalVisionKey || ocrKey);
 	let ocrSettingsOpen = $state(false);
 	let overwriteOcrOpen = $state(false);
-	let overwriteOcrComic = $state.raw<Comic>();
+	let scanButton = $state<HTMLButtonElement>();
+	let scanOpen = $state(false);
+	let scanScope = $state('page');
+	let pendingScanPages = $state.raw<Comic[]>([]);
+	let overwriteOcrCount = $derived(
+		pendingScanPages.filter((comic) => comic.languages.some((lang) => lang.toLowerCase() === 'ocr'))
+			.length
+	);
 	let scanAfterSettings = false;
 	let scanning = $state(false);
 	let scanMessage = $state('');
@@ -335,77 +342,104 @@
 	});
 
 	function requestScan() {
+		if (!$selectedComic || scanning || cleaning || rendering || !editable || loadingPages) return;
+		scanOpen = true;
+	}
+
+	function submitScan() {
+		if (!$selectedComic) return;
+		pendingScanPages = scanScope === 'album' ? [...albumPages] : [$selectedComic];
+		scanOpen = false;
+		scanButton?.focus();
 		if (!effectiveOcrKey) {
 			scanAfterSettings = true;
 			settingsTab = 'ocr';
 			ocrSettingsOpen = true;
-		} else void scanPage();
+		} else void scanPages();
 	}
 
 	function confirmOcrOverwrite() {
-		const comic = overwriteOcrComic;
 		overwriteOcrOpen = false;
-		overwriteOcrComic = undefined;
-		if (comic && comic === $selectedComic) void scanPage(comic);
+		void scanPages(true);
 	}
 
-	async function scanPage(confirmedComic?: Comic) {
-		const comic = $selectedComic;
-		if (!comic || scanning || cleaning || rendering || !editable || loadingPages) return;
+	async function scanPages(confirmed = false) {
+		if (!pendingScanPages.length || scanning || cleaning || rendering || !editable || loadingPages)
+			return;
+		const pages = [...pendingScanPages];
 		const key = effectiveOcrKey;
-		const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
-		if (comic.languages.includes(ocrLanguage) && confirmedComic !== comic) {
-			overwriteOcrComic = comic;
+		if (overwriteOcrCount && !confirmed) {
 			overwriteOcrOpen = true;
 			return;
 		}
 		scanning = true;
 		scanError = '';
-		scanMessage = `Scanning ${comic.displayName}…`;
+		scanMessage = 'Preparing scan…';
 		const controller = new AbortController();
 		scanController = controller;
-		const release = comic.protectImage();
-		let url: string | undefined;
+		let completed = 0;
 		try {
-			const previous = comic.languages.includes(ocrLanguage)
-				? await comic.getBubbles(ocrLanguage)
-				: [];
-			const baseline = JSON.stringify(previous);
-			url = await comic.getImageUrl();
-			const response = await fetch(url, { signal: controller.signal });
-			if (!response.ok) throw new Error('Could not read the page image.');
-			const result = await scanImage(await response.blob(), key, controller.signal);
-			if (controller.signal.aborted || !folders.some((folder) => folder.comics.includes(comic))) {
-				scanMessage = '';
-				return;
+			for (const comic of pages) {
+				controller.signal.throwIfAborted();
+				if (!folders.some((folder) => folder.comics.includes(comic)))
+					throw new Error('The page directory was disconnected during scanning.');
+				scanMessage = `Scanning ${comic.displayName} (${completed + 1}/${pages.length})…`;
+				const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
+				const release = comic.protectImage();
+				let url: string | undefined;
+				try {
+					const previous = comic.languages.includes(ocrLanguage)
+						? await comic.getBubbles(ocrLanguage)
+						: [];
+					const baseline = JSON.stringify(previous);
+					url = await comic.getImageUrl();
+					const response = await fetch(url, { signal: controller.signal });
+					if (!response.ok) throw new Error('Could not read the page image.');
+					const result = await scanImage(await response.blob(), key, controller.signal);
+					if (
+						controller.signal.aborted ||
+						!folders.some((folder) => folder.comics.includes(comic))
+					) {
+						throw new Error('The scan was cancelled or the page directory was disconnected.');
+					}
+					if (JSON.stringify(previous) !== baseline)
+						throw new Error('A scan overlay was edited during scanning. Scan again to replace it.');
+					await comic.editBubbles(ocrLanguage, result.bubbles);
+					comic.setSourceLanguage(ocrLanguage, result.lang);
+					comic.setBubbles(ocrLanguage, result.bubbles);
+					comic.languages = [...new Set([...comic.languages, ocrLanguage])];
+					comics.update((values) => [...values]);
+					if ($selectedComic === comic) {
+						selectLanguage(ocrLanguage);
+						showBubbles = true;
+						// Refresh OCR if it is already displayed.
+						displayedPages = displayedPages.map((page) =>
+							page.comic === comic && page.language === ocrLanguage
+								? { ...page, bubbles: result.bubbles }
+								: page
+						);
+					}
+					scanMessage = result.bubbles.some((bubble) => bubble.text.trim())
+						? `${comic.displayName}: ${result.bubbles.length} speech bubbles recognized. Browser backup scheduled.`
+						: `${comic.displayName}: No text recognized.`;
+					completed++;
+				} finally {
+					if (url) releaseImageUrl(url);
+					release();
+				}
 			}
-			if (JSON.stringify(previous) !== baseline)
-				throw new Error('A scan overlay was edited during scanning. Scan again to replace it.');
-			await comic.editBubbles(ocrLanguage, result.bubbles);
-			comic.setSourceLanguage(ocrLanguage, result.lang);
-			comic.setBubbles(ocrLanguage, result.bubbles);
-			comic.languages = [...new Set([...comic.languages, ocrLanguage])];
-			comics.update((values) => [...values]);
-			if ($selectedComic === comic) {
-				selectLanguage(ocrLanguage);
-				showBubbles = true;
-				// Refresh OCR if it is already displayed.
-				displayedPages = displayedPages.map((page) =>
-					page.comic === comic && page.language === ocrLanguage
-						? { ...page, bubbles: result.bubbles }
-						: page
-				);
-			}
-			scanMessage = result.bubbles.some((bubble) => bubble.text.trim())
-				? `${comic.displayName}: ${result.bubbles.length} speech bubbles recognized. Browser backup scheduled.`
-				: `${comic.displayName}: No text recognized.`;
+			if (pages.length > 1)
+				scanMessage = `${completed} pages scanned. Use Save Changes to write the OCR overlays to disk.`;
 		} catch (error) {
 			if (!controller.signal.aborted)
-				scanError = 'Scan failed: ' + (error instanceof Error ? error.message : String(error));
+				scanError =
+					'Scan failed: ' +
+					(error instanceof Error ? error.message : String(error)) +
+					(completed
+						? ` ${completed} completed page(s) kept. Use Save Changes to write them to disk.`
+						: '');
 			scanMessage = '';
 		} finally {
-			if (url) releaseImageUrl(url);
-			release();
 			scanning = false;
 			scanController = undefined;
 		}
@@ -916,6 +950,7 @@
 		if (
 			disconnectOpen ||
 			ocrSettingsOpen ||
+			scanOpen ||
 			cleanupOpen ||
 			translationOpen ||
 			overwriteTranslationOpen ||
@@ -966,6 +1001,7 @@
 			) &&
 			!disconnectOpen &&
 			!ocrSettingsOpen &&
+			!scanOpen &&
 			!cleanupOpen &&
 			!translationOpen &&
 			!overwriteTranslationOpen &&
@@ -990,6 +1026,7 @@
 		if (
 			disconnectOpen ||
 			ocrSettingsOpen ||
+			scanOpen ||
 			cleanupOpen ||
 			translationOpen ||
 			overwriteTranslationOpen ||
@@ -1426,6 +1463,7 @@
 						<button
 							type="button"
 							class="toolbar-button scan-button"
+							bind:this={scanButton}
 							aria-label="Scan Full Page"
 							title="Scan Full Page"
 							disabled={!$selectedComic || loadingPages || scanning || cleaning || rendering}
@@ -1611,10 +1649,31 @@
 		onsaved={() => {
 			if (scanAfterSettings && settingsTab === 'ocr') {
 				scanAfterSettings = false;
-				void scanPage();
+				void scanPages();
 			}
 		}}
 	/>
+
+	<Modal
+		bind:open={scanOpen}
+		modalHeading="Scan comic text"
+		primaryButtonText="Scan"
+		secondaryButtonText="Cancel"
+		size="sm"
+		shouldSubmitOnEnter={false}
+		on:submit={submitScan}
+		on:click:button--secondary={() => (scanOpen = false)}
+	>
+		<p>
+			Send original page images to Google Cloud Vision to create editable OCR overlays. Use Save
+			Changes to write them to disk.
+		</p>
+		<label for="scan-scope">Scope</label>
+		<select id="scan-scope" bind:value={scanScope}>
+			<option value="page">Current page</option>
+			<option value="album">Entire album ({albumPages.length} pages)</option>
+		</select>
+	</Modal>
 
 	<Modal
 		bind:open={cleanupOpen}
@@ -1709,7 +1768,7 @@
 		on:click:button--secondary={() => (overwriteOcrOpen = false)}
 	>
 		<p>
-			“{overwriteOcrComic?.displayName}” already has an OCR overlay. Scanning again will replace its
+			{overwriteOcrCount} selected page(s) already have an OCR overlay. Scanning again will replace their
 			OCR text and shapes.
 		</p>
 	</Modal>

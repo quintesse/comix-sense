@@ -878,6 +878,10 @@ test('scan restores and saves a single merged OCR document', async ({ page }) =>
 		})
 	);
 	await page.getByRole('button', { name: 'Scan Full Page' }).click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
@@ -1476,7 +1480,10 @@ test('AI album cleanup participates in browser backup, save and discard for ever
 	});
 	async function cleanup() {
 		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
-		await page.getByLabel('Scope', { exact: true }).selectOption('album');
+		await page
+			.getByRole('dialog', { name: 'Clean up bubble text', exact: true })
+			.getByLabel('Scope', { exact: true })
+			.selectOption('album');
 		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
 		await expect(
 			page.getByRole('status').filter({ hasText: '2 bubble texts updated' })
