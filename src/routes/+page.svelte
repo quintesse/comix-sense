@@ -57,7 +57,7 @@
 		normalizeAiSettings,
 		type AiSettings
 	} from '#lib/textCleanup.js';
-	import { scanImage } from '#lib/ocr.js';
+	import { scanImage, mergeOcrBubbles } from '#lib/ocr.js';
 	import { isRenderLanguage, prepareRender, requestRender } from '#lib/render.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
@@ -318,6 +318,7 @@
 	let scanButton = $state<HTMLButtonElement>();
 	let scanOpen = $state(false);
 	let scanScope = $state('page');
+	let scanMergeBubbles = $state(true);
 	let pendingScanPages = $state.raw<Comic[]>([]);
 	let overwriteOcrCount = $derived(
 		pendingScanPages.filter((comic) => comic.languages.some((lang) => lang.toLowerCase() === 'ocr'))
@@ -368,6 +369,7 @@
 			return;
 		const pages = [...pendingScanPages];
 		const key = effectiveOcrKey;
+		const merge = scanMergeBubbles;
 		if (overwriteOcrCount && !confirmed) {
 			overwriteOcrOpen = true;
 			return;
@@ -396,6 +398,7 @@
 					const response = await fetch(url, { signal: controller.signal });
 					if (!response.ok) throw new Error('Could not read the page image.');
 					const result = await scanImage(await response.blob(), key, controller.signal);
+					if (merge) result.bubbles = mergeOcrBubbles(result.bubbles);
 					if (
 						controller.signal.aborted ||
 						!folders.some((folder) => folder.comics.includes(comic))
@@ -442,6 +445,33 @@
 		} finally {
 			scanning = false;
 			scanController = undefined;
+		}
+	}
+
+	async function mergeOcr() {
+		const comic = $selectedComic;
+		const language = comic?.languages.find((lang) => lang.toLowerCase() === 'ocr');
+		if (!comic || !language || !editable || loadingPages || scanning || cleaning || rendering)
+			return;
+		changesBusy = true;
+		scanError = '';
+		scanMessage = '';
+		try {
+			const bubbles = mergeOcrBubbles(await comic.getBubbles(language));
+			await comic.editBubbles(language, bubbles);
+			comic.setBubbles(language, bubbles);
+			if ($selectedComic === comic) {
+				selectLanguage(language);
+				showBubbles = true;
+				displayedPages = displayedPages.map((page) =>
+					page.comic === comic && page.language === language ? { ...page, bubbles } : page
+				);
+			}
+			scanMessage = `${comic.displayName}: OCR bubbles merged. Use Save Changes to write them to disk.`;
+		} catch (error) {
+			scanError = 'Merge failed: ' + (error instanceof Error ? error.message : String(error));
+		} finally {
+			changesBusy = false;
 		}
 	}
 
@@ -1516,6 +1546,18 @@
 						<button
 							type="button"
 							class="toolbar-button"
+							aria-label="Merge"
+							title="Merge OCR bubbles"
+							disabled={!$selectedComic?.languages.some((lang) => lang.toLowerCase() === 'ocr') ||
+								loadingPages ||
+								scanning ||
+								cleaning ||
+								rendering}
+							onclick={() => void mergeOcr()}><ToolbarIcon name="merge" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button"
 							aria-label="Cleanup Text"
 							title="Cleanup Text"
 							disabled={!$selectedComic ||
@@ -1747,6 +1789,12 @@
 			<option value="page">Current page</option>
 			<option value="album">Entire album ({albumPages.length} pages)</option>
 		</select>
+		<p>
+			<label>
+				<input type="checkbox" bind:checked={scanMergeBubbles} /> Automatically merge bubbles
+			</label>
+		</p>
+		<p>Uncheck to keep the original OCR word boxes, including numbers and punctuation.</p>
 	</Modal>
 
 	<Modal

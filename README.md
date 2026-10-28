@@ -88,11 +88,17 @@ Scanning is optional if your comic already has text overlays.
 1. Select a page and switch to **Edit Mode**.
 2. Open **OCR Settings** and enter a Google Cloud Vision API key with Cloud Vision
    enabled, or enter the key when prompted on your first scan.
-3. Click **Scan Full Page**, choose **Current page** or **Entire album**, then click **Scan**.
-   Recognized text appears in an editable **OCR** overlay on each scanned page.
-   After merging recognized words into bubbles, Scan removes bubbles with no letters
-   (such as standalone numbers, punctuation, or symbols).
-4. Review the text and bubble shapes before translating.
+3. Click **Scan Full Page** and choose **Current page** or **Entire album**.
+   **Automatically merge bubbles** is checked by default: it groups recognized words into bubbles,
+   then removes bubbles with no letters (such as standalone numbers, punctuation,
+   or symbols). Uncheck it to keep the original OCR word boxes and text.
+4. Click **Scan**. Recognized text appears in an editable **OCR** overlay on each scanned page.
+5. Review the text and bubble shapes before translating.
+
+To merge later, click **Merge** in Edit Mode. It merges the current page's **OCR**
+overlay and removes bubbles with no letters, updating that overlay in place.
+Merging runs locally and creates no new translation. Use **Save Changes** to write
+the result to disk, or **Discard Changes** to revert unsaved edits.
 
 Scanning sends each original page image directly to Google and may incur provider
 charges. Rescanning asks for confirmation before replacing existing OCR overlays.

@@ -844,71 +844,112 @@ test('write denial retains backups and edits, and same-named roots stay independ
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 });
 
-test('scan restores and saves a single merged OCR document', async ({ page }) => {
-	await setup(page, { empty: true });
-	await page.route('https://vision.googleapis.com/**', (route) =>
-		route.fulfill({
-			json: {
-				responses: [
-					{
-						textAnnotations: [
-							{ description: 'Hello world', locale: 'en' },
-							{
-								description: 'Hello',
-								boundingPoly: {
-									vertices: [
-										{ x: 80, y: 80 },
-										{ x: 170, y: 120 }
-									]
+for (const mergeDuringScan of [true, false]) {
+	test(`scan restores and saves a single OCR document with merge ${mergeDuringScan ? 'during scan' : 'after scan'}`, async ({
+		page
+	}) => {
+		await setup(page, { empty: true });
+		await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
+		await page.route('https://vision.googleapis.com/**', (route) =>
+			route.fulfill({
+				json: {
+					responses: [
+						{
+							textAnnotations: [
+								{ description: 'Hello world', locale: 'en' },
+								{
+									description: 'Hello',
+									boundingPoly: {
+										vertices: [
+											{ x: 80, y: 80 },
+											{ x: 170, y: 120 }
+										]
+									}
+								},
+								{
+									description: 'world',
+									boundingPoly: {
+										vertices: [
+											{ x: 180, y: 80 },
+											{ x: 280, y: 120 }
+										]
+									}
+								},
+								{
+									description: '123?!',
+									boundingPoly: {
+										vertices: [
+											{ x: 500, y: 500 },
+											{ x: 600, y: 540 }
+										]
+									}
 								}
-							},
-							{
-								description: 'world',
-								boundingPoly: {
-									vertices: [
-										{ x: 180, y: 80 },
-										{ x: 280, y: 120 }
-									]
-								}
-							}
-						]
-					}
+							]
+						}
+					]
+				}
+			})
+		);
+		await page.getByRole('button', { name: 'Scan Full Page' }).click();
+		const mergeOption = page.getByRole('checkbox', {
+			name: 'Automatically merge bubbles',
+			exact: true
+		});
+		await expect(mergeOption).toBeChecked();
+		if (!mergeDuringScan) await mergeOption.uncheck();
+		await page
+			.getByRole('dialog', { name: 'Scan comic text' })
+			.getByRole('button', { name: 'Scan', exact: true })
+			.click();
+		await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+		await page.getByRole('button', { name: 'Use key', exact: true }).click();
+		if (!mergeDuringScan) {
+			await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world', '123?!']);
+			await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+			await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+			const raw = await disk(page, 'album/01.OCR.bbl');
+			expect(raw.pages[0].bubbles.map((bubble: { text: string }) => bubble.text)).toEqual([
+				'Hello',
+				'world',
+				'123?!'
+			]);
+			await page.getByRole('button', { name: 'Merge', exact: true }).click();
+			await expect(page.locator('foreignObject')).toHaveText('Hello world');
+			expect(await disk(page, 'album/01.OCR.bbl')).toEqual(raw);
+			await page.getByRole('button', { name: 'Discard Changes', exact: true }).click();
+			await page
+				.getByRole('dialog', { name: 'Discard Changes?' })
+				.getByRole('button', { name: 'Discard Changes', exact: true })
+				.click();
+			await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world', '123?!']);
+			await page.getByRole('button', { name: 'Merge', exact: true }).click();
+		}
+		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		await expect
+			.poll(async () => Object.keys(await backups(page)).sort())
+			.toEqual(['album/01.OCR.bbl']);
+		if (mergeDuringScan) expect(await disk(page, 'album/01.OCR.bbl')).toBeNull();
+		await page.reload();
+		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+		await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
+		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
+		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
+			text: 'Hello world',
+			lang: 'en',
+			shape: {
+				type: 'box',
+				vs: [
+					{ x: 80, y: 80 },
+					{ x: 280, y: 120 }
 				]
 			}
-		})
-	);
-	await page.getByRole('button', { name: 'Scan Full Page' }).click();
-	await page
-		.getByRole('dialog', { name: 'Scan comic text' })
-		.getByRole('button', { name: 'Scan', exact: true })
-		.click();
-	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
-	await page.getByRole('button', { name: 'Use key', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await expect
-		.poll(async () => Object.keys(await backups(page)).sort())
-		.toEqual(['album/01.OCR.bbl']);
-	expect(await disk(page, 'album/01.OCR.bbl')).toBeNull();
-	await page.reload();
-	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
-	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
-	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
-	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
-		text: 'Hello world',
-		lang: 'en',
-		shape: {
-			type: 'box',
-			vs: [
-				{ x: 80, y: 80 },
-				{ x: 280, y: 120 }
-			]
-		}
+		});
+		expect(await backups(page)).toEqual({});
 	});
-	expect(await backups(page)).toEqual({});
-});
+}
 
 test('embedded archive sources save the same document in the companion directory', async ({
 	page
