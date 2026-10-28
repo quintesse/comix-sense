@@ -86,6 +86,8 @@ Scanning is optional if your comic already has text overlays.
    enabled, or enter the key when prompted on your first scan.
 3. Click **Scan Full Page**, choose **Current page** or **Entire album**, then click **Scan**.
    Recognized text appears in an editable **OCR** overlay on each scanned page.
+   After merging recognized words into bubbles, Scan removes bubbles with no letters
+   (such as standalone numbers, punctuation, or symbols).
 4. Review the text and bubble shapes before translating.
 
 Scanning sends each original page image directly to Google and may incur provider

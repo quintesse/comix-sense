@@ -61,5 +61,8 @@ export async function scanImage(image: Blob, apiKey: string, signal?: AbortSigna
 	if (!Array.isArray(data.responses) || data.responses.length !== 1)
 		throw new Error('Google Vision returned an invalid response.');
 	const result = visionToBubbles(data.responses[0]);
-	return { lang: result.lang, bubbles: mergeBubbles(result.bubbles) };
+	return {
+		lang: result.lang,
+		bubbles: mergeBubbles(result.bubbles).filter((bubble) => /\p{L}/u.test(bubble.text))
+	};
 }
