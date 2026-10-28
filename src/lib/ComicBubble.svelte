@@ -19,6 +19,7 @@
 	interface Props {
 		bubble: Bubble;
 		editable?: boolean;
+		showText?: boolean;
 		renderMode?: string;
 		bubbleIndex?: number;
 		font?: Font;
@@ -31,6 +32,7 @@
 	let {
 		bubble = $bindable(),
 		editable = false,
+		showText = true,
 		renderMode = 'normal',
 		bubbleIndex,
 		font = {},
@@ -129,7 +131,7 @@
 	{/if}
 {/if}
 
-{#if renderMode === 'normal' || renderMode === 'content' || renderMode === 'text'}
+{#if showText && (renderMode === 'normal' || renderMode === 'content' || renderMode === 'text')}
 	<foreignObject data-bubble-index={bubbleIndex} x={tb.x1} y={tb.y1} width={tb.w} height={tb.h}>
 		{#if editable}
 			<div
