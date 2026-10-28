@@ -895,7 +895,6 @@ test('scan restores and saves a single merged OCR document', async ({ page }) =>
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
-	expect(await disk(page, 'album/01.MRG.bbl')).toBeNull();
 	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
 	expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
 		text: 'Hello world',
@@ -2149,8 +2148,10 @@ for (const action of ['Save All', 'Discard All']) {
 		const other = page.getByRole('treeitem', { name: /^other\/?$/, exact: true });
 		await other.press('ArrowRight');
 		await other.getByRole('treeitem').first().click();
+		await expect(page.getByRole('textbox')).toHaveText('Other album original');
 		await page.getByRole('textbox').fill('Keep other album edit');
 		await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+		await expect(page.getByRole('textbox')).toHaveText('Original');
 		await page.getByRole('textbox').fill('English album edit');
 		await selectLanguage(page, 'EN', 'NL');
 		await page.getByRole('textbox').fill('Dutch album edit');

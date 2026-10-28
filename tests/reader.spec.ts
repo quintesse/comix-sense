@@ -43,7 +43,7 @@ async function mockDirectory(
 		browserLanguages?: string[];
 		pageCount?: number;
 		mixedSizes?: boolean;
-		overlays?: 'none' | 'ocr' | 'mrg';
+		overlays?: 'none' | 'ocr';
 		overlayLanguage?: string;
 		delayedImage?: string;
 		renderedImages?: boolean;
@@ -140,7 +140,7 @@ async function mockDirectory(
 
 			if (overlays) {
 				for (const name of Object.keys(contents)) if (name.endsWith('.bbl')) delete contents[name];
-				if (overlays === 'ocr' || overlays === 'mrg')
+				if (overlays === 'ocr')
 					contents[`album/01.${overlays.toUpperCase()}.bbl`] = JSON.stringify({
 						lang: overlayLanguage,
 						pages: [{ bubbles: [bubble(`Old ${overlays.toUpperCase()}`)] }]
@@ -335,14 +335,15 @@ test('reader uses rendered language images and falls back per page; editing uses
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	// A language with neither a rendered image nor overlay keeps the original.
 
-	await expect
-		.poll(async () =>
-			page.evaluate(
-				async (url) => await (await fetch(url!)).text(),
-				await page.locator('svg image').first().getAttribute('href')
-			)
-		)
-		.toContain('Original');
+	// Navigation may revoke the previous page's URL between reading href and
+	// fetching it. Retry the complete assertion against the current image.
+	await expect(async () => {
+		const contents = await page.evaluate(
+			async (url) => await (await fetch(url!)).text(),
+			await page.locator('svg image').first().getAttribute('href')
+		);
+		expect(contents).toContain('Original');
+	}).toPass();
 	await selectMenu(page, 'FR', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	await expect(page.locator('foreignObject [contenteditable]')).toHaveCount(0);
@@ -1964,9 +1965,6 @@ test('scan creates a session OCR overlay and preserves existing translations', a
 	expect(
 		await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))
 	).toBeNull();
-	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
-	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
-	await page.keyboard.press('Escape');
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	await selectMenu(page, 'OCR', 'EN');
 	await expect(page.locator('foreignObject')).toHaveText('Hello');
@@ -2109,6 +2107,8 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 		.getByRole('button', { name: 'Scan', exact: true })
 		.click();
 	await expect(scan).toBeDisabled();
+	// Let the scan dialog finish closing and restoring focus before navigating.
+	await expect(page.getByRole('dialog', { name: 'Scan comic text' })).not.toBeVisible();
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
 	finish();
@@ -2145,11 +2145,9 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await expect(scan).toBeFocused();
 	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
-	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
-	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
 });
 
-test('a scan with no text creates OCR without creating or selecting MRG', async ({ page }) => {
+test('a scan with no text creates and selects an empty OCR overlay', async ({ page }) => {
 	await mockDirectory(page, { overlays: 'none' });
 	await openComic(page);
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
@@ -2169,7 +2167,6 @@ test('a scan with no text creates OCR without creating or selecting MRG', async 
 	await expect(page.locator('foreignObject')).toHaveCount(0);
 	await expect(scan).toBeFocused();
 	await page.getByRole('menuitem', { name: 'OCR', exact: true }).click();
-	await expect(page.getByRole('menuitemradio', { name: 'MRG', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('menuitemradio', { name: 'OCR', exact: true })).toBeVisible();
 });
 
@@ -2786,27 +2783,4 @@ test('AI model discovery ignores late responses from an old provider', async ({ 
 	const choices = page.getByRole('listbox', { name: 'Cleanup model', exact: true });
 	await expect(choices.getByRole('option', { name: 'current-model', exact: true })).toBeVisible();
 	await expect(choices.getByRole('option', { name: 'old-model', exact: true })).toHaveCount(0);
-});
-
-test('MRG is an ordinary overlay and scanning only creates OCR', async ({ page }) => {
-	await mockDirectory(page, { overlays: 'mrg', browserLanguages: ['MRG'] });
-	await openComic(page);
-	await expect(page.getByRole('menuitem', { name: 'MRG', exact: true })).toBeVisible();
-	await expect(page.locator('[data-language-icon="object-group"]')).toHaveCount(0);
-	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
-	await expect(page.locator('foreignObject')).toHaveText('Old MRG');
-	await page.route('https://vision.googleapis.com/**', (route) =>
-		route.fulfill({ json: visionResponse })
-	);
-	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
-	await page
-		.getByRole('dialog', { name: 'Scan comic text' })
-		.getByRole('button', { name: 'Scan', exact: true })
-		.click();
-	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
-	await page.getByRole('button', { name: 'Use key', exact: true }).click();
-	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
-	await expect(page.locator('foreignObject')).toHaveText('Hello world');
-	await selectMenu(page, 'OCR', 'MRG');
-	await expect(page.locator('foreignObject')).toHaveText('Old MRG');
 });

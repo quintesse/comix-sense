@@ -72,9 +72,9 @@ test('render uses OCR text and language, matching overlay names case-insensitive
 	});
 });
 
-test('render requires matching OCR bubbles and ignores legacy MRG overlays', async () => {
+test('render requires matching OCR bubbles even when other translations exist', async () => {
 	const reads: (string | undefined)[] = [];
-	const comic = new Comic('01.jpg', ['en', 'OCR', 'MRG'], {
+	const comic = new Comic('01.jpg', ['en', 'OCR', 'nl'], {
 		list: async () => [],
 		getImageUrl: async () => '',
 		getBubbles: async (_comic, language) => {
@@ -90,10 +90,10 @@ test('render requires matching OCR bubbles and ignores legacy MRG overlays', asy
 		items: [{ source: 'Hallo wereld', target: 'Hello world' }]
 	});
 	expect(reads).toEqual(['OCR', 'en']);
-	expect(isRenderLanguage('MRG')).toBe(true);
+	expect(isRenderLanguage('nl')).toBe(true);
 	comic.setBubbles('OCR', [bubble('Hallo'), bubble('wereld')]);
 	await expect(prepareRender(comic, 'en')).rejects.toThrow('counts must match');
-	comic.languages = ['en', 'MRG'];
+	comic.languages = ['en', 'nl'];
 	await expect(prepareRender(comic, 'en')).rejects.toThrow('An OCR overlay');
 });
 
@@ -202,11 +202,10 @@ async function setupRender(page: Page, format: 'png' | 'jpg' | 'webp' = 'png') {
 			'01.en.bbl',
 			JSON.stringify({ lang: 'en', pages: [{ bubbles: bubbles('Hello world!') }] })
 		);
-		for (const language of ['OCR', 'MRG'])
-			await write(
-				`01.${language}.bbl`,
-				JSON.stringify({ lang: 'nl', pages: [{ bubbles: bubbles('Hallo\nwereld') }] })
-			);
+		await write(
+			'01.OCR.bbl',
+			JSON.stringify({ lang: 'nl', pages: [{ bubbles: bubbles('Hallo\nwereld') }] })
+		);
 	});
 	await page.getByRole('button', { name: 'Add folder', exact: true }).click();
 	await page.getByRole('treeitem', { name: '01', exact: true }).click();
