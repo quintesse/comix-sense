@@ -862,7 +862,9 @@ for (const mergeDuringScan of [true, false]) {
 									boundingPoly: {
 										vertices: [
 											{ x: 80, y: 80 },
-											{ x: 170, y: 120 }
+											{ x: 170, y: 80 },
+											{ x: 170, y: 120 },
+											{ x: 80, y: 120 }
 										]
 									}
 								},
@@ -871,7 +873,9 @@ for (const mergeDuringScan of [true, false]) {
 									boundingPoly: {
 										vertices: [
 											{ x: 180, y: 80 },
-											{ x: 280, y: 120 }
+											{ x: 280, y: 80 },
+											{ x: 280, y: 120 },
+											{ x: 180, y: 120 }
 										]
 									}
 								},
@@ -880,7 +884,9 @@ for (const mergeDuringScan of [true, false]) {
 									boundingPoly: {
 										vertices: [
 											{ x: 500, y: 500 },
-											{ x: 600, y: 540 }
+											{ x: 600, y: 500 },
+											{ x: 600, y: 540 },
+											{ x: 500, y: 540 }
 										]
 									}
 								}

@@ -91,7 +91,9 @@ Scanning is optional if your comic already has text overlays.
 3. Click **Scan Full Page** and choose **Current page** or **Entire album**.
    **Automatically merge bubbles** is checked by default: it groups recognized words into bubbles,
    then removes bubbles with no letters (such as standalone numbers, punctuation,
-   or symbols). Uncheck it to keep the original OCR word boxes and text.
+   or symbols). Uncheck it to keep the original OCR word shapes and text.
+   OCR preserves Google's exact coordinates, using boxes for axis-aligned rectangles
+   and polygons for other shapes. Merging replaces grouped words with a combined outline.
 4. Click **Scan**. Recognized text appears in an editable **OCR** overlay on each scanned page.
 5. Review the text and bubble shapes before translating.
 
