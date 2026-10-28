@@ -2126,3 +2126,108 @@ test('unsupported screen sampling keeps colour editing available', async ({ page
 	).toBeDisabled();
 	await expect(panel.getByLabel('Outline colour picker', { exact: true })).toBeEnabled();
 });
+
+for (const action of ['Save All', 'Discard All']) {
+	test(`${action} covers all album languages and leaves another album pending`, async ({
+		page
+	}) => {
+		await setup(page);
+		await page.evaluate(async () => {
+			const root = await (
+				await (await navigator.storage.getDirectory()).getDirectoryHandle('first')
+			).getDirectoryHandle('comics');
+			const album = await root.getDirectoryHandle('album');
+			const other = await root.getDirectoryHandle('other', { create: true });
+			const writer = await (await other.getFileHandle('03.png', { create: true })).createWritable();
+			await writer.write(await (await album.getFileHandle('01.png')).getFile());
+			await writer.close();
+		});
+		await writeDocuments(page, {
+			'album/01.nl.bbl': { pages: [original.pages[0]] },
+			'other/03.en.bbl': { pages: [{ bubbles: [bubble('Other album original')] }] }
+		});
+		const other = page.getByRole('treeitem', { name: /^other\/?$/, exact: true });
+		await other.press('ArrowRight');
+		await other.getByRole('treeitem').first().click();
+		await page.getByRole('textbox').fill('Keep other album edit');
+		await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+		await page.getByRole('textbox').fill('English album edit');
+		await selectLanguage(page, 'EN', 'NL');
+		await page.getByRole('textbox').fill('Dutch album edit');
+		await selectLanguage(page, 'NL', 'ORG');
+		const button = page
+			.getByRole('group', { name: 'Document changes' })
+			.getByRole('button', { name: action, exact: true });
+		await expect(button).toBeEnabled();
+		await button.click();
+		if (action === 'Discard All') {
+			const dialog = page.getByRole('dialog', { name: 'Discard All?' });
+			await expect(dialog).toContainText('every edited language in this album');
+			await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+			await expect(button).toBeEnabled();
+			await button.click();
+			await dialog.getByRole('button', { name: 'Discard All', exact: true }).click();
+		}
+		await expect(button).toBeDisabled();
+		expect((await disk(page)).pages[0].bubbles[0].text).toBe(
+			action === 'Save All' ? 'English album edit' : 'Original'
+		);
+		expect((await disk(page, 'album/01.nl.bbl')).pages[0].bubbles[0].text).toBe(
+			action === 'Save All' ? 'Dutch album edit' : 'Original'
+		);
+		await expect.poll(async () => Object.keys(await backups(page))).toEqual(['other/03.en.bbl']);
+		expect((await disk(page, 'other/03.en.bbl')).pages[0].bubbles[0].text).toBe(
+			'Other album original'
+		);
+		await other.getByRole('treeitem').first().click();
+		if (await page.getByRole('menuitem', { name: 'ORG', exact: true }).isVisible())
+			await selectLanguage(page, 'ORG', 'EN');
+		await expect(page.locator('foreignObject')).toHaveText('Keep other album edit');
+	});
+}
+
+for (const archive of [false, true]) {
+	test(`album bulk actions include font defaults (${archive ? 'archive' : 'directory'})`, async ({
+		page
+	}) => {
+		await setup(page, { archive });
+		await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+		const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+		await panel
+			.getByRole('group', { name: 'Apply to', exact: true })
+			.getByRole('button', { name: 'Current album', exact: true })
+			.click();
+		await panel.getByLabel('Letter spacing (px)', { exact: true }).fill('2');
+		await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+		const save = page.getByRole('button', { name: 'Save All', exact: true });
+		await save.click();
+		await expect(save).toBeDisabled();
+		const path = archive ? 'book.cbz.bbl/album.bbl' : 'album/album.bbl';
+		const saved = await disk(page, path);
+		expect(saved).not.toBeNull();
+		await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+		await panel
+			.getByRole('group', { name: 'Apply to', exact: true })
+			.getByRole('button', { name: 'Current album', exact: true })
+			.click();
+		await panel.getByLabel('Letter spacing (px)', { exact: true }).fill('4');
+		await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+		await page
+			.getByRole('group', { name: 'Document changes' })
+			.getByRole('button', { name: 'Discard All', exact: true })
+			.click();
+		await page
+			.getByRole('dialog', { name: 'Discard All?' })
+			.getByRole('button', { name: 'Discard All', exact: true })
+			.click();
+		await expect(save).toBeDisabled();
+		expect(await disk(page, path)).toEqual(saved);
+		expect(await backups(page)).toEqual({});
+		await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+		await panel
+			.getByRole('group', { name: 'Apply to', exact: true })
+			.getByRole('button', { name: 'Current album', exact: true })
+			.click();
+		await expect(panel.getByLabel('Letter spacing (px)', { exact: true })).toHaveValue('2');
+	});
+}

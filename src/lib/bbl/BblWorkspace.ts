@@ -324,6 +324,17 @@ export class BblWorkspace {
 		return this.writes;
 	}
 
+	/** Pending documents edited in this album, across all languages. */
+	albumDocuments(albumPath: string, pagePaths: readonly string[]): string[] {
+		const pages = new Set(pagePaths);
+		return [...this.drafts]
+			.filter(
+				([, draft]) =>
+					draft.albums.has(albumPath) || [...draft.pages].some((page) => pages.has(page))
+			)
+			.map(([path]) => path);
+	}
+
 	async save(path: string) {
 		if (!this.drafts.has(path)) return;
 
