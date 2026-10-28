@@ -20,6 +20,7 @@
 		image,
 		loadedBubbles,
 		showBubbles = true,
+		showBubbleText = true,
 		editable,
 		selectedShape,
 		onfontselect
@@ -29,6 +30,7 @@
 		image: PageImage;
 		loadedBubbles: Bubble[];
 		showBubbles?: boolean;
+		showBubbleText?: boolean;
 		editable: boolean;
 		selectedShape: BblShapeType;
 		onfontselect?: () => void;
@@ -278,6 +280,7 @@
 							geometryPart = part;
 						}}
 						{renderMode}
+						showText={showBubbleText}
 						{editable}
 					/>
 				{/each}

@@ -64,10 +64,14 @@ or forward. Navigation stops at the album's ends.
 | `L`                                     | Locate the current page in the sidebar |
 | `R` / `E`                               | Reading Mode / Edit Mode               |
 | `B`                                     | Show or hide translation bubbles       |
+| `X`                                     | Show or hide text inside bubbles       |
 | `T` in Edit Mode                        | Open or close Text & Layout Settings   |
 
 Typing fields retain their editing keys; arrow keys also retain their normal
 behavior in menus and the sidebar tree.
+
+**X** toggles overlay text while keeping bubble masks and editing handles visible.
+This view setting applies to both displayed pages and resets when you reload the app.
 
 Choose **ORG** in the language menu to see the original page, or choose a language
 to display its overlays. **Show Translations** toggles the bubbles without changing

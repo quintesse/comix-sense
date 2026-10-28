@@ -589,6 +589,7 @@
 	let selectedShape: BblShapeType = $state(BblShapeType.box);
 	let selectedEdit: string = $state('no');
 	let showBubbles = $state(true);
+	let showBubbleText = $state(true);
 
 	let folders = $state.raw<ComicFolder[]>([]);
 	let savedDirectories = $state.raw<SidebarDirectory[]>([]);
@@ -1017,7 +1018,7 @@
 	function handlePageNavigationKey(event: KeyboardEvent) {
 		const key = event.key.toLowerCase();
 		if (
-			(key === 'l' || key === 'r' || key === 'e' || key === 't') &&
+			(key === 'l' || key === 'r' || key === 'e' || key === 't' || key === 'x') &&
 			!(
 				event.target instanceof Element &&
 				event.target.closest(
@@ -1042,6 +1043,7 @@
 			event.stopPropagation();
 			if (!event.repeat) {
 				if (key === 'l') void locatePage();
+				else if (key === 'x') showBubbleText = !showBubbleText;
 				else if (key === 't') {
 					if (editable) toggleFontSettings();
 				} else selectedEdit = key === 'e' ? 'yes' : 'no';
@@ -1982,6 +1984,7 @@
 							loadedBubbles={page.bubbles}
 							language={page.language}
 							{showBubbles}
+							{showBubbleText}
 							editable={editable && page.editing}
 							{selectedShape}
 							onfontselect={() => (fontPagePath = page.comic.path)}
