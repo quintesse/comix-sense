@@ -138,6 +138,13 @@ With a text overlay selected in **Edit Mode**:
 
 - Click bubble text to edit it. On a linked bubble, drag its handles to adjust
   the mask and the text bounds together.
+- Drag a polygon edge to move it parallel to itself. Its endpoints slide along
+  the connected edges, preserving every edge's direction. Dragging stops when an
+  edge reaches zero length; edges cannot reverse direction.
+- Drag polygon vertex handles to reshape corners. Near horizontal or vertical
+  alignment, they snap to either neighbouring vertex's coordinates, including
+  both edges at once. Hold **Alt** while dragging to bypass snapping. On a selected
+  polygon, exactly horizontal or vertical edges appear green with **H** or **V** markers.
 - Hold **Shift** and drag, or use the middle mouse button, to move a whole bubble.
 - Choose **Draw Boxes** and drag between two opposite corners to add a box.
 - Choose **Draw Polygons**, drag the first edge, click more vertices, and click near the first to close it.

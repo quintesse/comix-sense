@@ -2,6 +2,7 @@
 	import { bounds, points, vertex, type BblShape, type Vertex } from './types/Comic';
 	import { draggable, type DragDetail } from './types/Draggable';
 	import DragHandle from './DragHandle.svelte';
+	import PolygonEdges from './PolygonEdges.svelte';
 	let {
 		shape = $bindable(),
 		label,
@@ -70,6 +71,7 @@
 				/>
 			{/each}
 		{:else}
+			<PolygonEdges bind:shape {bubbleIndex} active {onactivate} />
 			{#each shape.vs as v, i}
 				<DragHandle bind:shape index={i} {bubbleIndex} active {onactivate} />
 			{/each}

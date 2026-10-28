@@ -791,11 +791,21 @@ test('draw, edit, convert and delete box and polygon bubbles', async ({ page }) 
 	// Each bubble stacks its shape and text together; edit handles stay above all bubbles.
 	await expect
 		.poll(() =>
-			page
-				.locator('.svgcontent')
-				.evaluate((layer) => Array.from(layer.children, (element) => element.localName))
+			page.locator('.svgcontent').evaluate((layer) =>
+				Array.from(layer.children)
+					.filter((element) => !element.hasAttribute('data-edge-alignment'))
+					.map((element) => element.localName)
+			)
 		)
-		.toEqual(['rect', 'foreignObject', 'polygon', 'foreignObject', ...Array(6).fill('circle')]);
+		.toEqual([
+			'rect',
+			'foreignObject',
+			'polygon',
+			'foreignObject',
+			...Array(2).fill('circle'),
+			...Array(4).fill('line'),
+			...Array(4).fill('circle')
+		]);
 	await page.getByRole('textbox').last().click({ button: 'right' });
 	await page.getByText('Convert to Box', { exact: true }).click();
 	await expect(page.locator('.svgcontent polygon')).toHaveCount(0);
@@ -887,6 +897,115 @@ test('delete a polygon point on the right page while keeping at least three vert
 	await selectMenu(page, 'NL', 'EN');
 	await expect(rightPage.locator('.svgcontent polygon')).toHaveAttribute('points', points!);
 });
+
+for (const independent of [false, true]) {
+	test(`polygon edge dragging preserves directions and stops at zero (${independent ? 'separate mask' : 'linked'})`, async ({
+		page
+	}) => {
+		await mockDirectory(page, { overlappingPolygon: true });
+		await openComic(page);
+		await selectMenu(page, 'FIT', '100%');
+		await selectMenu(page, 'ORG', 'EN');
+		await selectMenu(page, 'EDIT: NO', 'Yes');
+		if (independent) {
+			await page.getByRole('textbox').last().click({ button: 'right' });
+			await page.getByText('Separate text and mask', { exact: true }).click();
+			await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+			const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+			await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+			await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+		}
+		const polygon = page.locator('.svgcontent polygon[data-bubble-index="1"]');
+		const start = await pagePoint(page, 400, 240);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		const enlarged = await pagePoint(page, 440, 270);
+		await page.mouse.move(enlarged.x, enlarged.y, { steps: 4 });
+		await expect(polygon).toHaveAttribute('points', '300,180 440,180 440,300 300,300');
+		const overshoot = await pagePoint(page, 200, 270);
+		await page.mouse.move(overshoot.x, overshoot.y, { steps: 4 });
+		await expect(polygon).toHaveAttribute('points', '300,180 300,180 300,300 300,300');
+		// Returning within the same gesture restores the original edge directions.
+		await page.mouse.move(enlarged.x, enlarged.y, { steps: 4 });
+		await page.mouse.up();
+		await expect(polygon).toHaveAttribute('points', '300,180 440,180 440,300 300,300');
+		if (independent) {
+			const text = page.locator('foreignObject[data-bubble-index="1"]');
+			await expect(text).toHaveAttribute('x', '300');
+			await expect(text).toHaveAttribute('width', '100');
+		}
+		await selectMenu(page, 'EN', 'NL');
+		await selectMenu(page, 'NL', 'EN');
+		await expect(polygon).toHaveAttribute('points', '300,180 440,180 440,300 300,300');
+	});
+}
+
+for (const { zoom, independent } of [
+	{ zoom: '50%', independent: false },
+	{ zoom: '100%', independent: true }
+]) {
+	test(`polygon vertices snap with alignment markers at ${zoom} (${independent ? 'separate mask' : 'linked'})`, async ({
+		page
+	}) => {
+		await mockDirectory(page, { overlappingPolygon: true });
+		await openComic(page);
+		await selectMenu(page, 'FIT', zoom);
+		await selectMenu(page, 'ORG', 'EN');
+		await selectMenu(page, 'EDIT: NO', 'Yes');
+		if (independent) {
+			await page.getByRole('textbox').last().click({ button: 'right' });
+			await page.getByText('Separate text and mask', { exact: true }).click();
+			await page.getByRole('button', { name: 'Text & Layout Settings', exact: true }).click();
+			const panel = page.getByRole('dialog', { name: 'Text & Layout Settings', exact: true });
+			await panel.getByRole('button', { name: 'Mask', exact: true }).click();
+			await panel.getByRole('button', { name: 'Close Text & Layout Settings' }).click();
+		}
+		const svg = page.locator('.svgcontent');
+		const polygon = svg.locator('polygon[data-bubble-index="1"]');
+		const horizontal = svg.locator('[data-aligned-edge-index="2"]');
+		const vertical = svg.locator('[data-aligned-edge-index="1"]');
+		const start = await pagePoint(page, 400, 300);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		// Seven screen pixels snap at both zoom levels.
+		await page.mouse.move(start.x + 7, start.y + 7);
+		await expect(polygon).toHaveAttribute('points', '300,180 400,180 400,300 300,300');
+		await expect(horizontal).toHaveAttribute('data-edge-alignment', 'horizontal');
+		await expect(horizontal.locator('text')).toHaveText('H');
+		await expect(vertical).toHaveAttribute('data-edge-alignment', 'vertical');
+		await expect(vertical.locator('line')).toHaveCSS('stroke', 'rgb(0, 135, 90)');
+		const horizontalOnly = await pagePoint(page, 440, 300);
+		await page.mouse.move(horizontalOnly.x, horizontalOnly.y + 7);
+		await expect(polygon).toHaveAttribute('points', '300,180 400,180 440,300 300,300');
+		await expect(vertical).toHaveCount(0);
+		await expect(horizontal).toBeVisible();
+		const verticalOnly = await pagePoint(page, 400, 340);
+		await page.mouse.move(verticalOnly.x + 7, verticalOnly.y);
+		await expect(polygon).toHaveAttribute('points', '300,180 400,180 400,340 300,300');
+		await expect(horizontal).toHaveCount(0);
+		await expect(vertical.locator('text')).toHaveText('V');
+		// Moving outside the tolerance releases snapping.
+		await page.mouse.move(start.x + 12, start.y + 12);
+		await expect(horizontal).toHaveCount(0);
+		await expect(vertical).toHaveCount(0);
+		await page.keyboard.down('Alt');
+		await page.mouse.move(start.x + 7, start.y + 7);
+		await expect(horizontal).toHaveCount(0);
+		await expect(vertical).toHaveCount(0);
+		await page.keyboard.up('Alt');
+		await page.mouse.move(start.x + 6, start.y + 6);
+		await page.mouse.up();
+		await expect(polygon).toHaveAttribute('points', '300,180 400,180 400,300 300,300');
+		if (independent)
+			await expect(page.locator('foreignObject[data-bubble-index="1"]')).toHaveAttribute(
+				'width',
+				'100'
+			);
+		await selectMenu(page, 'EN', 'NL');
+		await selectMenu(page, 'NL', 'EN');
+		await expect(polygon).toHaveAttribute('points', '300,180 400,180 400,300 300,300');
+	});
+}
 
 test('focus and handle presses raise the active shape, editor and highlighted handles', async ({
 	page
