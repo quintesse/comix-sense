@@ -266,6 +266,8 @@ Archive pages, **ORG**, and **OCR** cannot be rendered.
   static builds, and extracting bubble text.
 - [BBL file format](docs/bbl-format.md): sidecars, album indexes, typography, and
   matching rules.
+- [OCR and Merge algorithm](docs/ocr-and-merge.md): how words become editable
+  passages, what the tuning values mean, and where merging can go wrong.
 - [Archive reference](docs/archives.md): supported formats, resource limits, and
   known decoder limitations.
 - [Product specification](SPEC.md): project direction, including planned capabilities.
