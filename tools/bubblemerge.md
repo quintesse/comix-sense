@@ -26,7 +26,9 @@ BBL or review report.
 Both this helper and the app's OCR grouping compare bubble-level `style`, preserving
 matching mask styles on merged outputs. Inputs with explicit `layout`
 remain separate so grouping never picks one input's independent text placement.
-The app calls grouping only for newly recognized, linked OCR bubbles.
+The app can group newly recognized words during Scan or update an existing OCR
+overlay with its Merge button. See the [app OCR and Merge guide](../docs/ocr-and-merge.md)
+for an explanation of grouping, tuning values, text cleanup, and filtering.
 
 ## Approach
 
