@@ -77,19 +77,21 @@ language’s `.bbl` overlay when available, or just the original if neither exis
 This fallback applies to each page separately, including two-page layouts. Edit
 Mode always uses the original image with editable bubbles.
 
-### Scan a page
+### Scan a page or album
 
 Scanning is optional if your comic already has text overlays.
 
 1. Select a page and switch to **Edit Mode**.
 2. Open **OCR Settings** and enter a Google Cloud Vision API key with Cloud Vision
    enabled, or enter the key when prompted on your first scan.
-3. Click **Scan Full Page**. Recognized text appears in an editable **OCR** overlay.
+3. Click **Scan Full Page**, choose **Current page** or **Entire album**, then click **Scan**.
+   Recognized text appears in an editable **OCR** overlay on each scanned page.
 4. Review the text and bubble shapes before translating.
 
-Scanning sends the original page image directly to Google and may incur provider
-charges. Rescanning asks for confirmation before replacing the page's OCR overlay.
-In a two-page layout, only the selected page is scanned.
+Scanning sends each original page image directly to Google and may incur provider
+charges. Rescanning asks for confirmation before replacing existing OCR overlays.
+Album scans process pages in order; if a scan fails, completed pages are kept.
+In a two-page layout, **Current page** scans only the selected page.
 
 ### Configure AI tools
 

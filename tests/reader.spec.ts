@@ -1802,6 +1802,10 @@ test('external Google Vision key overrides saved settings and replaces key contr
 		await route.fulfill({ json: visionResponse });
 	});
 	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
 	expect(requests).toBe(1);
 	expect(await page.evaluate(() => localStorage.getItem('comix-sense.google-vision-api-key'))).toBe(
@@ -1827,6 +1831,10 @@ test('scan creates a session OCR overlay and preserves existing translations', a
 		await route.fulfill({ json: visionResponse });
 	});
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-session-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
@@ -1850,6 +1858,54 @@ test('scan creates a session OCR overlay and preserves existing translations', a
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 });
 
+for (const failSecondPage of [false, true]) {
+	test(`album scan ${failSecondPage ? 'keeps completed pages on failure' : 'scans every page and confirms overwrite'}`, async ({
+		page
+	}) => {
+		await mockDirectory(page, { pageCount: 2 });
+		await openComic(page);
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		let requests = 0;
+		await page.route('https://vision.googleapis.com/**', (route) => {
+			requests++;
+			return route.fulfill({
+				json:
+					failSecondPage && requests === 2
+						? { responses: [{ error: { message: 'Provider unavailable' } }] }
+						: visionResponse
+			});
+		});
+		const scan = page.getByRole('button', { name: 'Scan Full Page' });
+		await scan.click();
+		const dialog = page.getByRole('dialog', { name: 'Scan comic text' });
+		await expect(dialog.getByLabel('Scope')).toHaveValue('page');
+		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+		expect(requests).toBe(0);
+		await scan.click();
+		await dialog.getByLabel('Scope').selectOption('album');
+		await dialog.getByRole('button', { name: 'Scan', exact: true }).click();
+		await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+		await page.getByRole('button', { name: 'Use key', exact: true }).click();
+		if (failSecondPage) {
+			await expect(page.getByRole('alert')).toContainText('1 completed page(s) kept');
+		} else {
+			await expect(page.getByRole('status').filter({ hasText: '2 pages scanned' })).toBeVisible();
+		}
+		expect(requests).toBe(2);
+		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+		if (!failSecondPage) {
+			await expect(page.locator('foreignObject')).toHaveText('Hello world');
+			await scan.click();
+			await dialog.getByRole('button', { name: 'Scan', exact: true }).click();
+			const overwrite = page.getByRole('dialog', { name: 'Overwrite OCR overlay?' });
+			await expect(overwrite).toContainText('2 selected page(s)');
+			await overwrite.getByRole('button', { name: 'Cancel', exact: true }).click();
+			expect(requests).toBe(2);
+		}
+	});
+}
+
 test('Scan label includes all page languages and remembered keys can be forgotten', async ({
 	page
 }) => {
@@ -1862,6 +1918,10 @@ test('Scan label includes all page languages and remembered keys can be forgotte
 		route.fulfill({ json: visionResponse })
 	);
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('remembered-key');
 	await page.getByLabel('Remember on this browser').check();
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
@@ -1894,6 +1954,10 @@ test('failed scans preserve an existing OCR overlay', async ({ page }) => {
 		route.fulfill({ json: { responses: [{ error: { message: 'Invalid API key' } }] } })
 	);
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('invalid-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await page.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
@@ -1921,6 +1985,10 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 	});
 	const scan = page.getByRole('button', { name: 'Scan Full Page' });
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await expect(scan).toBeDisabled();
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Second page');
@@ -1937,6 +2005,10 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 		return route.fulfill({ json: { responses: [{}] } });
 	});
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	const confirmation = page.getByRole('dialog', { name: 'Overwrite OCR overlay?' });
 	await expect(confirmation).toContainText('OCR text and shapes');
 	await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -1945,6 +2017,10 @@ test('late scans stay with their page and successful rescans refresh OCR', async
 	await expect(page.locator('foreignObject')).toHaveText('Hello world');
 	expect(rescans).toBe(0);
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await confirmation.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'No text recognized' })).toBeVisible();
 	await expect(page.locator('foreignObject')).toHaveCount(0);
@@ -1963,6 +2039,10 @@ test('a scan with no text creates OCR without creating or selecting MRG', async 
 	);
 	const scan = page.getByRole('button', { name: 'Scan Full Page' });
 	await scan.click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'No text recognized' })).toBeVisible();
@@ -2011,7 +2091,10 @@ for (const scope of ['page', 'album']) {
 			});
 		});
 		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
-		await page.getByLabel('Scope', { exact: true }).selectOption(scope);
+		await page
+			.getByRole('dialog', { name: 'Clean up bubble text', exact: true })
+			.getByLabel('Scope', { exact: true })
+			.selectOption(scope);
 		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
 		await expect(page.locator('foreignObject')).toHaveText('Hello!');
 		// Carbon restores the dialog trigger's focus after its closing transition.
@@ -2147,7 +2230,10 @@ for (const allOmitted of [false, true]) {
 			});
 		});
 		await page.getByRole('button', { name: 'Cleanup Text', exact: true }).click();
-		await page.getByLabel('Scope', { exact: true }).selectOption('album');
+		await page
+			.getByRole('dialog', { name: 'Clean up bubble text', exact: true })
+			.getByLabel('Scope', { exact: true })
+			.selectOption('album');
 		await page.getByRole('button', { name: 'Clean text', exact: true }).click();
 		await expect(page.getByRole('alert')).toContainText(
 			'AI response changed the document structure, languages, IDs, or empty fields. No text was replaced.'
@@ -2594,6 +2680,10 @@ test('MRG is an ordinary overlay and scanning only creates OCR', async ({ page }
 		route.fulfill({ json: visionResponse })
 	);
 	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Scan comic text' })
+		.getByRole('button', { name: 'Scan', exact: true })
+		.click();
 	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
 	await page.getByRole('button', { name: 'Use key', exact: true }).click();
 	await expect(page.getByRole('menuitem', { name: 'OCR', exact: true })).toBeVisible();
