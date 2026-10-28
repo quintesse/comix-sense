@@ -571,7 +571,7 @@ test('schema rejection does not retry without schema; refusal never applies text
 });
 
 test('unrecognized overlay codes use the same language resolution as ordinary translations', () => {
-	for (const code of ['MRG', 'zz']) {
+	for (const code of ['zz', 'custom']) {
 		expect(resolveSourceLanguage(code, [{ bubbles: [], declaredLanguage: 'nl' }])).toBe(code);
 		expect(resolveSourceLanguage(code, [{ bubbles: [] }])).toBe(code);
 	}
