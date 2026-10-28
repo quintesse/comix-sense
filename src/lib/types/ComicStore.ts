@@ -358,7 +358,17 @@ export class DirectoryComicStore implements ComicStore {
 			comic.setSourceDocument(language, document?.source, document?.path);
 			if (entry && font !== undefined) {
 				const overlay = await entry.album.overlay(entry.filename, language);
-				await comic.prepareTypography(language, { ...overlay, bubbles }, entry.album.fonts);
+				await comic.prepareTypography(
+					language,
+					{
+						...overlay,
+						// A newly created OCR sidecar is not yet in the album's discovery cache.
+						font: overlay.document ? overlay.font : { ...overlay.font, ...font },
+						pageFont: font,
+						bubbles
+					},
+					entry.album.fonts
+				);
 			}
 		} catch (error) {
 			this.workspace.error.set('Could not retain edits: ' + String(error));

@@ -172,6 +172,11 @@ before the sidecar's file, page, and bubble settings (see album precedence below
 | `weight`        | Integer from 1 to 1000; typically 400 (normal) or 700 (bold).                                                                                                                            |
 | `lineHeight`    | Positive multiplier of font size; 1 means 100% line height.                                                                                                                              |
 | `letterSpacing` | Additional letter spacing in image coordinates; may be negative. Reader default: 0.                                                                                                      |
+| `whiteSpace`    | `"normal"` allows text wrapping; `"nowrap"` prevents it. Reader default: `"normal"`.                                                                                                     |
+
+Scanning with **Automatically merge bubbles** unchecked sets
+`"font": { "whiteSpace": "nowrap" }` on the OCR page, preserving other page font
+properties. Merging removes that page override and retains the other font settings.
 
 Every property is optional. Omitted properties inherit; an empty `font` object
 changes nothing. Use an explicit value such as `"style": "normal"` to cancel

@@ -119,7 +119,8 @@ export function textStyle(font: Font): string {
 		font.style && `font-style:${font.style}`,
 		font.weight !== undefined && `font-weight:${font.weight}`,
 		font.lineHeight !== undefined && `line-height:${font.lineHeight}`,
-		font.letterSpacing !== undefined && `letter-spacing:${font.letterSpacing}px`
+		font.letterSpacing !== undefined && `letter-spacing:${font.letterSpacing}px`,
+		font.whiteSpace && `white-space:${font.whiteSpace}`
 	]
 		.filter(Boolean)
 		.join(';');
