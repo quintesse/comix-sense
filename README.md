@@ -183,7 +183,7 @@ scopes. See the [BBL reference](docs/bbl-format.md) for inheritance and resource
 ### Save or discard your work
 
 Edits are backed up in this browser after a short pause. These backups are separate
-from your comic files: **Save Changes** is required to write edits to disk.
+from your comic files: use **Save Changes** or **Save All** to write edits to disk.
 Closing the browser before a backup completes can lose the latest edits, and
 clearing site data removes backups.
 
@@ -191,7 +191,7 @@ Pages with unsaved changes have bold names in the tree and keep their normal
 page, language, or OCR icons. Their parent albums and collections have bold names
 and outline icons. Unsaved languages appear in bold
 in the language menu. Browser backup does not clear these indicators. The tree
-includes edits in every language, while Save and Discard follow the selected
+includes edits in every language, while **Save Changes** and **Discard Changes** follow the selected
 language. On a marked page, select a bold language entry to save or discard its
 changes.
 
@@ -201,8 +201,16 @@ changes.
 - **Discard Changes** asks for confirmation, removes that document's browser
   backup, and reloads its disk version. A new overlay with no saved file disappears.
 
-There are no Save All or Discard All actions. Removing a directory from the sidebar
-keeps its backups for when you add it again.
+- **Save All** writes all pending documents in the current album, across every page
+  and language, including album font defaults. It requests write permission if needed.
+- **Discard All** asks for confirmation before removing those documents' browser
+  backups and reloading their disk versions, across every language in the album.
+  New overlays with no saved file disappear.
+
+These actions operate on whole documents; edits in pages sharing a document are
+saved or discarded together. If an operation fails partway through, completed
+changes stay saved or discarded, and remaining edits stay pending.
+Removing a directory from the sidebar keeps its backups for when you add it again.
 
 New translations use the image stem and language code: `01.png` gets `01.en.bbl`.
 New OCR overlays use `01.OCR.bbl`. Existing documents keep their filenames and may

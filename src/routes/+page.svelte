@@ -619,6 +619,7 @@
 	let changesError = $state('');
 	let discardFolder = $state.raw<ComicFolder>();
 	let discardDocument = $state('');
+	let discardAll = $state(false);
 	let discardDocuments = $state<string[]>([]);
 	let discardOpen = $state(false);
 
@@ -680,17 +681,29 @@
 		folder.store.dispose();
 	}
 
-	async function saveChanges() {
+	async function saveChanges(all = false) {
 		const folder = activeFolder;
-		const document = currentDocument;
-		const documents = currentDocuments;
+		const document = all ? albumPath || folder?.directory.name : currentDocument;
+		const documents = all ? albumDocuments : currentDocuments;
 		if (!folder || !document || changesBusy || scanning || cleaning || rendering) return;
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
-			for (const path of documents) await folder.store.workspace.save(path);
-			await reloadFolder(folder);
-			changesMessage = `Saved changes to “${document}”.`;
+			let completed = 0;
+			try {
+				for (const path of documents) {
+					await folder.store.workspace.save(path);
+					completed++;
+				}
+			} finally {
+				if (completed) {
+					await folder.store.workspace.flush();
+					await reloadFolder(folder);
+				}
+			}
+			changesMessage = all
+				? `Saved all changes in album “${document}”.`
+				: `Saved changes to “${document}”.`;
 		} catch (error) {
 			changesError = 'Could not save changes: ' + String(error);
 		} finally {
@@ -708,9 +721,21 @@
 		changesBusy = true;
 		changesMessage = changesError = '';
 		try {
-			for (const path of documents) await folder.store.workspace.discard(path);
-			await reloadFolder(folder);
-			changesMessage = `Changes to “${document}” discarded.`;
+			let completed = 0;
+			try {
+				for (const path of documents) {
+					await folder.store.workspace.discard(path);
+					completed++;
+				}
+			} finally {
+				if (completed) {
+					await folder.store.workspace.flush();
+					await reloadFolder(folder);
+				}
+			}
+			changesMessage = discardAll
+				? `All changes in album “${document}” discarded.`
+				: `Changes to “${document}” discarded.`;
 		} catch (error) {
 			changesError = 'Could not discard changes: ' + String(error);
 		} finally {
@@ -1308,6 +1333,19 @@
 			...new Set([...(pageDocument ? [pageDocument] : []), ...pageDocuments, ...albumDocuments])
 		].filter((document) => workspace?.has(document));
 	});
+	let albumDocuments = $derived.by(() => {
+		// Subscribe even when edits move between documents without changing their count.
+		void pendingLanguages;
+		void pendingAlbums;
+		if (!pendingChanges || !$selectedComic) return [];
+		return (
+			activeFolder?.store.workspace.albumDocuments(
+				albumPath,
+				albumPages.map((page) => page.path)
+			) ?? []
+		);
+	});
+
 	let currentDocument = $derived(currentDocuments.join(', ') || pageDocument);
 	let documentDirty = $derived(pendingChanges > 0 && currentDocuments.length > 0);
 	let canRender = $derived(
@@ -1546,7 +1584,7 @@
 								cleaning ||
 								rendering ||
 								loadingPages}
-							onclick={saveChanges}><ToolbarIcon name="save" /></button
+							onclick={() => void saveChanges()}><ToolbarIcon name="save" /></button
 						>
 						<button
 							type="button"
@@ -1560,11 +1598,45 @@
 								rendering ||
 								loadingPages}
 							onclick={() => {
+								discardAll = false;
 								discardFolder = activeFolder;
 								discardDocument = currentDocument ?? '';
 								discardDocuments = [...currentDocuments];
 								discardOpen = true;
 							}}><ToolbarIcon name="recycle" /></button
+						>
+						<button
+							type="button"
+							class="toolbar-button album-action"
+							aria-label="Save All"
+							title="Save all changes in the current album"
+							disabled={!albumDocuments.length ||
+								changesBusy ||
+								scanning ||
+								cleaning ||
+								rendering ||
+								loadingPages}
+							onclick={() => void saveChanges(true)}
+							><ToolbarIcon name="save" /><span>All</span></button
+						>
+						<button
+							type="button"
+							class="toolbar-button album-action"
+							aria-label="Discard All"
+							title="Discard all changes in the current album"
+							disabled={!albumDocuments.length ||
+								changesBusy ||
+								scanning ||
+								cleaning ||
+								rendering ||
+								loadingPages}
+							onclick={() => {
+								discardAll = true;
+								discardFolder = activeFolder;
+								discardDocument = albumPath || activeFolder?.directory.name || '';
+								discardDocuments = [...albumDocuments];
+								discardOpen = true;
+							}}><ToolbarIcon name="recycle" /><span>All</span></button
 						>
 					</div>
 				</li>
@@ -1788,8 +1860,8 @@
 
 	<Modal
 		bind:open={discardOpen}
-		modalHeading="Discard Changes?"
-		primaryButtonText="Discard Changes"
+		modalHeading={discardAll ? 'Discard All?' : 'Discard Changes?'}
+		primaryButtonText={discardAll ? 'Discard All' : 'Discard Changes'}
 		secondaryButtonText="Cancel"
 		danger
 		size="xs"
@@ -1798,9 +1870,10 @@
 		on:click:button--secondary={() => (discardOpen = false)}
 	>
 		<p>
-			Discard all unsaved changes in “{discardDocument}”? This includes album font defaults and all
-			edited pages stored in these documents. Their browser backups will be removed and their
-			original content reloaded. This cannot be undone.
+			Discard all unsaved changes in {discardAll ? 'album ' : ''}“{discardDocument}”?
+			{#if discardAll}This affects every edited language in this album.{/if}
+			This includes album font defaults and all edited pages stored in these documents. Their browser
+			backups will be removed and their original content reloaded. This cannot be undone.
 		</p>
 	</Modal>
 
@@ -2037,7 +2110,8 @@
 		max-height: calc(100% - 1rem);
 		overflow-y: auto;
 	}
-	.scan-button {
+	.scan-button,
+	.album-action {
 		display: flex;
 		width: auto;
 		min-width: 2.25rem;
