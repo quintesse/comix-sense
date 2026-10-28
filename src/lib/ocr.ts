@@ -40,6 +40,11 @@ export function visionToBubbles(result: VisionResult): { lang: string; bubbles: 
 	return { lang, bubbles };
 }
 
+/** Merge OCR words before removing groups that contain no letters. */
+export function mergeOcrBubbles(bubbles: readonly Bubble[]): Bubble[] {
+	return mergeBubbles(bubbles).filter((bubble) => /\p{L}/u.test(bubble.text));
+}
+
 export async function scanImage(image: Blob, apiKey: string, signal?: AbortSignal) {
 	const content = await new Promise<string>((resolve, reject) => {
 		const reader = new FileReader();
@@ -60,9 +65,5 @@ export async function scanImage(image: Blob, apiKey: string, signal?: AbortSigna
 		throw new Error(data.error?.message || `Google Vision request failed (${response.status}).`);
 	if (!Array.isArray(data.responses) || data.responses.length !== 1)
 		throw new Error('Google Vision returned an invalid response.');
-	const result = visionToBubbles(data.responses[0]);
-	return {
-		lang: result.lang,
-		bubbles: mergeBubbles(result.bubbles).filter((bubble) => /\p{L}/u.test(bubble.text))
-	};
+	return visionToBubbles(data.responses[0]);
 }

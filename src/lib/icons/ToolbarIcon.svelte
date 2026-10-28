@@ -18,6 +18,7 @@
 			| 'star'
 			| 'video'
 			| 'camera'
+			| 'merge'
 			| 'paint-roller'
 			| 'font'
 			| 'spell-check'
@@ -88,6 +89,8 @@
 		<circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" />
 	{:else if name === 'camera'}
 		<path d="M3 6h4l2-3h6l2 3h4v15H3Z" /><circle cx="12" cy="13" r="4" />
+	{:else if name === 'merge'}
+		<path d="M5 3v4c0 4 7 4 7 8v6M19 3v4c0 4-7 4-7 8m-4 2 4 4 4-4" />
 	{:else if name === 'settings'}
 		<path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="white" /><circle
 			cx="16"
