@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { BblShape } from './types/Comic';
-	import { draggable } from './types/Draggable';
+	import { BblShapeType, type BblShape } from './types/Comic';
+	import { draggable, type DragDetail } from './types/Draggable';
+	import { snapPolygonVertex } from './vertexSnap';
 
 	interface Props {
 		shape: BblShape;
@@ -27,11 +28,20 @@
 		}
 		onactivate?.();
 	}
-
 	function updateShape(e: Event) {
-		const ce: CustomEvent = e as CustomEvent;
-		pos.x = ce.detail.x;
-		pos.y = ce.detail.y;
+		const { x, y, originalEvent } = (e as CustomEvent<DragDetail>).detail;
+		let point = { x, y };
+		const node = e.currentTarget as SVGGraphicsElement;
+		const matrix = node.ownerSVGElement?.getScreenCTM();
+		if (shape.type === BblShapeType.poly && !originalEvent.altKey && matrix) {
+			// Keep the snap distance at eight screen pixels regardless of page zoom.
+			point = snapPolygonVertex(shape.vs, index, point, {
+				x: 8 / Math.hypot(matrix.a, matrix.b),
+				y: 8 / Math.hypot(matrix.c, matrix.d)
+			});
+		}
+		pos.x = point.x;
+		pos.y = point.y;
 	}
 
 	let pos = $derived(shape.vs[index]);

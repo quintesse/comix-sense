@@ -4,6 +4,7 @@
 	import type { Font } from './bbl/metadata';
 	import BubbleGeometry from './BubbleGeometry.svelte';
 	import DragHandle from './DragHandle.svelte';
+	import PolygonEdges from './PolygonEdges.svelte';
 	import {
 		bounds,
 		textBounds,
@@ -185,6 +186,9 @@
 			/>
 		{/if}
 	{:else if bubble.layout === undefined}
+		{#if bubble.shape.type === BblShapeType.poly}
+			<PolygonEdges bind:shape={bubble.shape} {bubbleIndex} {active} {onactivate} />
+		{/if}
 		{#each bubble.shape.vs as v, i}
 			<DragHandle
 				bind:shape={bubble.shape}
