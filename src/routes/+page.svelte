@@ -1794,7 +1794,7 @@
 				<input type="checkbox" bind:checked={scanMergeBubbles} /> Automatically merge bubbles
 			</label>
 		</p>
-		<p>Uncheck to keep the original OCR word boxes, including numbers and punctuation.</p>
+		<p>Uncheck to keep the original OCR word shapes, including numbers and punctuation.</p>
 	</Modal>
 
 	<Modal

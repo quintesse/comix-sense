@@ -11,7 +11,7 @@ export type VisionResult = {
 	textAnnotations?: Annotation[];
 };
 
-/** Match tools/ocr2bbl.java: skip aggregate text and enclose each word polygon. */
+/** Skip aggregate text and preserve each word's original geometry. */
 export function visionToBubbles(result: VisionResult): { lang: string; bubbles: Bubble[] } {
 	if (result.error) throw new Error(result.error.message || 'Google Vision recognition failed.');
 	const annotations = result.textAnnotations ?? [];
@@ -23,18 +23,34 @@ export function visionToBubbles(result: VisionResult): { lang: string; bubbles: 
 		if (!vertices?.length) throw new Error(`Word annotation ${index + 1} has no vertices.`);
 		const xs = vertices.map((vertex) => vertex.x ?? 0);
 		const ys = vertices.map((vertex) => vertex.y ?? 0);
-		if (![...xs, ...ys].every(Number.isFinite) || typeof annotation.description !== 'string')
+		if (
+			vertices.length < 3 ||
+			![...xs, ...ys].every(Number.isFinite) ||
+			typeof annotation.description !== 'string'
+		)
 			throw new Error(`Word annotation ${index + 1} is invalid.`);
+		const vs = vertices.map((_, i) => ({ x: xs[i], y: ys[i] }));
+		const isBox =
+			vs.length === 4 &&
+			new Set(xs).size === 2 &&
+			new Set(ys).size === 2 &&
+			new Set(vs.map(({ x, y }) => `${x},${y}`)).size === 4 &&
+			vs.every((v, i) => {
+				const next = vs[(i + 1) % vs.length];
+				return v.x === next.x || v.y === next.y;
+			});
 		return {
 			text: annotation.description,
 			lang: locale(annotation, lang),
-			shape: {
-				type: BblShapeType.box,
-				vs: [
-					{ x: Math.min(...xs), y: Math.min(...ys) },
-					{ x: Math.max(...xs), y: Math.max(...ys) }
-				]
-			}
+			shape: isBox
+				? {
+						type: BblShapeType.box,
+						vs: [
+							{ x: Math.min(...xs), y: Math.min(...ys) },
+							{ x: Math.max(...xs), y: Math.max(...ys) }
+						]
+					}
+				: { type: BblShapeType.poly, vs }
 		};
 	});
 	return { lang, bubbles };

@@ -4,12 +4,40 @@ import { visionToBubbles } from '../src/lib/ocr';
 import { mergeBubbles } from '../src/lib/mergeBubbles';
 import { BblShapeType, type Bubble } from '../src/lib/types/Comic';
 
-test('OCR conversion matches the Java tool fixture', () => {
+test('OCR conversion retains fixture text and bounds while preserving original polygons', () => {
 	const input = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.json', 'utf8'));
 	const expected = JSON.parse(fs.readFileSync('tools/SW-A070-P09-ocr.bbl', 'utf8'));
-	expect(visionToBubbles(input)).toEqual({
+	const result = visionToBubbles(input);
+	expect({
+		...result,
+		bubbles: result.bubbles.map((bubble) => ({
+			...bubble,
+			shape: {
+				type: 'box',
+				vs: [
+					{
+						x: Math.min(...bubble.shape.vs.map((v) => v.x)),
+						y: Math.min(...bubble.shape.vs.map((v) => v.y))
+					},
+					{
+						x: Math.max(...bubble.shape.vs.map((v) => v.x)),
+						y: Math.max(...bubble.shape.vs.map((v) => v.y))
+					}
+				]
+			}
+		}))
+	}).toEqual({
 		lang: expected.lang,
 		bubbles: expected.pages[0].bubbles
+	});
+	result.bubbles.forEach((bubble, i) => {
+		if (bubble.shape.type === 'poly')
+			expect(bubble.shape.vs).toEqual(
+				input.textAnnotations[i + 1].boundingPoly.vertices.map((v: { x?: number; y?: number }) => ({
+					x: v.x ?? 0,
+					y: v.y ?? 0
+				}))
+			);
 	});
 });
 
@@ -31,10 +59,11 @@ test('OCR handles empty recognition, omitted zero coordinates and per-word local
 			text: 'word',
 			lang: 'en',
 			shape: {
-				type: 'box',
+				type: 'poly',
 				vs: [
 					{ x: 0, y: 0 },
-					{ x: 20, y: 40 }
+					{ x: 20, y: 30 },
+					{ x: 10, y: 40 }
 				]
 			}
 		}
@@ -43,6 +72,54 @@ test('OCR handles empty recognition, omitted zero coordinates and per-word local
 	expect(() => visionToBubbles({ textAnnotations: [{}, { description: 'broken' }] })).toThrow(
 		'no vertices'
 	);
+});
+
+test('OCR keeps exact axis-aligned rectangles as boxes and rotated or skewed vertices as polygons', () => {
+	const rectangle = [
+		{ x: 10, y: 20 },
+		{ x: 50, y: 20 },
+		{ x: 50, y: 40 },
+		{ x: 10, y: 40 }
+	];
+	const rotated = [
+		{ x: 10, y: 20 },
+		{ x: 50, y: 10 },
+		{ x: 55, y: 30 },
+		{ x: 15, y: 40 }
+	];
+	const skewed = [
+		{ x: 10, y: 20 },
+		{ x: 50, y: 20 },
+		{ x: 49.999, y: 40 },
+		{ x: 10, y: 40 }
+	];
+	const shapes = [rectangle, [...rectangle].reverse(), rotated, skewed];
+	const input = {
+		textAnnotations: [
+			{ description: 'aggregate' },
+			...shapes.map((vertices) => ({ description: 'word', boundingPoly: { vertices } }))
+		]
+	};
+	const snapshot = JSON.stringify(input);
+	expect(visionToBubbles(input).bubbles.map((b) => b.shape)).toEqual([
+		{
+			type: 'box',
+			vs: [
+				{ x: 10, y: 20 },
+				{ x: 50, y: 40 }
+			]
+		},
+		{
+			type: 'box',
+			vs: [
+				{ x: 10, y: 20 },
+				{ x: 50, y: 40 }
+			]
+		},
+		{ type: 'poly', vs: rotated },
+		{ type: 'poly', vs: skewed }
+	]);
+	expect(JSON.stringify(input)).toBe(snapshot);
 });
 
 test('merge restores sample polygon outlines without changing original OCR', () => {
