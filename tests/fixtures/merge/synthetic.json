@@ -1,0 +1,248 @@
+{
+	"schemaVersion": 1,
+	"pages": [
+		{
+			"id": "perfect",
+			"words": [
+				{
+					"id": "a",
+					"text": "Hello",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 10,
+								"y": 10
+							},
+							{
+								"x": 30,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "speech",
+						"line": "one"
+					}
+				},
+				{
+					"id": "b",
+					"text": "again",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 33,
+								"y": 10
+							},
+							{
+								"x": 53,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "speech",
+						"line": "one"
+					}
+				},
+				{
+					"id": "c",
+					"text": "Friend",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 10,
+								"y": 24
+							},
+							{
+								"x": 30,
+								"y": 34
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "speech",
+						"line": "two"
+					}
+				},
+				{
+					"id": "d",
+					"text": "Bye",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 150,
+								"y": 10
+							},
+							{
+								"x": 170,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "farewell",
+						"line": "one"
+					}
+				}
+			],
+			"completeBubbles": ["speech", "farewell"],
+			"order": [
+				["a", "b"],
+				["b", "c"],
+				["c", "d"]
+			]
+		},
+		{
+			"id": "identity-and-coverage",
+			"words": [
+				{
+					"id": "a",
+					"text": "echo",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 10,
+								"y": 10
+							},
+							{
+								"x": 30,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "first",
+						"line": "one"
+					}
+				},
+				{
+					"id": "b",
+					"text": "echo",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 33,
+								"y": 10
+							},
+							{
+								"x": 53,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "first",
+						"line": "one"
+					}
+				},
+				{
+					"id": "p",
+					"text": "!",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 56,
+								"y": 10
+							},
+							{
+								"x": 76,
+								"y": 20
+							}
+						]
+					},
+					"review": {
+						"status": "reviewed",
+						"bubble": "first",
+						"line": "one"
+					}
+				},
+				{
+					"id": "empty",
+					"text": "",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 200,
+								"y": 50
+							},
+							{
+								"x": 220,
+								"y": 60
+							}
+						]
+					},
+					"review": {
+						"status": "unreviewed"
+					}
+				},
+				{
+					"id": "ambiguous",
+					"text": "?",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 250,
+								"y": 50
+							},
+							{
+								"x": 270,
+								"y": 60
+							}
+						]
+					},
+					"review": {
+						"status": "ambiguous",
+						"reason": "Invented unclear association"
+					}
+				},
+				{
+					"id": "excluded",
+					"text": "123",
+					"lang": "en",
+					"shape": {
+						"type": "box",
+						"vs": [
+							{
+								"x": 300,
+								"y": 50
+							},
+							{
+								"x": 320,
+								"y": 60
+							}
+						]
+					},
+					"review": {
+						"status": "excluded",
+						"reason": "Invented page number"
+					}
+				}
+			],
+			"completeBubbles": ["first"]
+		}
+	]
+}

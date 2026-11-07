@@ -17,7 +17,9 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"predev": "node tools/prepare-archive-codecs.mjs",
-		"prebuild": "node tools/prepare-archive-codecs.mjs"
+		"prebuild": "node tools/prepare-archive-codecs.mjs",
+		"evaluate:merge": "node --import ./tools/merge-eval/register.mjs tools/merge-eval/cli.mjs",
+		"test:merge-eval": "node --import ./tools/merge-eval/register.mjs --test tools/merge-eval/*.test.mjs"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.64.1",

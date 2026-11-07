@@ -337,8 +337,20 @@ function outline(lines: Line[]): BblShape {
 	return rectangleOutline(edges, lines.map((line) => line.box).reduce(union));
 }
 
+export type MergeGroup = {
+	bubble: Bubble;
+	sourceIndexes: number[];
+	/** Final reconstructed rows, including empty-text members; not provisional runs. */
+	rows: { text: string; sourceIndexes: number[] }[];
+};
+
 /** Port of tools/bubblemerge.java, operating on a single page without mutating OCR. */
 export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
+	return analyzeMergeBubbles(bubbles).map((group) => group.bubble);
+}
+
+/** Report original word indexes and final rows for offline evaluation. */
+export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 	const words: Word[] = bubbles.map((bubble, index) => {
 		const { type, vs } = bubble.shape;
 		if (
@@ -433,12 +445,19 @@ export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
 		const first = members.reduce((a, b) => (a.index < b.index ? a : b));
 		const merged: Bubble = JSON.parse(JSON.stringify(first.bubble));
 		merged.text = first.text;
+		const textRows = rows(members).sort((a, b) => a.center - b.center);
+		for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
 		if (members.length > 1) {
-			const textRows = rows(members).sort((a, b) => a.center - b.center);
-			for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
 			merged.text = unformatted(textRows.map(text).filter(Boolean).join('\n'));
 			merged.shape = outline(group);
 		}
-		return merged;
+		return {
+			bubble: merged,
+			sourceIndexes: members.map((w) => w.index),
+			rows: textRows.map((row) => ({
+				text: text(row),
+				sourceIndexes: row.words.map((w) => w.index)
+			}))
+		};
 	});
 }

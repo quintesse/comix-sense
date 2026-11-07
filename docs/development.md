@@ -82,3 +82,5 @@ and the same bubble count on each page; bubbles are paired by index. In this mod
 and `target` instead of `id` and `text`. Items with exactly identical source and
 target text (including two empty strings) are omitted; remaining IDs retain their
 original page and bubble indexes. Neither file is modified.
+
+See [Offline merge evaluation](merge-evaluation.md) for synthetic tests and local baseline comparisons.

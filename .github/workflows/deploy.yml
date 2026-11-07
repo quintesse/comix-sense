@@ -44,6 +44,9 @@ jobs:
       - name: Check types and Svelte components
         run: npm run check
 
+      - name: Test offline merge evaluation (synthetic data only)
+        run: npm run test:merge-eval
+
       - name: Build site
         run: npm run build
 
