@@ -410,9 +410,8 @@
 					const font = { ...comic.pageFont(ocrLanguage) };
 					if (merge) delete font.whiteSpace;
 					else font.whiteSpace = 'nowrap';
-					// Font edits preserve pending bubble data, so replace the geometry first.
-					await comic.editBubbles(ocrLanguage, result.bubbles);
-					await comic.editBubbles(ocrLanguage, result.bubbles, font);
+					// Commit the complete scan together, after validation and cancellation checks.
+					await comic.editBubbles(ocrLanguage, result.bubbles, font, { signal: controller.signal });
 					comic.setSourceLanguage(ocrLanguage, result.lang);
 					comic.setBubbles(ocrLanguage, result.bubbles);
 					comic.languages = [...new Set([...comic.languages, ocrLanguage])];

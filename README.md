@@ -106,7 +106,8 @@ the result to disk, or **Discard Changes** to revert unsaved edits.
 
 Scanning sends each original page image directly to Google and may incur provider
 charges. Rescanning asks for confirmation before replacing existing OCR overlays.
-Album scans process pages in order; if a scan fails, completed pages are kept.
+Album scans process pages in order. If scanning stops or fails, completed pages
+keep their results. A page whose scan was cancelled keeps its previous OCR overlay.
 In a two-page layout, **Current page** scans only the selected page.
 
 ### Configure AI tools

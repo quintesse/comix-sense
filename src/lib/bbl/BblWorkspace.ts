@@ -185,6 +185,7 @@ export class BblWorkspace {
 		language: string,
 		source = path,
 		font?: Font,
+		replaceWithScan = false,
 		filename = pagePath.split('/').at(-1)
 	) {
 		const draft = this.draft(path, original, source);
@@ -193,7 +194,7 @@ export class BblWorkspace {
 		const page = pages[pageIndex];
 		// Callers provide a plain snapshot; retain no editor proxies in storage.
 		// Page font edits preserve the document's bubble serialization and pending text edits.
-		if (font === undefined || page.bubbles === undefined)
+		if (replaceWithScan || font === undefined || page.bubbles === undefined)
 			page.bubbles = editRecords(page.bubbles, bubbles, readBubble);
 		if (font !== undefined) page.font = editFont(page.font, font);
 		draft.pages.add(pagePath);

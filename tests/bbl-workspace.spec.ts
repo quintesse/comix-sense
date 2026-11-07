@@ -920,6 +920,19 @@ for (const mergeDuringScan of [true, false]) {
 	test(`scan restores and saves a single OCR document with merge ${mergeDuringScan ? 'during scan' : 'after scan'}`, async ({
 		page
 	}) => {
+		const word = (text: string, x: number, y: number, right: number, bottom: number) => ({
+			text,
+			lang: 'en',
+			shape: {
+				type: 'box',
+				vs: [
+					{ x, y },
+					{ x: right, y: bottom }
+				]
+			}
+		});
+		const savedOverlay = (bubbles: ReturnType<typeof word>[], font: { whiteSpace?: string }) =>
+			JSON.stringify({ pages: [{ filename: '01.png', bubbles, font }] }, null, 2) + '\n';
 		await setup(page, { empty: true });
 		await expect(page.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
 		await page.route('https://vision.googleapis.com/**', (route) =>
@@ -927,6 +940,36 @@ for (const mergeDuringScan of [true, false]) {
 				json: {
 					responses: [
 						{
+							fullTextAnnotation: {
+								pages: [
+									{
+										blocks: [
+											{
+												paragraphs: [
+													{
+														words: [
+															{
+																boundingBox: {
+																	vertices: [
+																		{ x: 80, y: 80 },
+																		{ x: 170, y: 80 },
+																		{ x: 170, y: 120 },
+																		{ x: 80, y: 120 }
+																	]
+																},
+																confidence: 0.75,
+																symbols: [
+																	{ text: 'Hello', property: { detectedBreak: { type: 'SPACE' } } }
+																]
+															}
+														]
+													}
+												]
+											}
+										]
+									}
+								]
+							},
 							textAnnotations: [
 								{ description: 'Hello world', locale: 'en' },
 								{
@@ -987,13 +1030,16 @@ for (const mergeDuringScan of [true, false]) {
 			await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 			await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 			const raw = await disk(page, 'album/01.OCR.bbl');
-			expect(raw.pages[0].font).toEqual({ whiteSpace: 'nowrap' });
-			expect(raw.pages[0].bubbles.every((bubble: { font?: unknown }) => !bubble.font)).toBe(true);
-			expect(raw.pages[0].bubbles.map((bubble: { text: string }) => bubble.text)).toEqual([
-				'Hello',
-				'world',
-				'123?!'
-			]);
+			expect(await disk(page, 'album/01.OCR.bbl', true)).toBe(
+				savedOverlay(
+					[
+						word('Hello', 80, 80, 170, 120),
+						word('world', 180, 80, 280, 120),
+						word('123?!', 500, 500, 600, 540)
+					],
+					{ whiteSpace: 'nowrap' }
+				)
+			);
 			await page.getByRole('button', { name: 'Merge', exact: true }).click();
 			await expect(page.locator('foreignObject')).toHaveText('Hello world');
 			await expect(page.locator('foreignObject div')).toHaveCSS('white-space', 'normal');
@@ -1012,6 +1058,7 @@ for (const mergeDuringScan of [true, false]) {
 		await expect
 			.poll(async () => Object.keys(await backups(page)).sort())
 			.toEqual(['album/01.OCR.bbl']);
+		expect((await backups(page))['album/01.OCR.bbl'].pages[0]).not.toHaveProperty('ocrSource');
 		if (mergeDuringScan) expect(await disk(page, 'album/01.OCR.bbl')).toBeNull();
 		await page.reload();
 		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
@@ -1019,20 +1066,54 @@ for (const mergeDuringScan of [true, false]) {
 		await expect(page.locator('foreignObject')).toHaveText('Hello world');
 		await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 		await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
-		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles).toHaveLength(1);
-		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].font).not.toHaveProperty('whiteSpace');
-		expect((await disk(page, 'album/01.OCR.bbl')).pages[0].bubbles[0]).toMatchObject({
-			text: 'Hello world',
-			lang: 'en',
-			shape: {
-				type: 'box',
-				vs: [
-					{ x: 80, y: 80 },
-					{ x: 280, y: 120 }
-				]
-			}
-		});
+		const merged = word('Hello world', 80, 80, 280, 120);
+		// Reloading the saved words before manual Merge supplies their default font.
+		const expectedBubble = mergeDuringScan ? merged : { ...merged, font: {} };
+		expect(await disk(page, 'album/01.OCR.bbl', true)).toBe(savedOverlay([expectedBubble], {}));
 		expect(await backups(page)).toEqual({});
+		await page.reload();
+		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+		await page.getByRole('textbox').fill('Manual edit');
+		await page.getByRole('button', { name: 'Merge', exact: true }).click();
+		await expect(page.locator('foreignObject')).toHaveText('Manual edit');
+		await expect
+			.poll(async () => (await backups(page))['album/01.OCR.bbl']?.pages[0].bubbles[0].text)
+			.toBe('Manual edit');
+		await confirmDiscard(page);
+		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		// Discard restores the saved bubbles after an empty rescan.
+		await page.route('https://vision.googleapis.com/**', (route) =>
+			route.fulfill({ json: { responses: [{}] } })
+		);
+		let rescanKeySet = false;
+		const rescan = async () => {
+			await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+			await page
+				.getByRole('dialog', { name: 'Scan comic text' })
+				.getByRole('button', { name: 'Scan', exact: true })
+				.click();
+			if (!rescanKeySet) {
+				await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+				await page.getByRole('button', { name: 'Use key', exact: true }).click();
+				rescanKeySet = true;
+			}
+			await page.getByRole('button', { name: 'Overwrite and scan', exact: true }).click();
+		};
+		await rescan();
+		await expect
+			.poll(async () => (await backups(page))['album/01.OCR.bbl']?.pages[0].bubbles)
+			.toEqual([]);
+		await confirmDiscard(page);
+		await expect(page.locator('foreignObject')).toHaveText('Hello world');
+		expect((await disk(page, 'album/01.OCR.bbl')).pages[0]).not.toHaveProperty('ocrSource');
+		await page.route('https://vision.googleapis.com/**', (route) =>
+			route.fulfill({ json: { responses: [{ error: { message: 'Synthetic failure' } }] } })
+		);
+		await rescan();
+		await expect(page.getByRole('alert')).toContainText('Synthetic failure');
+		expect(await backups(page)).toEqual({});
+		expect((await disk(page, 'album/01.OCR.bbl')).pages[0]).not.toHaveProperty('ocrSource');
 	});
 }
 
@@ -2355,5 +2436,49 @@ for (const archive of [false, true]) {
 			.getByRole('button', { name: 'Current album', exact: true })
 			.click();
 		await expect(panel.getByLabel('Letter spacing (px)', { exact: true })).toHaveValue('2');
+	});
+}
+for (const archive of [false, true]) {
+	test(`An aborted scan preserves archive/directory edits (${archive})`, async ({ page }) => {
+		await setup(page, { archive });
+		const result = await page.evaluate(
+			async ({ archive }) => {
+				const storeModule = '/src/lib/types/ComicStore.ts';
+				const { DirectoryComicStore } = await import(/* @vite-ignore */ storeModule);
+				const root = await (
+					await (await navigator.storage.getDirectory()).getDirectoryHandle('first')
+				).getDirectoryHandle('comics');
+				const store = new DirectoryComicStore(root);
+				const all = await store.list();
+				const pages = archive ? await store.archive('book.cbz').list() : all;
+				const comic = pages.find((c: any) => c.kind === 'page')!;
+				const bubbles = await comic.getBubbles('en');
+				bubbles[0].text = 'Manual';
+				await comic.editBubbles('en', bubbles);
+				const controller = new AbortController();
+				controller.abort();
+				let cancelled = false;
+				try {
+					await comic.editBubbles('en', [], {}, { signal: controller.signal });
+				} catch (e) {
+					cancelled = (e as Error).name === 'AbortError';
+				}
+				const path = comic.sourceDocument('en')!;
+				const raw = JSON.parse(
+					await store.workspace.read(
+						archive ? 'book.cbz.bbl/pages/01.png.en.bbl' : path,
+						async () => ''
+					)
+				);
+				store.dispose();
+				return {
+					text: raw.pages[0].bubbles[0].text,
+					cancelled
+				};
+			},
+			{ archive }
+		);
+		expect(result.cancelled).toBe(true);
+		expect(result.text).toBe('Manual');
 	});
 }

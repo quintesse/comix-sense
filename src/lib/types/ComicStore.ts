@@ -19,7 +19,13 @@ export interface ComicStore {
 	getImageUrl(c: Comic, priority?: ArchivePriority): Promise<string>;
 	protectImage?(c: Comic): () => void;
 	getBubbles(c: Comic, language?: string): Promise<Bubble[]>;
-	editBubbles?(c: Comic, language: string, bubbles: Bubble[], font?: Font): Promise<void>;
+	editBubbles?(
+		c: Comic,
+		language: string,
+		bubbles: Bubble[],
+		font?: Font,
+		scan?: { signal: AbortSignal }
+	): Promise<void>;
 	editAlbumFont?(c: Comic, font: Font): Promise<void>;
 	editFontFaces?(c: Comic, language: string, faces: Face[], album: boolean): Promise<void>;
 }
@@ -351,10 +357,16 @@ export class DirectoryComicStore implements ComicStore {
 			throw error;
 		}
 	}
-	async editBubbles(comic: Comic, language: string, bubbles: Bubble[], font?: Font) {
+	async editBubbles(
+		comic: Comic,
+		language: string,
+		bubbles: Bubble[],
+		font?: Font,
+		scan?: { signal: AbortSignal }
+	) {
 		const entry = this.pageMetadata.get(comic.path);
 		try {
-			const document = await entry?.album.edit(entry.filename, language, bubbles, font);
+			const document = await entry?.album.edit(entry.filename, language, bubbles, font, scan);
 			comic.setSourceDocument(language, document?.source, document?.path);
 			if (entry && font !== undefined) {
 				const overlay = await entry.album.overlay(entry.filename, language);

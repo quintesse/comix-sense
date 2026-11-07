@@ -297,7 +297,13 @@ export class AlbumMetadata {
 			: source;
 	}
 
-	async edit(filename: string, language: string, bubbles: Bubble[], font?: Font) {
+	async edit(
+		filename: string,
+		language: string,
+		bubbles: Bubble[],
+		font?: Font,
+		scan?: { signal: AbortSignal }
+	) {
 		if (!this.workspace) return;
 		const overlay = await this.overlay(filename, language);
 		const suffix = language ? '.' + language : '';
@@ -314,6 +320,7 @@ export class AlbumMetadata {
 				throw new Error('Cannot edit the page array in ' + path);
 			document = { path, raw, pageIndex: raw.pages?.length ?? 0, page: { filename } };
 		}
+		scan?.signal.throwIfAborted();
 		const path = this.writePath(document.path);
 		this.workspace.edit(
 			path,
@@ -324,6 +331,7 @@ export class AlbumMetadata {
 			language,
 			document.path,
 			font,
+			scan !== undefined,
 			filename
 		);
 		if (font !== undefined) {

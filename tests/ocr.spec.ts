@@ -270,3 +270,27 @@ test('merged OCR joins hyphenated line breaks without spaces while preserving hy
 	);
 	expect(input.map((bubble) => bubble.text)).toEqual(['A long-', 'word here']);
 });
+
+test('a cancelled OCR response is rejected before it can replace bubbles', async ({ page }) => {
+	await page.goto('./');
+	const cancelled = await page.evaluate(async () => {
+		const modulePath = '/src/lib/ocr.ts';
+		const { scanImage } = await import(/* @vite-ignore */ modulePath);
+		const controller = new AbortController();
+		const fetchBefore = window.fetch;
+		window.fetch = async () => {
+			// Even a transport that returns a response after cancellation cannot commit it.
+			controller.abort();
+			return { ok: true, json: async () => ({ responses: [{}] }) } as Response;
+		};
+		try {
+			await scanImage(new Blob(['synthetic image']), 'test-key', controller.signal);
+			return false;
+		} catch (e) {
+			return (e as Error).name === 'AbortError';
+		} finally {
+			window.fetch = fetchBefore;
+		}
+	});
+	expect(cancelled).toBe(true);
+});

@@ -209,8 +209,13 @@ export class Comic {
 		if (language !== 'org') this.langBubbles[language] = bubbles;
 	}
 
-	async editBubbles(language: string, bubbles: Bubble[], font?: Font): Promise<void> {
-		if (language !== 'org') await this.store.editBubbles?.(this, language, bubbles, font);
+	async editBubbles(
+		language: string,
+		bubbles: Bubble[],
+		font?: Font,
+		scan?: { signal: AbortSignal }
+	): Promise<void> {
+		if (language !== 'org') await this.store.editBubbles?.(this, language, bubbles, font, scan);
 	}
 }
 

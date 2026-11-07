@@ -62,6 +62,7 @@ export function mergeOcrBubbles(bubbles: readonly Bubble[]): Bubble[] {
 }
 
 export async function scanImage(image: Blob, apiKey: string, signal?: AbortSignal) {
+	signal?.throwIfAborted();
 	const content = await new Promise<string>((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onload = () => resolve((reader.result as string).split(',')[1]);
@@ -77,6 +78,7 @@ export async function scanImage(image: Blob, apiKey: string, signal?: AbortSigna
 		signal
 	});
 	const data = await response.json();
+	signal?.throwIfAborted();
 	if (!response.ok || data.error)
 		throw new Error(data.error?.message || `Google Vision request failed (${response.status}).`);
 	if (!Array.isArray(data.responses) || data.responses.length !== 1)

@@ -178,9 +178,15 @@ export class ArchiveComicStore implements ComicStore {
 			throw error;
 		}
 	}
-	async editBubbles(comic: Comic, language: string, bubbles: Bubble[], font?: Font) {
+	async editBubbles(
+		comic: Comic,
+		language: string,
+		bubbles: Bubble[],
+		font?: Font,
+		scan?: { signal: AbortSignal }
+	) {
 		try {
-			const document = await this.metadata!.edit(comic.entryPath!, language, bubbles, font);
+			const document = await this.metadata!.edit(comic.entryPath!, language, bubbles, font, scan);
 			comic.setSourceDocument(language, document?.source, document?.path);
 			if (font !== undefined) {
 				const overlay = await this.metadata!.overlay(comic.entryPath!, language);
