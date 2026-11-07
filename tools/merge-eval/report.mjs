@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 export const escape = (value) =>
 	String(value).replace(
 		/[&<>"']/g,
@@ -56,6 +57,10 @@ export async function html(report, datasetDirectory) {
 			}
 		const sourceAnchor = (id) =>
 			`source-${pageIndex}-${page.input.words.findIndex((word) => word.id === id)}`;
+		let diagnostics = '';
+		if (page.diagnostics) {
+			diagnostics = `<details><summary>Decision trace (${page.diagnostics.decisions.length} events)</summary><p>Candidate membership is captured at decision time. Filter by an exact source ID and stage. Follow source IDs to original inputs. Replace-best events are provisional; assignment, cut, and mutual/fragment selection events record resulting decisions. Costs show how the merger ranked candidates. Rejected gutter pairs stop before boundary search. All events remain in report.json.</p><div class="trace" data-page="${pageIndex}"><label>Source ID <input class="source-filter" aria-label="Source ID"></label> <label>Stage <select class="stage-filter"><option value="">All stages</option>${[...new Set(page.diagnostics.decisions.map((event) => `${event.phase}: ${event.stage}`))].map((stage) => `<option>${escape(stage)}</option>`).join('')}</select></label> <button class="previous">Previous</button> <button class="next">Next</button><p class="count"></p><table><thead><tr><th>Event / decision</th><th>Candidates in role order</th><th>Evidence and policy</th></tr></thead><tbody></tbody></table></div></details>`;
+		}
 		const sourceTable = `<details><summary>Source words and annotations</summary><table><thead><tr><th>Source ID / index</th><th>Original record</th></tr></thead><tbody>${page.input.words.map((word, i) => `<tr id="${sourceAnchor(word.id)}"><td>${escape(word.id)} / ${i}</td><td><pre>${escape(JSON.stringify(Object.fromEntries(Object.entries(word).filter(([key]) => key !== 'extended')), null, 2))}</pre></td></tr>`).join('')}</tbody></table></details>`;
 		const previous = report.comparison?.find((p) => p.id === page.id);
 		body += `<article><h2>${escape(page.id)}</h2><pre>${escape(
@@ -78,7 +83,38 @@ export async function html(report, datasetDirectory) {
 		)}</pre><p>${escape(page.input.notes ?? '')}</p><div class="views">${view(
 			'Expected reviewed groups',
 			[...expected.values()].map((members) => ({ members }))
-		)}${view('Actual groups and final rows', page.groups)}${previous ? view('Previous baseline', previous.previous) : ''}</div><details><summary>Reviewed relationship errors and comparison details</summary><pre>${escape(JSON.stringify({ errors: page.errors, unscored: page.unscored, improvements: previous?.improvements, regressions: previous?.regressions }, null, 2))}</pre></details>${sourceTable}</article>`;
+		)}${view('Actual groups and final rows', page.groups)}${previous ? view('Previous baseline', previous.previous) : ''}</div><details><summary>Reviewed relationship errors and comparison details</summary><pre>${escape(JSON.stringify({ errors: page.errors, unscored: page.unscored, improvements: previous?.improvements, regressions: previous?.regressions }, null, 2))}</pre></details>${diagnostics}${sourceTable}</article>`;
 	}
-	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>Local merge evaluation</title><style>body{font:15px system-ui;margin:24px;background:#fafafa;color:#222}article{border-top:2px solid #888;margin-top:24px}.views{display:flex;align-items:flex-start;gap:16px}.views section{flex:1;min-width:0}svg{width:100%;background:white}pre{white-space:pre-wrap;overflow-wrap:anywhere}li{overflow-wrap:anywhere}image{opacity:.75}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;text-align:left;vertical-align:top;padding:6px}details{margin:12px 0}tr:target{background:#fff3bb}</style><h1>Local merge evaluation</h1><p>Colors indicate membership; gray words have no reviewed group. IDs identify original inputs. Rows below each actual view are final reconstructed text rows. Baselines record behavior, not ground truth.</p><pre>${escape(JSON.stringify({ comparisonError: report.comparisonError, provenance: report.provenance, aggregate: report.aggregate }, null, 2))}</pre>${body}</html>`;
+	const payload = JSON.stringify(report.pages.map((page) => page.diagnostics ?? null)).replace(
+		/</g,
+		'\\u003c'
+	);
+	const script = `const data = JSON.parse(document.getElementById('trace-data').textContent);
+for (const panel of document.querySelectorAll('.trace')) {
+ const page = Number(panel.dataset.page), trace = data[page], candidates = new Map(trace.candidates.map(c => [c.id, c.members]));
+ const sourceIndexes = new Map(${JSON.stringify(report.pages.map((page) => page.input.words.map((word) => word.id))).replace(/</g, '\\u003c')}[page].map((id, i) => [id, i]));
+ let offset = 0;
+ const source = panel.querySelector('.source-filter'), stage = panel.querySelector('.stage-filter');
+ function render() {
+  const events = trace.decisions.filter(e => (!stage.value || stage.value === e.phase + ': ' + e.stage) && (!source.value.trim() || e.candidates.some(c => candidates.get(c).includes(source.value.trim()))));
+  offset = Math.min(offset, Math.max(0, Math.floor((events.length - 1) / 100) * 100));
+  panel.querySelector('.count').textContent = events.length ? (offset + 1) + '–' + Math.min(offset + 100, events.length) + ' of ' + events.length : 'No matching events';
+  panel.querySelector('.previous').disabled = offset === 0;
+  panel.querySelector('.next').disabled = offset + 100 >= events.length;
+  const body = panel.querySelector('tbody'); body.replaceChildren();
+  for (const event of events.slice(offset, offset + 100)) {
+   const row = body.insertRow(), decision = row.insertCell(), refs = row.insertCell(), evidence = row.insertCell();
+   decision.textContent = '#' + event.id + ' ' + event.phase + ': ' + event.stage + ' / ' + event.decision + (event.reasons.length ? ' (' + event.reasons.join(', ') + ')' : '');
+   event.candidates.forEach((candidate, i) => { const line = document.createElement('div'); line.append((i + 1) + ' [' + candidate + ']: '); for (const id of candidates.get(candidate)) { const link = document.createElement('a'); link.href = '#source-' + page + '-' + sourceIndexes.get(id); link.textContent = id; link.onclick = () => { document.getElementById(link.hash.slice(1)).closest('details').open = true; }; line.append(link, ' '); } refs.append(line); });
+   const pre = document.createElement('pre'); pre.textContent = JSON.stringify({measurements:event.measurements, limits:event.limits, tieBreak:event.tieBreak}, null, 2); evidence.append(pre);
+  }
+ }
+ source.oninput = stage.onchange = () => {offset = 0; render();};
+ panel.querySelector('.previous').onclick = () => {offset = Math.max(0, offset - 100); render();};
+ panel.querySelector('.next').onclick = () => {offset += 100; render();};
+ panel.closest('details').addEventListener('toggle', () => { if (panel.closest('details').open) render(); });
+}`;
+	const scriptHash = createHash('sha256').update(script).digest('base64');
+
+	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-${scriptHash}'"><title>Local merge evaluation</title><style>body{font:15px system-ui;margin:24px;background:#fafafa;color:#222}article{border-top:2px solid #888;margin-top:24px}.views{display:flex;align-items:flex-start;gap:16px}.views section{flex:1;min-width:0}svg{width:100%;background:white}pre{white-space:pre-wrap;overflow-wrap:anywhere}li{overflow-wrap:anywhere}image{opacity:.75}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;text-align:left;vertical-align:top;padding:6px}details{margin:12px 0}tr:target{background:#fff3bb}</style><h1>Local merge evaluation</h1><p>Colors indicate membership; gray words have no reviewed group. IDs identify original inputs. Rows below each actual view are final reconstructed text rows. Baselines record behavior, not ground truth.</p><pre>${escape(JSON.stringify({ comparisonError: report.comparisonError, provenance: report.provenance, aggregate: report.aggregate }, null, 2))}</pre>${body}<script id="trace-data" type="application/json">${payload}</script><script id="trace-viewer">${script}</script></html>`;
 }

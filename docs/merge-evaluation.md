@@ -169,3 +169,74 @@ input, arguments, output path, or I/O failure; **3** incompatible/unreadable bas
 **4** compatible comparison with any newly regressed reviewed relationship
 (including lost order comparability), even if other relationships improve.
 A first baseline can contain errors and still exit 0.
+
+## Opt-in decision analysis
+
+Add `--trace` to the evaluation command to include decision events in the JSON and HTML reports.
+
+The existing `mergeBubbles(bubbles): Bubble[]` and
+`analyzeMergeBubbles(bubbles): MergeGroup[]` interfaces remain compatible. They
+share the production policy and do not collect decision events. Offline tools can
+call `inspectMergeBubbles(bubbles): MergeAnalysis` from
+[src/lib/mergeBubbles.ts](../src/lib/mergeBubbles.ts). It returns:
+
+- `groups`: the same output bubbles, ordered source indexes and final rows as
+  `analyzeMergeBubbles`, before app letter filtering.
+- `sources`: input indexes, bounds, original text and `normalizedText` after the
+  existing whitespace cleanup. These describe this invocation's supplied bubbles;
+  they identify the words supplied to this run.
+- `decisions`: deterministic events with sequential IDs, phase, candidate
+  membership snapshots, measurements, limits, failed predicates, decision and,
+  where applicable, the existing tie policy.
+
+Source indexes identify input positions, including duplicate and empty text.
+Candidate membership is captured before rows/runs grow; it is not an inferred
+output identity. Event IDs and candidate references are stable for identical
+ordered inputs and implementation, not across changed inputs or future versions.
+`grouping` covers provisional rows through fragment reconnection; `assembly`
+covers the separate reconstruction of final text rows. Outline generation,
+formatting and earliest-source metadata inheritance remain downstream of grouping.
+
+| Stage                    | Candidate roles, in order                                                    | Interpretation                                                                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `row`                    | Incoming word; existing row, if any                                          | Height/center gates, punctuation exception, incumbent distance, provisional best replacement and final assignment/new row. Equal distance retains the first created row. |
+| `row-punctuation`        | Incoming punctuation; visited neighbor                                       | Vertical contact, horizontal gap and actual neighbor-height reach. Visits stop at the first witness, as before.                                                          |
+| `run`                    | Current run, if any; incoming word                                           | Gap to the run's right bound and row-height cutoff; equality appends.                                                                                                    |
+| `gutter-pair`            | Target run; left evidence run; right evidence run                            | Local gap, row distance/alignment, coverage and compatibility predicates. Rejected pairs do not search boundaries. Self pairs are structurally omitted.                  |
+| `gutter-boundary`        | Word before boundary; word after boundary; left evidence; right evidence     | Search bounds, word gap, gutter distance and existing `gap - 0.08 * distance` score. Strict improvement replaces the incumbent; ties retain the first boundary.          |
+| `gutter-selection`       | Target run; left evidence; right evidence; selected boundary words, if any   | Final cut proposed by that evidence pair, or no eligible boundary. Cuts from all eligible pairs accumulate; inferred cuts never become evidence.                         |
+| `continuation`           | Upper line; lower line                                                       | Compatibility, heights, center separation, overlap/gap and, after the early gates pass, normalized alignment and existing cost.                                          |
+| `continuation-selection` | Upper line; lower line; upper's chosen successor; lower's chosen predecessor | Candidate cost, winning costs and mutual choice or competing choices. Strictly smaller cost wins; equal costs keep the first sorted-line pair visited.                   |
+| `fragment`               | Upper line; lower fragment; chosen sibling                                   | Mutual sibling, center distance and overhang gates. Skipped cases instead list lower line and its predecessor, if present.                                               |
+
+Reasons name failed predicates of the unchanged policy, sometimes more than one;
+they are not a claim about which short-circuited expression originally ran first.
+`replace-best-*` is provisional, not a final join. Follow the later assignment,
+cut, mutual-choice and fragment events. A missing gutter-boundary event means its
+evidence pair failed earlier, not that the boundary was measured and preferred
+uncut. A nonmutual continuation may still join through the fragment exception.
+`Infinity` is ineligible, not an uncertainty score. No new scores, provider hints,
+textual evidence, alternative search or probabilities are introduced.
+
+### Offline report and local viewer
+
+The adapter's `inspect(page)` maps invocation indexes to dataset word IDs. Each
+page's optional `diagnostics` has its own `schemaVersion: 1`, a source table, a
+`candidates` dictionary (`{id, members}` entries), and decision events referring
+to those candidates. Repeated memberships are interned in first-use order. JSON
+uses strings `Infinity`, `-Infinity` and `NaN` for nonfinite measurement values;
+they must not silently become null. Production bubbles never contain this data.
+
+Open the report's **Decision trace** section, enter an exact **Source ID**, and
+select a **Stage**. The viewer displays 100 matching events at a time; **Previous**
+and **Next** navigate them. Candidate source links open the original source table.
+Its records omit bulky `extended` metadata for readability; `report.json` retains
+it. All content stays local; private strings are escaped or inserted as text.
+Report JSON is streamed to support enriched datasets larger than a single runtime
+string. Full traces can still be large, especially the cubic gutter-pair traversal;
+this is an offline investigation tool, with additional memory and runtime cost.
+
+Diagnostics live beside `groups`, not inside them. Baseline compatibility and
+`behaviorChanged` continue to compare inputs, labels, metrics and complete output
+groups. Adding/changing traces alone neither invalidates an older compatible
+baseline nor hides output changes. No schema/metric/algorithm version was bumped.

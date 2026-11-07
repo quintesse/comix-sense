@@ -1,7 +1,44 @@
 import { BblShapeType, type BblShape, type Bubble, type Vertex } from './types/Comic';
 
 type Box = { l: number; t: number; r: number; b: number };
-type Word = { index: number; bubble: Bubble; box: Box; text: string };
+type SourceWord = { index: number; bubble: Bubble; box: Box; text: string };
+/** Source references are zero-based indexes into the supplied bubbles, never inferred
+ * from text/geometry. Candidate snapshots retain membership at decision time. */
+export type MergeDecision = {
+	id: number;
+	stage:
+		| 'row'
+		| 'row-punctuation'
+		| 'run'
+		| 'gutter-pair'
+		| 'gutter-boundary'
+		| 'gutter-selection'
+		| 'continuation'
+		| 'continuation-selection'
+		| 'fragment';
+	phase: 'grouping' | 'assembly';
+	candidates: number[][];
+	measurements: Record<string, number | boolean>;
+	limits: Record<string, number>;
+	reasons: string[];
+	decision: string;
+	/** Selection policy, including stable traversal ties; not confidence. */
+	tieBreak?: string;
+};
+export type MergeAnalysis = {
+	groups: MergeGroup[];
+	sources: { sourceIndex: number; box: Box; text: string; normalizedText: string }[];
+	decisions: MergeDecision[];
+};
+type Trace = { events: MergeDecision[]; phase: MergeDecision['phase'] };
+const indexes = (line: Line) => line.words.map((word) => word.index);
+function record(trace: Trace | undefined, event: Omit<MergeDecision, 'id' | 'phase'>) {
+	if (trace) trace.events.push({ id: trace.events.length, phase: trace.phase, ...event });
+}
+/** Keep measurement and gate names alongside the unchanged geometric policy. */
+function rejected(checks: Record<string, boolean>): string[] {
+	return Object.keys(checks).filter((key) => checks[key]);
+}
 const height = (b: Box) => b.b - b.t;
 const cx = (b: Box) => (b.l + b.r) / 2;
 const cy = (b: Box) => (b.t + b.b) / 2;
@@ -16,7 +53,7 @@ function median(values: number[]) {
 	return (sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.floor(sorted.length / 2)]) / 2;
 }
 class Line {
-	constructor(public words: Word[]) {}
+	constructor(public words: SourceWord[]) {}
 	get box() {
 		return this.words.map((word) => word.box).reduce(union);
 	}
@@ -39,14 +76,50 @@ function equal(a: unknown, b: unknown): boolean {
 		)
 	);
 }
-const compatible = (a: Word, b: Word) =>
+const compatible = (a: SourceWord, b: SourceWord) =>
 	// Independently positioned inputs are never combined: retain each placement intact.
 	a.bubble.layout === undefined &&
 	b.bubble.layout === undefined &&
 	a.bubble.lang === b.bubble.lang &&
 	equal(a.bubble.style, b.bubble.style);
 const punctuation = (text: string) => text.length > 0 && !/[\p{L}\p{Nd}]/u.test(text);
-function rows(input: Word[]): Line[] {
+function rowEvidence(word: SourceWord, row: Line, trace?: Trace) {
+	const h = Math.max(height(word.box), row.height);
+	const d = Math.abs(cy(word.box) - row.center);
+	const smallPunctuation =
+		punctuation(word.text) &&
+		height(word.box) <= row.height &&
+		row.words.some((w) => {
+			const overlap = Math.min(w.box.b, word.box.b) - Math.max(w.box.t, word.box.t);
+			const gap = Math.max(w.box.l, word.box.l) - Math.min(w.box.r, word.box.r);
+			// Compare the original endpoints, preserving floating-point behavior.
+			const verticalTouch = Math.min(w.box.b, word.box.b) >= Math.max(w.box.t, word.box.t);
+			const eligible = !punctuation(w.text) && verticalTouch && gap <= 0.35 * height(w.box);
+			if (trace)
+				record(trace, {
+					stage: 'row-punctuation',
+					candidates: [[word.index], [w.index]],
+					measurements: { overlap, gap, verticalTouch, neighborPunctuation: punctuation(w.text) },
+					limits: { maximumGap: 0.35 * height(w.box) },
+					reasons: rejected({
+						'punctuation-neighbor': punctuation(w.text),
+						'no-vertical-touch': !verticalTouch,
+						'horizontal-gap': !(gap <= 0.35 * height(w.box))
+					}),
+					decision: eligible ? 'punctuation-witness' : 'reject-punctuation-neighbor'
+				});
+			return eligible;
+		});
+	return {
+		compatible: compatible(word, row.words[0]),
+		smallPunctuation,
+		height: height(word.box),
+		rowHeight: row.height,
+		h,
+		distance: d
+	};
+}
+function rows(input: SourceWord[], trace?: Trace): Line[] {
 	const sorted = input.toSorted(
 		(a, b) =>
 			Number(punctuation(a.text)) - Number(punctuation(b.text)) ||
@@ -59,66 +132,135 @@ function rows(input: Word[]): Line[] {
 		let best: Line | undefined,
 			distance = Infinity;
 		for (const row of result) {
-			const h = Math.max(height(word.box), row.height);
-			const d = Math.abs(cy(word.box) - row.center);
-			const smallPunctuation =
-				punctuation(word.text) &&
-				height(word.box) <= row.height &&
-				row.words.some(
-					(w) =>
-						!punctuation(w.text) &&
-						Math.min(w.box.b, word.box.b) >= Math.max(w.box.t, word.box.t) &&
-						Math.max(w.box.l, word.box.l) - Math.min(w.box.r, word.box.r) <= 0.35 * height(w.box)
-				);
-			if (
-				compatible(word, row.words[0]) &&
+			const evidence = rowEvidence(word, row, trace);
+			const { h, distance: d, smallPunctuation } = evidence;
+			const eligible =
+				evidence.compatible &&
 				(smallPunctuation ||
-					(Math.min(height(word.box), row.height) >= 0.55 * h && d <= 0.42 * h)) &&
-				d < distance
-			) {
+					(Math.min(evidence.height, evidence.rowHeight) >= 0.55 * h && d <= 0.42 * h));
+			if (trace)
+				record(trace, {
+					stage: 'row',
+					candidates: [[word.index], indexes(row)],
+					measurements: { ...evidence, incumbentDistance: distance },
+					limits: {
+						minimumHeight: 0.55 * h,
+						maximumCenterDistance: 0.42 * h,
+						punctuationReachHeightFactor: 0.35
+					},
+					reasons: rejected({
+						incompatible: !evidence.compatible,
+						height: !smallPunctuation && Math.min(evidence.height, evidence.rowHeight) < 0.55 * h,
+						center: !smallPunctuation && d > 0.42 * h,
+						'not-closer': eligible && !(d < distance)
+					}),
+					decision: eligible && d < distance ? 'replace-best-row' : 'reject-row',
+					tieBreak: 'Strictly smaller center distance; first row in creation order wins ties.'
+				});
+			if (eligible && d < distance) {
 				best = row;
 				distance = d;
 			}
 		}
+		if (trace)
+			record(trace, {
+				stage: 'row',
+				candidates: [[word.index], ...(best ? [indexes(best)] : [])],
+				measurements: {},
+				limits: {},
+				reasons: [],
+				decision: best ? 'assign-row' : 'start-row'
+			});
 		if (best) best.words.push(word);
 		else result.push(new Line([word]));
 	}
 	return result;
 }
-function runs(row: Line): Line[] {
+function runs(row: Line, trace?: Trace): Line[] {
 	row.words.sort((a, b) => a.box.l - b.box.l || a.index - b.index);
 	const result: Line[] = [];
 	let current: Line | undefined;
 	for (const word of row.words) {
-		if (!current || word.box.l - current.box.r > 0.65 * row.height) {
+		const gap = current ? word.box.l - current.box.r : undefined;
+		const separate = !current || gap! > 0.65 * row.height;
+		if (trace)
+			record(trace, {
+				stage: 'run',
+				candidates: [...(current ? [indexes(current)] : []), [word.index]],
+				measurements: gap === undefined ? {} : { gap, rowHeight: row.height },
+				limits: { maximumGap: 0.65 * row.height },
+				reasons: gap !== undefined && separate ? ['horizontal-gap'] : [],
+				decision: separate ? 'start-run' : 'append-run'
+			});
+		if (separate) {
 			current = new Line([]);
 			result.push(current);
 		}
-		current.words.push(word);
+		current!.words.push(word);
 	}
 	return result;
 }
-function split(line: Line, all: Line[]): Line[] {
+function gutterEvidence(line: Line, left: Line, right: Line, h: number, box: Box, trace?: Trace) {
+	const a = left.box,
+		b = right.box;
+	const gap = b.l - a.r;
+	const gapReasons = rejected({
+		'gutter-too-narrow': gap < 0.9 * h,
+		'gutter-too-wide': gap > 3 * h
+	});
+	// Keep the original cheap early gates cheap for production. Offline traces
+	// additionally measure the other failed predicates for rejected pairs.
+	if (!trace && gapReasons.length) return { measurements: { gap }, reasons: gapReasons };
+	const measurements = {
+		gap,
+		rowAlignment: Math.abs(left.center - right.center),
+		rowDistance: Math.abs(line.center - left.center),
+		leftCenter: cx(a),
+		rightCenter: cx(b),
+		lineLeft: box.l,
+		lineRight: box.r,
+		height: h
+	};
+	const reasons = [
+		...gapReasons,
+		...rejected({
+			'evidence-row-alignment': measurements.rowAlignment > 0.4 * h,
+			'evidence-too-far': measurements.rowDistance > 1.65 * h,
+			'evidence-too-close': measurements.rowDistance < 0.6 * h,
+			'left-center-outside': cx(a) <= box.l,
+			'right-center-outside': cx(b) >= box.r,
+			'incompatible-left': !compatible(line.words[0], left.words[0]),
+			'incompatible-right': !compatible(line.words[0], right.words[0])
+		})
+	];
+	return { measurements, reasons };
+}
+function split(line: Line, all: Line[], trace?: Trace): Line[] {
 	const cuts = new Set<number>(),
 		h = line.height,
 		box = line.box;
 	for (const left of all)
 		for (const right of all) {
 			if (left === line || right === line || left === right) continue;
+			const { measurements, reasons } = gutterEvidence(line, left, right, h, box, trace);
+			if (trace)
+				record(trace, {
+					stage: 'gutter-pair',
+					candidates: [indexes(line), indexes(left), indexes(right)],
+					measurements,
+					limits: {
+						minimumGap: 0.9 * h,
+						maximumGap: 3 * h,
+						maximumRowAlignment: 0.4 * h,
+						minimumRowDistance: 0.6 * h,
+						maximumRowDistance: 1.65 * h
+					},
+					reasons,
+					decision: reasons.length ? 'reject-evidence-pair' : 'search-boundaries'
+				});
+			if (reasons.length) continue;
 			const a = left.box,
 				b = right.box;
-			if (
-				b.l - a.r < 0.9 * h ||
-				b.l - a.r > 3 * h ||
-				Math.abs(left.center - right.center) > 0.4 * h ||
-				Math.abs(line.center - left.center) > 1.65 * h ||
-				Math.abs(line.center - left.center) < 0.6 * h ||
-				cx(a) <= box.l ||
-				cx(b) >= box.r ||
-				!compatible(line.words[0], left.words[0]) ||
-				!compatible(line.words[0], right.words[0])
-			)
-				continue;
 			const gutter = (a.r + b.l) / 2;
 			let best = -1,
 				score = -Infinity;
@@ -127,14 +269,71 @@ function split(line: Line, all: Line[]): Line[] {
 					next = line.words[i].box;
 				const x = (prev.r + next.l) / 2,
 					gap = next.l - prev.r;
-				if (x < a.r - 1.5 * h || x > b.l + 1.5 * h || x <= cx(a) || x >= cx(b) || gap < -0.25 * h)
-					continue;
-				const value = gap - 0.08 * Math.abs(x - gutter);
+				const reasons = rejected({
+					'left-search-limit': x < a.r - 1.5 * h,
+					'right-search-limit': x > b.l + 1.5 * h,
+					'left-evidence-center': x <= cx(a),
+					'right-evidence-center': x >= cx(b),
+					'word-overlap': gap < -0.25 * h
+				});
+				const value = reasons.length ? -Infinity : gap - 0.08 * Math.abs(x - gutter);
+				if (trace)
+					record(trace, {
+						stage: 'gutter-boundary',
+						candidates: [
+							[line.words[i - 1].index],
+							[line.words[i].index],
+							indexes(left),
+							indexes(right)
+						],
+						measurements: {
+							x,
+							gap,
+							gutter,
+							distance: Math.abs(x - gutter),
+							score: value,
+							incumbentScore: score,
+							boundary: i
+						},
+						limits: {
+							minimumX: a.r - 1.5 * h,
+							maximumX: b.l + 1.5 * h,
+							leftCenter: cx(a),
+							rightCenter: cx(b),
+							minimumGap: -0.25 * h,
+							distancePenalty: 0.08
+						},
+						reasons: [
+							...reasons,
+							...(!reasons.length && !(value > score) ? ['not-higher-score'] : [])
+						],
+						decision: reasons.length
+							? 'reject-boundary'
+							: value > score
+								? 'replace-best-boundary'
+								: 'retain-best-boundary',
+						tieBreak: 'Strictly greater score; first left-to-right boundary wins ties.'
+					});
+				if (reasons.length) continue;
 				if (value > score) {
 					score = value;
 					best = i;
 				}
 			}
+			if (trace)
+				record(trace, {
+					stage: 'gutter-selection',
+					candidates: [
+						indexes(line),
+						indexes(left),
+						indexes(right),
+						...(best > 0 ? [[line.words[best - 1].index], [line.words[best].index]] : [])
+					],
+					measurements: { boundary: best, score },
+					limits: {},
+					reasons: best > 0 ? [] : ['no-eligible-boundary'],
+					decision: best > 0 ? 'add-cut' : 'no-cut'
+				});
 			if (best > 0) cuts.add(best);
 		}
 	const result: Line[] = [];
@@ -146,24 +345,90 @@ function split(line: Line, all: Line[]): Line[] {
 	result.push(new Line(line.words.slice(start)));
 	return result;
 }
-function continuation(upper: Line, lower: Line) {
+/** Geometric evidence only; eligibility and the existing cost stay separate. */
+function continuationEvidence(upper: Line, lower: Line) {
 	const a = upper.box,
 		b = lower.box,
 		h = Math.min(upper.height, lower.height);
 	const overlap = Math.min(a.r, b.r) - Math.max(a.l, b.l),
 		gap = b.t - a.b;
-	if (
-		!compatible(upper.words[0], lower.words[0]) ||
-		h <= 0 ||
-		Math.max(upper.height, lower.height) > 1.9 * h ||
-		lower.center - upper.center < 0.65 * h ||
-		gap < -0.5 * h ||
-		gap > 0.65 * h ||
-		overlap <= 0
-	)
-		return Infinity;
-	const alignment = Math.min(Math.abs(cx(a) - cx(b)), Math.abs(a.l - b.l), Math.abs(a.r - b.r)) / h;
-	return alignment > 2 ? Infinity : Math.max(0, gap) / h + 0.2 * alignment;
+	const measurements = {
+		height: h,
+		maximumHeight: Math.max(upper.height, lower.height),
+		centerSeparation: lower.center - upper.center,
+		gap,
+		overlap
+	};
+	const limits = {
+		maximumHeight: 1.9 * h,
+		minimumCenterSeparation: 0.65 * h,
+		minimumGap: -0.5 * h,
+		maximumGap: 0.65 * h,
+		minimumOverlap: 0,
+		maximumAlignment: 2,
+		alignmentWeight: 0.2
+	};
+	const reasons = rejected({
+		incompatible: !compatible(upper.words[0], lower.words[0]),
+		'nonpositive-height': h <= 0,
+		'height-ratio': measurements.maximumHeight > 1.9 * h,
+		'center-separation': measurements.centerSeparation < 0.65 * h,
+		'vertical-overlap': gap < -0.5 * h,
+		'vertical-gap': gap > 0.65 * h,
+		'no-horizontal-overlap': overlap <= 0
+	});
+	return { measurements, limits, reasons, a, b, h, gap };
+}
+function continuation(upper: Line, lower: Line, trace?: Trace) {
+	const evidence = continuationEvidence(upper, lower);
+	const { measurements, limits, reasons, a, b, h, gap } = evidence;
+	// Preserve the original gate before evaluating normalized alignment/cost.
+	let alignment: number | undefined;
+	let cost = Infinity;
+	if (!reasons.length) {
+		alignment = Math.min(Math.abs(cx(a) - cx(b)), Math.abs(a.l - b.l), Math.abs(a.r - b.r)) / h;
+		cost = alignment > 2 ? Infinity : Math.max(0, gap) / h + 0.2 * alignment;
+		if (alignment > 2) reasons.push('alignment');
+	}
+	if (trace)
+		record(trace, {
+			stage: 'continuation',
+			candidates: [indexes(upper), indexes(lower)],
+			measurements: { ...measurements, ...(alignment === undefined ? {} : { alignment }), cost },
+			limits,
+			reasons,
+			decision: Number.isFinite(cost) ? 'eligible-continuation' : 'reject-continuation'
+		});
+	return cost;
+}
+function fragmentEvidence(upper: Line, lower: Line, sibling: Line, siblingMutual: boolean) {
+	const a = upper.box,
+		b = lower.box,
+		c = sibling.box,
+		h = upper.height;
+	const measurements = {
+		siblingMutual: siblingMutual,
+		centerDistance: Math.abs(lower.center - sibling.center),
+		lowerLeft: b.l,
+		lowerRight: b.r,
+		siblingLeft: c.l,
+		siblingRight: c.r,
+		height: h
+	};
+	const limits = {
+		maximumCenterDistance: 0.4 * h,
+		minimumLeft: a.l - 0.5 * h,
+		maximumRight: a.r + 0.5 * h
+	};
+	const reasons = rejected({
+		'sibling-not-mutual': !measurements.siblingMutual,
+		'center-distance': !(measurements.centerDistance <= 0.4 * h),
+		'lower-left-overhang': !(b.l >= a.l - 0.5 * h),
+		'lower-right-overhang': !(b.r <= a.r + 0.5 * h),
+		'sibling-left-overhang': !(c.l >= a.l - 0.5 * h),
+		'sibling-right-overhang': !(c.r <= a.r + 0.5 * h)
+	});
+	return { measurements, limits, reasons };
 }
 /** Flatten OCR formatting while keeping hyphenated line breaks joined. */
 function unformatted(value: string): string {
@@ -349,9 +614,29 @@ export function mergeBubbles(bubbles: readonly Bubble[]): Bubble[] {
 	return analyzeMergeBubbles(bubbles).map((group) => group.bubble);
 }
 
-/** Report original word indexes and final rows for offline evaluation. */
+/** Groups are in output reading order. Diagnostics never enter serialized bubbles. */
 export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
-	const words: Word[] = bubbles.map((bubble, index) => {
+	return mergeSourceWords(sourceWords(bubbles));
+}
+
+/** Opt-in offline analysis. Candidate indexes refer to the supplied bubbles. */
+export function inspectMergeBubbles(bubbles: readonly Bubble[]): MergeAnalysis {
+	const words = sourceWords(bubbles);
+	const trace: Trace = { events: [], phase: 'grouping' };
+	const groups = mergeSourceWords(words, trace);
+	return {
+		groups,
+		sources: words.map((word) => ({
+			sourceIndex: word.index,
+			box: { ...word.box },
+			text: word.bubble.text ?? '',
+			normalizedText: word.text
+		})),
+		decisions: trace.events
+	};
+}
+function sourceWords(bubbles: readonly Bubble[]): SourceWord[] {
+	return bubbles.map((bubble, index) => {
 		const { type, vs } = bubble.shape;
 		if (
 			!((type === 'box' && vs.length === 2) || (type === 'poly' && vs.length >= 3)) ||
@@ -370,9 +655,11 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 			}
 		};
 	});
-	const initial = rows(words).flatMap(runs);
+}
+function mergeSourceWords(words: SourceWord[], trace?: Trace): MergeGroup[] {
+	const initial = rows(words, trace).flatMap((row) => runs(row, trace));
 	const lines = initial
-		.flatMap((line) => split(line, initial))
+		.flatMap((line) => split(line, initial, trace))
 		.sort((a, b) => a.box.t - b.box.t || a.box.l - b.box.l);
 	const n = lines.length,
 		parent = lines.map((_, i) => i);
@@ -387,12 +674,12 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 		above = Array<number>(n).fill(-1);
 	const downCost = Array<number>(n).fill(Infinity),
 		upCost = Array<number>(n).fill(Infinity);
-	const edges: { a: number; b: number }[] = [];
+	const edges: { a: number; b: number; cost: number }[] = [];
 	for (let i = 0; i < n; i++)
 		for (let j = i + 1; j < n; j++) {
-			const cost = continuation(lines[i], lines[j]);
+			const cost = continuation(lines[i], lines[j], trace);
 			if (!Number.isFinite(cost)) continue;
-			edges.push({ a: i, b: j });
+			edges.push({ a: i, b: j, cost });
 			if (cost < downCost[i]) {
 				downCost[i] = cost;
 				below[i] = j;
@@ -402,26 +689,69 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 				above[j] = i;
 			}
 		}
-	for (const { a, b } of edges) if (below[a] === b && above[b] === a) parent[root(b)] = root(a);
+	for (const { a, b, cost } of edges) {
+		const mutual = below[a] === b && above[b] === a;
+		if (trace)
+			record(trace, {
+				stage: 'continuation-selection',
+				candidates: [
+					indexes(lines[a]),
+					indexes(lines[b]),
+					indexes(lines[below[a]]),
+					indexes(lines[above[b]])
+				],
+				measurements: {
+					upper: a,
+					lower: b,
+					cost,
+					selectedBelow: below[a],
+					selectedAbove: above[b],
+					downCost: downCost[a],
+					upCost: upCost[b]
+				},
+				limits: {},
+				reasons: rejected({
+					'upper-prefers-other': below[a] !== b,
+					'lower-prefers-other': above[b] !== a
+				}),
+				decision: mutual ? 'join-mutual' : 'not-mutual',
+				tieBreak: 'Strictly smaller cost; first candidate in sorted-line pair traversal wins ties.'
+			});
+		if (mutual) parent[root(b)] = root(a);
+	}
 	for (let j = 0; j < n; j++) {
 		const i = above[j];
-		if (i < 0 || below[i] < 0 || below[i] === j) continue;
+		if (i < 0 || below[i] < 0 || below[i] === j) {
+			if (trace)
+				record(trace, {
+					stage: 'fragment',
+					candidates: [indexes(lines[j]), ...(i < 0 ? [] : [indexes(lines[i])])],
+					measurements: { predecessor: i },
+					limits: {},
+					reasons: [i < 0 ? 'no-predecessor' : below[i] < 0 ? 'no-sibling' : 'already-selected'],
+					decision: 'skip-fragment'
+				});
+			continue;
+		}
 		const upper = lines[i],
 			lower = lines[j],
-			sibling = lines[below[i]],
-			a = upper.box,
-			b = lower.box,
-			c = sibling.box,
-			h = upper.height;
-		if (
-			above[below[i]] === i &&
-			Math.abs(lower.center - sibling.center) <= 0.4 * h &&
-			b.l >= a.l - 0.5 * h &&
-			b.r <= a.r + 0.5 * h &&
-			c.l >= a.l - 0.5 * h &&
-			c.r <= a.r + 0.5 * h
-		)
-			parent[root(j)] = root(i);
+			sibling = lines[below[i]];
+		const { measurements, limits, reasons } = fragmentEvidence(
+			upper,
+			lower,
+			sibling,
+			above[below[i]] === i
+		);
+		if (trace)
+			record(trace, {
+				stage: 'fragment',
+				candidates: [indexes(upper), indexes(lower), indexes(sibling)],
+				measurements,
+				limits,
+				reasons,
+				decision: reasons.length ? 'reject-fragment' : 'join-fragment'
+			});
+		if (!reasons.length) parent[root(j)] = root(i);
 	}
 	const groups = new Map<number, Line[]>();
 	for (let i = 0; i < n; i++) {
@@ -440,24 +770,28 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 		ordered.push(...band);
 		remaining = remaining.filter((g) => !band.includes(g));
 	}
-	return ordered.map((group) => {
-		const members = group.flatMap((line) => line.words);
-		const first = members.reduce((a, b) => (a.index < b.index ? a : b));
-		const merged: Bubble = JSON.parse(JSON.stringify(first.bubble));
-		merged.text = first.text;
-		const textRows = rows(members).sort((a, b) => a.center - b.center);
-		for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
-		if (members.length > 1) {
-			merged.text = unformatted(textRows.map(text).filter(Boolean).join('\n'));
-			merged.shape = outline(group);
-		}
-		return {
-			bubble: merged,
-			sourceIndexes: members.map((w) => w.index),
-			rows: textRows.map((row) => ({
-				text: text(row),
-				sourceIndexes: row.words.map((w) => w.index)
-			}))
-		};
-	});
+	if (trace) trace.phase = 'assembly';
+	return ordered.map((group) => assembleGroup(group, trace));
+}
+
+/** Metadata, final rows, formatting and outlines are downstream of grouping. */
+function assembleGroup(group: Line[], trace?: Trace): MergeGroup {
+	const members = group.flatMap((line) => line.words);
+	const first = members.reduce((a, b) => (a.index < b.index ? a : b));
+	const merged: Bubble = JSON.parse(JSON.stringify(first.bubble));
+	merged.text = first.text;
+	const textRows = rows(members, trace).sort((a, b) => a.center - b.center);
+	for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
+	if (members.length > 1) {
+		merged.text = unformatted(textRows.map(text).filter(Boolean).join('\n'));
+		merged.shape = outline(group);
+	}
+	return {
+		bubble: merged,
+		sourceIndexes: members.map((word) => word.index),
+		rows: textRows.map((row) => ({
+			text: text(row),
+			sourceIndexes: row.words.map((word) => word.index)
+		}))
+	};
 }

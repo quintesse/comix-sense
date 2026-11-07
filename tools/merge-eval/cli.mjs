@@ -54,7 +54,11 @@ function* jsonChunks(value, depth = 0) {
 try {
 	const args = process.argv.slice(2),
 		options = {};
-	for (let i = 0; i < args.length; i += 2) {
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === '--trace' && !options['--trace']) {
+			options['--trace'] = true;
+			continue;
+		}
 		if (
 			!['--dataset', '--output', '--baseline'].includes(args[i]) ||
 			!args[i + 1] ||
@@ -62,9 +66,10 @@ try {
 			options[args[i]]
 		)
 			throw new Error(
-				'Usage: --dataset CASES.json --output NEW_DIRECTORY [--baseline report.json]'
+				'Usage: --dataset CASES.json --output NEW_DIRECTORY [--baseline report.json] [--trace]'
 			);
 		options[args[i]] = args[i + 1];
+		i++;
 	}
 	if (!options['--dataset'] || !options['--output'])
 		throw new Error('Explicit --dataset and --output required');
@@ -96,7 +101,9 @@ try {
 	const started = performance.now();
 	const pages = data.pages.map((input) => {
 		const start = performance.now(),
-			groups = production.predict(input),
+			{ groups, diagnostics } = options['--trace']
+				? production.inspect(input)
+				: { groups: production.predict(input) },
 			runtimeMs = performance.now() - start;
 		const errors = [],
 			unscored = [];
@@ -106,6 +113,7 @@ try {
 			...identities(input),
 			input,
 			groups,
+			diagnostics,
 			metrics,
 			errors: errors.map((value) => JSON.parse(value)),
 			unscored: unscored.map((value) => JSON.parse(value)),

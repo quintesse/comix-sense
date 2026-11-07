@@ -185,6 +185,8 @@ test('CLI offline end to end, immutable inputs, baseline and failure exit codes'
 	try {
 		const first = cli(...base, '--output', path.join(temporary, 'first'));
 		assert.equal(first.status, 0, first.stderr);
+		const baseline = JSON.parse(await readFile(path.join(temporary, 'first/report.json'), 'utf8'));
+		assert(baseline.pages.every((page) => !Object.hasOwn(page, 'diagnostics')));
 		const second = cli(
 			...base,
 			'--output',
