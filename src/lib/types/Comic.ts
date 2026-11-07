@@ -1,4 +1,4 @@
-import type { Font, Face, FontScope } from '../bbl/metadata';
+import { font as validatedFont, type Font, type Face, type FontScope } from '../bbl/metadata';
 import { writable } from 'svelte/store';
 import type { FontResources, ResourceFace } from '../bbl/FontResources';
 import type { ComicStore } from './ComicStore';
@@ -149,7 +149,10 @@ export class Comic {
 			overrides.map(async (override) => {
 				values.set(
 					JSON.stringify(override ?? {}),
-					await context.resources.resolve({ ...context.font, ...override }, context.faces)
+					await context.resources.resolve(
+						{ ...context.font, ...validatedFont(override) },
+						context.faces
+					)
 				);
 			})
 		);
@@ -193,7 +196,10 @@ export class Comic {
 	textFont(language: string, bubble: Bubble): Font {
 		const values = this.typography.get(language);
 		return (
-			values?.get(JSON.stringify(bubble.font ?? {})) ?? { ...values?.get('{}'), ...bubble.font }
+			values?.get(JSON.stringify(bubble.font ?? {})) ?? {
+				...values?.get('{}'),
+				...validatedFont(bubble.font)
+			}
 		);
 	}
 

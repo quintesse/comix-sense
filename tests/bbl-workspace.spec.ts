@@ -19,7 +19,12 @@ const original = {
 	custom: { edition: 7 },
 	font: { size: 24, family: ['serif'] },
 	pages: [
-		{ filename: '01.png', note: 'First page', bubbles: [bubble('Original')] },
+		{
+			filename: '01.png',
+			note: 'First page',
+			ocrSource: { schemaVersion: 1, words: [] },
+			bubbles: [bubble('Original')]
+		},
 		{ filename: '02.png', note: 'Other page', bubbles: [bubble('Untouched')] }
 	]
 };
@@ -781,6 +786,71 @@ test('save feedback floats above the page and can be dismissed or expires', asyn
 	await expect(notification).toBeHidden();
 });
 
+test('adding the first bubbles to a sidecar retains its existing page and document metadata', async ({
+	page
+}) => {
+	await setup(page, { empty: true });
+	const path = 'album/01.en.bbl';
+	const originalPage = { note: 'legacy page', font: { size: 24, custom: [9] } };
+	const document = { custom: 'stored', pages: [null, originalPage] };
+	await writeDocuments(page, { [path]: document });
+	const edited = await page.evaluate(async () => {
+		const module = '/src/lib/types/ComicStore.ts';
+		const { DirectoryComicStore } = await import(/* @vite-ignore */ module);
+		const root = await (
+			await (await navigator.storage.getDirectory()).getDirectoryHandle('first')
+		).getDirectoryHandle('comics');
+		const store = new DirectoryComicStore(root);
+		const all = await store.list();
+		const comic = all.find((c: any) => c.kind === 'page' && c.path.endsWith('01.png'));
+		const bubble = {
+			text: 'New',
+			shape: {
+				type: 'box',
+				vs: [
+					{ x: 1, y: 2 },
+					{ x: 3, y: 4 }
+				]
+			}
+		};
+		await comic.editBubbles('en', [bubble]);
+		await store.workspace.save(comic.sourceDocument('en'));
+		store.dispose();
+		return bubble;
+	});
+	expect(await disk(page, path)).toEqual({
+		...document,
+		pages: [null, { ...originalPage, bubbles: [edited] }]
+	});
+});
+
+test('editing text preserves opaque bubble records and nested extension data on disk', async ({
+	page
+}) => {
+	await setup(page);
+	const editable = {
+		...bubble('Editable'),
+		font: { size: 26, family: { vendor: 'future' }, custom: [1, 2] },
+		extra: { vendor: true }
+	};
+	const skipped = { text: 'Future bubble', shape: { type: 'spline', control: [1, 2] } };
+	const doc = {
+		...original,
+		pages: [{ ...original.pages[0], bubbles: [skipped, editable, null] }, original.pages[1]]
+	};
+	await writeDocuments(page, { 'album/album.en.bbl': doc });
+	await page.getByRole('textbox', { name: 'Bubble text' }).fill('Edited');
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+	expect(await disk(page)).toEqual({
+		...doc,
+		pages: [
+			{ ...doc.pages[0], bubbles: [skipped, { ...editable, text: 'Edited' }, null] },
+			original.pages[1]
+		]
+	});
+});
+
 test('save text and geometry to the original document, preserving other pages and metadata', async ({
 	page
 }) => {
@@ -809,6 +879,8 @@ test('save text and geometry to the original document, preserving other pages an
 	expect(result.pages[0].note).toBe('First page');
 	expect(result.pages[0].bubbles[0].text).toBe('Saved edit');
 	expect(result.pages[0].bubbles[0]).not.toHaveProperty('layout');
+	expect(result.pages[0].bubbles[0]).not.toHaveProperty('font');
+	expect(result.pages[0].ocrSource).toEqual(original.pages[0].ocrSource);
 	expect(result.pages[0].bubbles[0].shape).not.toEqual(original.pages[0].bubbles[0].shape);
 	expect(result.pages[1]).toEqual(original.pages[1]);
 	expect(await backups(page)).toEqual({});
@@ -1398,11 +1470,15 @@ test('discarding an album document affects all its edited pages and preserves an
 	await writeDocuments(page, { 'album/01.nl.bbl': { pages: [original.pages[0]] } });
 	await page.getByRole('textbox').fill('First English edit');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('Untouched');
 	await page.getByRole('textbox').fill('Second English edit');
 	await page.getByRole('treeitem', { name: /^0?1$/, exact: true }).click();
+	await expect(page.getByRole('textbox')).toHaveText('First English edit');
 	await selectLanguage(page, 'EN', 'NL');
+	await expect(page.getByRole('textbox')).toHaveText('Original');
 	await page.getByRole('textbox').fill('Keep Dutch edit');
 	await selectLanguage(page, 'NL', 'EN');
+	await expect(page.getByRole('textbox')).toHaveText('First English edit');
 	await confirmDiscard(page);
 	await expect(page.locator('foreignObject')).toHaveText('Original');
 	await page.getByRole('treeitem', { name: /^0?2$/, exact: true }).click();
@@ -1420,6 +1496,7 @@ test('an embedded album index saves as a companion index with the same name and 
 	const rows = page.getByRole('treeitem', { name: 'book', exact: true }).getByRole('treeitem');
 	await page.getByRole('textbox').fill('First archive edit');
 	await rows.nth(1).click();
+	await expect(page.getByRole('textbox')).toHaveText('Untouched');
 	await page.getByRole('textbox').fill('Second archive edit');
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toHaveAttribute(
 		'title',
@@ -1556,13 +1633,7 @@ test('AI album cleanup participates in browser backup, save and discard for ever
 	await cleanup();
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
-	const expected = {
-		...structuredClone(original),
-		pages: original.pages.map((p) => ({
-			...structuredClone(p),
-			bubbles: p.bubbles.map((b) => ({ ...structuredClone(b), font: {} }))
-		}))
-	};
+	const expected = structuredClone(original);
 	expected.pages.forEach((p) => {
 		p.bubbles[0].text += '!';
 	});

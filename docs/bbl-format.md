@@ -434,3 +434,16 @@ missing styles. Family matching is case-insensitive; generic fallback names use 
 use browser CORS and are aborted at timeout/disposal; no persistent offline cache
 is implemented. Packaged resources use the existing archive reader and limits.
 Automatic text fitting, rich text and album export remain deferred.
+
+## Editing existing documents
+
+The editor keeps the original JSON document for saving. Text and style edits
+preserve extension fields on retained records, including nested font properties.
+Unsupported bubble shapes and font declarations stay in their respective arrays
+when visible entries are edited. The same serialization feeds browser recovery,
+disk saves, and archive companion overlays.
+
+Removing a bubble, vertex, layout or font face removes that record. Rescanning
+replaces the recognized bubbles, and Merge replaces its input groups with the
+merged output. A combined bubble inherits metadata from its earliest input word.
+Save preserves JSON data using the app's standard indentation and final newline.

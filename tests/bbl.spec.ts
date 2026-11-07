@@ -4,6 +4,9 @@ import { crc32, deflateSync } from 'node:zlib';
 import { AlbumMetadata, type Source } from '../src/lib/bbl/AlbumMetadata';
 import {
 	Diagnostics,
+	editFont,
+	editRecords,
+	readFace,
 	font,
 	matchDocument,
 	parseDocument,
@@ -68,6 +71,23 @@ test('property validation preserves valid fields, explicit resets and family rep
 	expect(textStyle({ size: 30, lineHeight: 1.2, letterSpacing: -1 })).toBe(
 		'font-size:30px;line-height:1.2;letter-spacing:-1px'
 	);
+});
+
+test('font edits clear selected overrides and retain unrecognized settings and declarations', () => {
+	const settings = { size: 20, weight: 600, family: { future: true }, options: ['ink'] };
+	expect(editFont(settings, { size: 24 })).toEqual({
+		size: 24,
+		family: { future: true },
+		options: ['ink']
+	});
+	const first = { family: 'First', src: 'fonts/first.ttf', vendor: { a: 1 } };
+	const other = { family: 'Second', src: 'fonts/second.ttf' };
+	const hidden = { format: 'future' };
+	const faces = [first, hidden, other];
+	expect(editRecords(faces, [readFace(other)!], readFace)).toEqual([hidden, other]);
+	expect(
+		editRecords(faces, [{ ...readFace(first)!, weight: 700 }, readFace(other)!], readFace)
+	).toEqual([{ ...first, weight: 700 }, hidden, other]);
 });
 
 test('exact filenames beat shorthand independent of language; ambiguous matches warn once', () => {

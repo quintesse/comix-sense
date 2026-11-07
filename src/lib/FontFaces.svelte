@@ -69,7 +69,7 @@
 		}
 		const next = [...faces];
 		if (editing === undefined) next.push(face);
-		else next[editing] = face;
+		else next[editing] = { ...next[editing], ...face };
 		await apply(next);
 	}
 </script>

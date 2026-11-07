@@ -150,6 +150,11 @@ bubbles before saving. You can cancel an AI text request while it runs.
 
 ### Edit bubbles and typography
 
+Editing and saving a bubble preserves custom metadata on the document, its pages,
+and the bubbles you keep. Deleting a bubble removes its metadata along with it.
+Merge and **Overwrite and scan** replace the affected OCR bubbles. Use **Discard Changes**
+before saving if you want the previously saved overlay back.
+
 With a text overlay selected in **Edit Mode**:
 
 - Click bubble text to edit it. On a linked bubble, drag its handles to adjust

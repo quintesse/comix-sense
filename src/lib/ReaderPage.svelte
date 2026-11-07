@@ -12,7 +12,13 @@
 		type Comic
 	} from './types/Comic';
 	import { svgPoint } from './types/funcs';
-	import type { Font, FontScope, Face } from './bbl/metadata';
+	import {
+		editFont,
+		font as validatedFont,
+		type Font,
+		type FontScope,
+		type Face
+	} from './bbl/metadata';
 
 	let {
 		comic,
@@ -58,7 +64,7 @@
 					? comic.albumFont(language)
 					: scope === 'page'
 						? comic.pageFont(language)
-						: (activeBubble?.font ?? {}),
+						: validatedFont(activeBubble?.font),
 			defaults: scope === 'album' ? {} : comic.defaultFont(language),
 			families: comic.fontFamilies(language),
 			faces: comic.fontFaces(language, scope),
@@ -71,7 +77,7 @@
 		if (scope === 'album') {
 			await comic.editAlbumFont(font);
 		} else if (scope === 'bubble') {
-			if (activeBubble) activeBubble.font = font;
+			if (activeBubble) activeBubble.font = editFont(activeBubble.font, font) as Font;
 		} else {
 			await comic.editBubbles(language, $state.snapshot(bubbles), font);
 		}
@@ -209,6 +215,7 @@
 				const point = svgPoint(svg!, event);
 				if (layout && validLayout(bubble.layout))
 					bubble.layout.vs = layout.map((v) => ({
+						...v,
 						x: v.x + point.x - origin.x,
 						y: v.y + point.y - origin.y
 					})) as [(typeof layout)[number], (typeof layout)[number]];

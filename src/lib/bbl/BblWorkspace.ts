@@ -1,6 +1,14 @@
 import { writable } from 'svelte/store';
 import type { Bubble } from '../types/Comic';
-import { relativePath, type Font, type Face } from './metadata';
+import {
+	readBubble,
+	editRecords,
+	editFont,
+	readFace,
+	relativePath,
+	type Font,
+	type Face
+} from './metadata';
 
 type Backup = {
 	id?: number;
@@ -141,7 +149,7 @@ export class BblWorkspace {
 		source = path
 	) {
 		const draft = this.draft(path, original, source);
-		draft.raw.fontFaces = structuredClone(faces);
+		draft.raw.fontFaces = editRecords(draft.raw.fontFaces, faces, readFace);
 		draft.pages.add(pagePath);
 		const languages = draft.languages.get(pagePath) ?? new Set<string>();
 		languages.add(language);
@@ -176,26 +184,18 @@ export class BblWorkspace {
 		pagePath: string,
 		language: string,
 		source = path,
-		font?: Font
+		font?: Font,
+		filename = pagePath.split('/').at(-1)
 	) {
-		if (!relativePath(path) || !path.endsWith('.bbl')) throw new Error('Invalid .bbl path');
-		let draft = this.drafts.get(path);
-		if (!draft) {
-			draft = {
-				raw: structuredClone(this.savedDocuments.get(path) ?? original),
-				revision: 0,
-				pages: new Set(),
-				albums: new Set(),
-				languages: new Map(),
-				source
-			};
-			this.drafts.set(path, draft);
-		}
+		const draft = this.draft(path, original, source);
+		const pages = (draft.raw.pages ??= []);
+		if (pageIndex === pages.length) pages.push({ filename, bubbles: [] });
+		const page = pages[pageIndex];
 		// Callers provide a plain snapshot; retain no editor proxies in storage.
 		// Page font edits preserve the document's bubble serialization and pending text edits.
-		if (font === undefined || !Array.isArray(draft.raw.pages[pageIndex].bubbles))
-			draft.raw.pages[pageIndex].bubbles = bubbles;
-		if (font !== undefined) draft.raw.pages[pageIndex].font = structuredClone(font);
+		if (font === undefined || page.bubbles === undefined)
+			page.bubbles = editRecords(page.bubbles, bubbles, readBubble);
+		if (font !== undefined) page.font = editFont(page.font, font);
 		draft.pages.add(pagePath);
 		const languages = draft.languages.get(pagePath) ?? new Set<string>();
 		languages.add(language);
@@ -225,8 +225,9 @@ export class BblWorkspace {
 			};
 			this.drafts.set(path, draft);
 		}
-		if (font !== undefined) draft.raw.font = structuredClone(font);
-		if (faces !== undefined) draft.raw.fontFaces = structuredClone(faces);
+		if (font !== undefined) draft.raw.font = editFont(draft.raw.font, font);
+		if (faces !== undefined)
+			draft.raw.fontFaces = editRecords(draft.raw.fontFaces, faces, readFace);
 		draft.albums.add(albumPath);
 		draft.revision++;
 		this.changed();

@@ -32,7 +32,7 @@
 	}
 	function move(event: Event) {
 		const { deltaX, deltaY } = (event as CustomEvent<DragDetail>).detail;
-		shape.vs = original.map((v) => vertex(v.x + deltaX, v.y + deltaY));
+		shape.vs = original.map((v) => ({ ...v, x: v.x + deltaX, y: v.y + deltaY }));
 	}
 	function resize(event: Event, index: number) {
 		const { x, y } = (event as CustomEvent<DragDetail>).detail;
@@ -44,7 +44,10 @@
 			vertex(b.x2, b.y1)
 		][index];
 		if (Math.abs(x - opposite.x) > 0 && Math.abs(y - opposite.y) > 0)
-			shape.vs = [opposite, vertex(x, y)];
+			shape.vs = [
+				{ ...original[0], ...opposite },
+				{ ...original[1], x, y }
+			];
 	}
 </script>
 

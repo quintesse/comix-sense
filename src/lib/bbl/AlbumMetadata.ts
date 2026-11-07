@@ -3,6 +3,9 @@ import type { BblWorkspace } from './BblWorkspace';
 import { FontResources, type ResourceFace } from './FontResources';
 import {
 	Diagnostics,
+	editFont,
+	editRecords,
+	readFace,
 	matchDocument,
 	parseDocument,
 	relativePath,
@@ -159,6 +162,8 @@ export class AlbumMetadata {
 		const source =
 			document?.path ??
 			(this.archiveOutput ? this.archiveOutput + '.bbl/' : this.context) + 'album.bbl';
+		if (document && !this.rawDocuments.has(source))
+			throw new Error('Cannot edit invalid BBL document ' + source);
 		const raw = this.rawDocuments.get(source) ?? { pages: [] };
 		this.workspace.editAlbum(
 			this.writePath(source),
@@ -180,11 +185,11 @@ export class AlbumMetadata {
 		}
 		if (font !== undefined) {
 			document.data.font = structuredClone(font);
-			raw.font = structuredClone(font);
+			raw.font = editFont(raw.font, font);
 		}
 		if (faces !== undefined) {
 			document.data.fontFaces = structuredClone(faces);
-			raw.fontFaces = structuredClone(faces);
+			raw.fontFaces = editRecords(raw.fontFaces, faces, readFace);
 		}
 	}
 	async editPageFaces(filename: string, language: string, faces: Face[]) {
@@ -198,6 +203,8 @@ export class AlbumMetadata {
 				filename +
 				(language ? '.' + language : '') +
 				'.bbl';
+		if (sidecar && !this.rawDocuments.has(source))
+			throw new Error('Cannot edit invalid BBL document ' + source);
 		const raw = this.rawDocuments.get(source) ?? { pages: [] };
 		this.workspace.editFaces(
 			this.writePath(source),
@@ -207,7 +214,7 @@ export class AlbumMetadata {
 			language,
 			source
 		);
-		raw.fontFaces = structuredClone(faces);
+		raw.fontFaces = editRecords(raw.fontFaces, faces, readFace);
 		const data = sidecar
 			? await this.load(sidecar, false)
 			: parseDocument(raw, source, false, this.diagnostics);
@@ -240,15 +247,19 @@ export class AlbumMetadata {
 					document: doc.path,
 					read: this.read
 				});
-			if (page?.bubbles !== undefined && doc.language === language) {
-				bubbles = page.bubbles;
+			if (
+				page &&
+				doc.language === language &&
+				(page.bubbles !== undefined || (sidecar && !document))
+			) {
+				bubbles = page.bubbles ?? [];
 				const raw = this.rawDocuments.get(doc.path)!;
 				const pageIndex = raw.pages.findIndex(
 					(p: any) =>
 						p &&
 						typeof p === 'object' &&
 						!Array.isArray(p) &&
-						(page.filename ? relativePath(p.filename) === page.filename : !p.filename)
+						(page.filename ? relativePath(p.filename) === page.filename : p.filename === undefined)
 				);
 				document = { path: doc.path, raw, pageIndex, page };
 				const declared = raw.pages[pageIndex]?.lang ?? raw.lang;
@@ -291,12 +302,18 @@ export class AlbumMetadata {
 		const overlay = await this.overlay(filename, language);
 		const suffix = language ? '.' + language : '';
 		const prefix = this.archiveOutput ? this.archiveOutput + '.bbl/' : this.context;
-		const document = overlay.document ?? {
-			path: prefix + filename.replace(/\.[^/.]+$/, '') + suffix + '.bbl',
-			raw: { pages: [{ filename, bubbles: [] }] },
-			pageIndex: 0,
-			page: { filename, bubbles: [] } as Page
-		};
+		let document = overlay.document;
+		if (!document) {
+			const sidecar = this.sidecars.get(filename.normalize('NFC'))?.get(language);
+			const path = sidecar?.path ?? prefix + filename.replace(/\.[^/.]+$/, '') + suffix + '.bbl';
+			const raw = this.rawDocuments.get(path) ?? { pages: [] };
+			if (
+				(sidecar && !this.rawDocuments.has(path)) ||
+				(raw.pages !== undefined && !Array.isArray(raw.pages))
+			)
+				throw new Error('Cannot edit the page array in ' + path);
+			document = { path, raw, pageIndex: raw.pages?.length ?? 0, page: { filename } };
+		}
 		const path = this.writePath(document.path);
 		this.workspace.edit(
 			path,
@@ -306,12 +323,14 @@ export class AlbumMetadata {
 			this.context + filename,
 			language,
 			document.path,
-			font
+			font,
+			filename
 		);
 		if (font !== undefined) {
 			// Keep the in-memory cascade in sync with the draft for immediate preview.
 			document.page.font = structuredClone(font);
-			document.raw.pages[document.pageIndex].font = structuredClone(font);
+			const rawPage = document.raw.pages?.[document.pageIndex];
+			if (rawPage) rawPage.font = editFont(rawPage.font, font);
 		}
 		return { path, source: document.path };
 	}

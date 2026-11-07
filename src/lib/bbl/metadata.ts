@@ -53,10 +53,10 @@ export function fontSource(value: string): string | undefined {
 	return relativePath(value);
 }
 
-export function font(value: unknown, context: string, diagnostics: Diagnostics): Font {
+export function font(value: unknown, context = 'font', diagnostics?: Diagnostics): Font {
 	if (value === undefined) return {};
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		diagnostics.warn(context, 'invalid font object', 'ignore font and inherit');
+		diagnostics?.warn(context, 'invalid font object', 'ignore font and inherit');
 		return {};
 	}
 	const result: Record<string, unknown> = {};
@@ -76,13 +76,113 @@ export function font(value: unknown, context: string, diagnostics: Diagnostics):
 								: key === 'letterSpacing' && finite;
 		if (valid) result[key] = v;
 		else
-			diagnostics.warn(
+			diagnostics?.warn(
 				`${context}.${key}`,
 				'invalid optional font property',
 				'ignore property and inherit'
 			);
 	}
 	return result as Font;
+}
+
+/** Apply the fields exposed by the font controls to the original JSON object. */
+export function editFont(raw: unknown, next: Font) {
+	const visible = font(raw);
+	if (raw !== undefined && JSON.stringify(visible) === JSON.stringify(next)) return raw;
+	const result = { ...(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) } as Font;
+	for (const key of Object.keys(visible) as (keyof Font)[])
+		if (!Object.hasOwn(next, key)) delete result[key];
+	return { ...result, ...next };
+}
+
+function editableBubble(b: any): boolean {
+	return (
+		!!b &&
+		typeof b.text === 'string' &&
+		['box', 'poly'].includes(b.shape?.type) &&
+		Array.isArray(b.shape?.vs) &&
+		b.shape.vs.length >= 2 &&
+		b.shape.vs.every((v: any) => Number.isFinite(v?.x) && Number.isFinite(v?.y))
+	);
+}
+
+export function readFace(item: unknown): Face | undefined {
+	const f = (item && typeof item === 'object' ? item : {}) as Record<string, any>;
+	const style = f.style === undefined ? 'normal' : f.style;
+	const weight = f.weight === undefined ? 400 : f.weight;
+	const src = typeof f.src === 'string' ? f.src : '';
+	const validSource = fontSource(src);
+	if (
+		typeof f.family !== 'string' ||
+		!f.family.trim() ||
+		!validSource ||
+		!['normal', 'italic', 'oblique'].includes(style) ||
+		!Number.isInteger(weight) ||
+		weight < 1 ||
+		weight > 1000
+	) {
+		return undefined;
+	}
+	return { ...f, family: f.family, src: validSource, style, weight };
+}
+
+/** Retain skipped records and the original serialization of unchanged entries. */
+export function editRecords<T extends Record<string, any>>(
+	raw: unknown,
+	next: T[],
+	read: (value: any) => T | undefined
+): unknown[] {
+	if (!Array.isArray(raw)) return structuredClone(next);
+	const slots: number[] = [];
+	const before: T[] = [];
+	raw.forEach((entry, index) => {
+		const parsed = read(entry);
+		if (parsed !== undefined) {
+			slots.push(index);
+			before.push(parsed);
+		}
+	});
+	const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+	let first = 0;
+	while (first < before.length && first < next.length && same(before[first], next[first])) first++;
+	let end = before.length,
+		nextEnd = next.length;
+	while (end > first && nextEnd > first && same(before[end - 1], next[nextEnd - 1])) {
+		end--;
+		nextEnd--;
+	}
+	const result: unknown[] = [];
+	let cursor = 0,
+		replacement = first;
+	for (let i = first; i < end; i++) {
+		while (cursor < slots[i]) result.push(raw[cursor++]);
+		cursor++;
+		if (replacement < nextEnd) {
+			const edited = { ...next[replacement++] };
+			// With the same number of entries the editor can change a field in place.
+			// Keep omitted defaults and original spellings for properties it did not change.
+			if (before.length === next.length) {
+				const original = raw[slots[i]];
+				for (const key of Object.keys(edited) as (keyof T)[]) {
+					if (!same(before[i][key], edited[key])) continue;
+					if (Object.hasOwn(original, key)) edited[key] = original[key];
+					else delete edited[key];
+				}
+			}
+			result.push(edited);
+		}
+	}
+	const insertAt = slots[end] ?? raw.length;
+	while (cursor < insertAt) result.push(raw[cursor++]);
+	while (replacement < nextEnd) result.push(next[replacement++]);
+	while (cursor < raw.length) result.push(raw[cursor++]);
+	return structuredClone(result);
+}
+
+export function readBubble(value: any): Bubble | undefined {
+	return editableBubble(value)
+		? { ...value, font: value.font === undefined ? {} : value.font }
+		: undefined;
 }
 
 export function parseDocument(
@@ -101,33 +201,14 @@ export function parseDocument(
 	if (input.fontFaces !== undefined && !Array.isArray(input.fontFaces))
 		diagnostics.warn(path + '.fontFaces', 'expected array', 'ignore declarations');
 	for (const [i, item] of (Array.isArray(input.fontFaces) ? input.fontFaces : []).entries()) {
-		const f = item && typeof item === 'object' ? item : {};
-		const style = f.style === undefined ? 'normal' : f.style;
-		const weight = f.weight === undefined ? 400 : f.weight;
-		const src = typeof f.src === 'string' ? f.src : '';
-		const validSource = fontSource(src);
-		if (
-			typeof f.family !== 'string' ||
-			!f.family.trim() ||
-			!validSource ||
-			!['normal', 'italic', 'oblique'].includes(style) ||
-			!Number.isInteger(weight) ||
-			weight < 1 ||
-			weight > 1000
-		) {
+		const face = readFace(item);
+		if (face) doc.fontFaces.push(face);
+		else
 			diagnostics.warn(
-				`${path}.fontFaces[${i}] (${src})`,
+				`${path}.fontFaces[${i}] (${item?.src ?? ''})`,
 				'invalid face declaration',
 				'skip entry'
 			);
-			continue;
-		}
-		doc.fontFaces.push({
-			family: f.family,
-			src: validSource,
-			style,
-			weight
-		});
 	}
 	if (input.pages !== undefined && !Array.isArray(input.pages))
 		diagnostics.warn(path + '.pages', 'expected array', 'ignore page records; keep defaults');
@@ -156,14 +237,8 @@ export function parseDocument(
 		if (p.bubbles !== undefined) {
 			if (Array.isArray(p.bubbles))
 				page.bubbles = p.bubbles.flatMap((b: any, j: number) => {
-					if (
-						!b ||
-						typeof b.text !== 'string' ||
-						!['box', 'poly'].includes(b.shape?.type) ||
-						!Array.isArray(b.shape?.vs) ||
-						b.shape.vs.length < 2 ||
-						!b.shape.vs.every((v: any) => Number.isFinite(v?.x) && Number.isFinite(v?.y))
-					) {
+					const bubble = readBubble(b);
+					if (!bubble) {
 						diagnostics.warn(`${context}.bubbles[${j}]`, 'invalid bubble', 'skip bubble');
 						return [];
 					}
@@ -179,7 +254,8 @@ export function parseDocument(
 							'invalid optional layout',
 							'use mask bounds; preserve metadata'
 						);
-					return [{ ...b, font: font(b.font, `${context}.bubbles[${j}].font`, diagnostics) }];
+					font(b.font, `${context}.bubbles[${j}].font`, diagnostics);
+					return [structuredClone(bubble)];
 				});
 			else
 				diagnostics.warn(context + '.bubbles', 'expected array', 'inherit lower-priority bubbles');

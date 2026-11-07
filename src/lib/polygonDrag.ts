@@ -42,6 +42,7 @@ export function dragPolygonEdge(vs: Vertex[], index: number, delta: Vertex): Ver
 		if (change < 0) fraction = Math.min(fraction, length / -change);
 	}
 	return result.map((v, i) => ({
+		...v,
 		x: v.x + shifts[i].x * fraction,
 		y: v.y + shifts[i].y * fraction
 	}));
