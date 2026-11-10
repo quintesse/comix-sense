@@ -916,6 +916,14 @@ test('write denial retains backups and edits, and same-named roots stay independ
 	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
 });
 
+async function mergePage(page: Page, boundaries?: boolean) {
+	await page.getByTitle('Merge OCR bubbles', { exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'Merge OCR bubbles', exact: true });
+	if (boundaries !== undefined)
+		await dialog.getByRole('checkbox', { name: 'Use balloon boundaries' }).setChecked(boundaries);
+	await dialog.getByRole('button', { name: 'Merge', exact: true }).click();
+}
+
 for (const mergeDuringScan of [true, false]) {
 	test(`scan restores and saves a single OCR document with merge ${mergeDuringScan ? 'during scan' : 'after scan'}`, async ({
 		page
@@ -1040,7 +1048,7 @@ for (const mergeDuringScan of [true, false]) {
 					{ whiteSpace: 'nowrap' }
 				)
 			);
-			await page.getByRole('button', { name: 'Merge', exact: true }).click();
+			await mergePage(page);
 			await expect(page.locator('foreignObject')).toHaveText('Hello world');
 			await expect(page.locator('foreignObject div')).toHaveCSS('white-space', 'normal');
 			expect(await disk(page, 'album/01.OCR.bbl')).toEqual(raw);
@@ -1051,7 +1059,7 @@ for (const mergeDuringScan of [true, false]) {
 				.click();
 			await expect(page.locator('foreignObject')).toHaveText(['Hello', 'world', '123?!']);
 			await expect(page.locator('foreignObject div').first()).toHaveCSS('white-space', 'nowrap');
-			await page.getByRole('button', { name: 'Merge', exact: true }).click();
+			await mergePage(page);
 		}
 		await expect(page.locator('foreignObject')).toHaveText('Hello world');
 		await expect(page.locator('foreignObject div')).toHaveCSS('white-space', 'normal');
@@ -1075,7 +1083,7 @@ for (const mergeDuringScan of [true, false]) {
 		await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 		await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 		await page.getByRole('textbox').fill('Manual edit');
-		await page.getByRole('button', { name: 'Merge', exact: true }).click();
+		await mergePage(page);
 		await expect(page.locator('foreignObject')).toHaveText('Manual edit');
 		await expect
 			.poll(async () => (await backups(page))['album/01.OCR.bbl']?.pages[0].bubbles[0].text)
@@ -2516,3 +2524,103 @@ for (const archive of [false, true]) {
 		expect(result.text).toBe('Manual');
 	});
 }
+test('scan and repeated local merges share session settings and keep the same source words', async ({
+	page
+}) => {
+	await setup(page, { empty: true });
+	await page.evaluate(async () => {
+		const root = await navigator.storage.getDirectory();
+		const dir = await (
+			await (await root.getDirectoryHandle('first')).getDirectoryHandle('comics')
+		).getDirectoryHandle('album');
+		const canvas = document.createElement('canvas');
+		canvas.width = 360;
+		canvas.height = 240;
+		const ctx = canvas.getContext('2d')!;
+		ctx.fillStyle = 'white';
+		ctx.fillRect(0, 0, 360, 240);
+		ctx.lineWidth = 3;
+		ctx.strokeStyle = 'black';
+		ctx.strokeRect(11.5, 11.5, 82, 72);
+		ctx.strokeRect(96.5, 11.5, 82, 72);
+		const writer = await (await dir.getFileHandle('01.png')).createWritable();
+		await writer.write(await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!))));
+		await writer.close();
+	});
+	let calls = 0;
+	await page.route('https://vision.googleapis.com/**', (route) => {
+		calls++;
+		const word = (description: string, x: number) => ({
+			description,
+			boundingPoly: {
+				vertices: [
+					{ x, y: 25 },
+					{ x: x + 40, y: 25 },
+					{ x: x + 40, y: 45 },
+					{ x, y: 45 }
+				]
+			}
+		});
+		return route.fulfill({
+			json: {
+				responses: [
+					{
+						textAnnotations: [
+							{ description: 'Left Right', locale: 'en' },
+							word('Left', 50),
+							word('Right', 100)
+						]
+					}
+				]
+			}
+		});
+	});
+	await page.getByRole('button', { name: 'Scan Full Page', exact: true }).click();
+	const scan = page.getByRole('dialog', { name: 'Scan comic text' });
+	const options = page.getByRole('dialog', { name: 'Merge OCR bubbles' });
+	const boundaries = options.getByRole('checkbox', { name: 'Use balloon boundaries' });
+	const inclination = options.getByRole('checkbox', { name: 'Follow inclined text' });
+	await scan.getByRole('button', { name: 'Merge options' }).click();
+	await expect(inclination).not.toBeChecked();
+	await inclination.check();
+	await expect(boundaries).not.toBeChecked();
+	await boundaries.check();
+	await options.getByRole('button', { name: 'Use settings' }).click();
+	await expect(scan).toContainText('Balloon boundaries: on');
+	await expect(scan).toContainText('Inclined text: on');
+	await scan.getByRole('button', { name: 'Scan', exact: true }).click();
+	await page.getByLabel('Google Vision API key', { exact: true }).fill('test-key');
+	await page.getByRole('button', { name: 'Use key', exact: true }).click();
+	await expect(page.locator('foreignObject')).toHaveText(['Left', 'Right']);
+	await mergePage(page, false);
+	await expect(page.locator('foreignObject')).toHaveText(['Left Right']);
+	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Save Changes', exact: true })).toBeDisabled();
+	await mergePage(page, true);
+	await expect(page.locator('foreignObject')).toHaveText(['Left', 'Right']);
+	await page.getByTitle('Merge OCR bubbles', { exact: true }).click();
+	await expect(boundaries).toBeChecked();
+	await expect(inclination).toBeChecked();
+	await boundaries.uncheck();
+	await inclination.uncheck();
+	await options.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await page.getByTitle('Merge OCR bubbles', { exact: true }).click();
+	await expect(boundaries).toBeChecked();
+	await expect(inclination).toBeChecked();
+	await options.getByRole('button', { name: 'Cancel', exact: true }).click();
+	const firstWord = page.locator('foreignObject[data-bubble-index="0"]').getByRole('textbox');
+	await firstWord.click();
+	await firstWord.fill('Edited');
+	await expect(firstWord).toHaveText('Edited');
+	await mergePage(page, false);
+	await expect(page.locator('foreignObject')).toHaveText(['Edited Right']);
+	expect(calls).toBe(1);
+	await mergePage(page, true);
+	await expect(page.locator('foreignObject')).toHaveText(['Edited', 'Right']);
+	await page.reload();
+	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
+	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	await page.getByTitle('Merge OCR bubbles', { exact: true }).click();
+	await expect(boundaries).not.toBeChecked();
+	await expect(inclination).not.toBeChecked();
+});

@@ -240,3 +240,28 @@ Diagnostics live beside `groups`, not inside them. Baseline compatibility and
 `behaviorChanged` continue to compare inputs, labels, metrics and complete output
 groups. Adding/changing traces alone neither invalidates an older compatible
 baseline nor hides output changes. No schema/metric/algorithm version was bumped.
+
+### Replay the Merge dialog options
+
+Run `node --import ./tools/merge-eval/register.mjs tools/vision-pilot/enclosure-compare.mjs --inputs manifest.json --output review.json`
+to compare all four combinations of balloon boundaries and inclined text locally.
+Each manifest entry supplies `id`, `width`, `height`, `ocr` (a single-page OCR BBL),
+and `rgba` (original, unscaled four-channel pixel bytes). Put entries in a JSON array.
+Paths in entries are relative to the manifest. You can repeat `--inputs` for additional
+manifests. The report contains each option combination's complete ordered bubble list.
+
+### Candidate experiment for enclosure joins
+
+Investigate whether a large difference in lettering inclination can identify
+groups that should stay separate inside a shared enclosure. The [row grouper](../src/lib/mergeBubbles.ts) already
+measures OCR quadrilateral top-edge slopes for reading order. A future join
+experiment can reuse those measurements. Record the angle difference and the
+length of the measured edges for each proposed join. A one-pixel change on a
+short edge can move the estimated angle by several degrees.
+
+Two Apekermis review examples illustrate the overlap at small angles. On page
+29, the signature and adjacent digits differ by 2.9°. On page 4, the words
+*het raam* belong together and differ by 3.2°. For larger differences, compare
+confirmed false joins with genuine mixed-angle lettering on independent pages
+before choosing a threshold. Evaluate the effect separately from word size so
+that a join already rejected on size grounds contributes no apparent extra gain.

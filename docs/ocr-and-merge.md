@@ -41,9 +41,23 @@ that row into shorter stretches, and the lines above or below help determine
 which stretches belong to each balloon.
 
 Merge follows this idea: find rows, separate neighboring passages, connect lines,
-then assemble text and an enclosing shape. It uses word positions and sizes,
-not the artwork. It cannot see balloon borders, detect speakers, translate, or
-correct spelling. A plausible-looking group is still a geometric guess.
+then assemble text and an enclosing shape. By default it uses word positions and
+sizes. **Use balloon boundaries** adds a local image-analysis pass. When a
+boundary consistently separates words, Merge can split a geometric group.
+Nearby compatible groups inside the same enclosure can also be joined. Ambiguous
+enclosures retain the geometric grouping. The image analysis uses a reduced
+raster of up to one megapixel and skips pages above 16 megapixels.
+
+**Follow inclined text** uses the orientation of nearby OCR word polygons to group
+words along their printed lines and recover their reading order. It also works
+with balloon boundaries switched off. Axis-aligned OCR boxes alone provide no
+tilt measurement. Widely spaced columns can still be ambiguous.
+
+The toolbar and automatic OCR merge share both options. Repeated merges in the
+same session reuse the input to the previous merge while its output still
+matches the current OCR overlay. An edited overlay becomes the new input, so a
+manual correction survives comparison. Reloading clears the option and input
+cache. A previously merged file alone cannot recover the original word boxes.
 
 Words with different language or style values stay separate. Explicitly
 positioned text layouts also stay separate. Font differences alone do not

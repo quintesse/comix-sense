@@ -1,5 +1,6 @@
 import { BblShapeType, type Bubble } from './types/Comic';
-import { mergeBubbles } from './mergeBubbles';
+import { groupOcrWithEnclosures, type OcrPixels } from './ocrGrouping';
+export { canAnalyzeOcrPixels, type OcrPixels } from './ocrGrouping';
 
 type Annotation = {
 	description?: string;
@@ -57,8 +58,14 @@ export function visionToBubbles(result: VisionResult): { lang: string; bubbles: 
 }
 
 /** Merge OCR words before removing groups that contain no letters. */
-export function mergeOcrBubbles(bubbles: readonly Bubble[]): Bubble[] {
-	return mergeBubbles(bubbles).filter((bubble) => /\p{L}/u.test(bubble.text));
+export function mergeOcrBubbles(
+	bubbles: readonly Bubble[],
+	pixels?: OcrPixels,
+	useInclination = false
+): Bubble[] {
+	return groupOcrWithEnclosures(bubbles, pixels, useInclination).filter((bubble) =>
+		/\p{L}/u.test(bubble.text)
+	);
 }
 
 export async function scanImage(image: Blob, apiKey: string, signal?: AbortSignal) {

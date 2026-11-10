@@ -99,9 +99,16 @@ Scanning is optional if your comic already has text overlays.
 4. Click **Scan**. Recognized text appears in an editable **OCR** overlay on each scanned page.
 5. Review the text and bubble shapes before translating.
 
-To merge later, click **Merge** in Edit Mode. It merges the current page's **OCR**
-overlay and removes bubbles with no letters, updating that overlay in place.
-Merging runs locally and creates no new translation. Use **Save Changes** to write
+To compare groupings, click **Merge** in Edit Mode. Leave **Use balloon boundaries**
+off for grouping by word position and size, or turn it on to also use outlines in
+the artwork. Enable **Follow inclined text** to group tilted lines along their printed angle.
+You can use either option independently. **Merge options** in the Scan dialog controls the same settings for
+automatic merges. The choice lasts until you reload or close the app.
+
+You can merge the same page again with different settings, even after saving.
+The app reuses the original OCR words while the merged overlay is unchanged.
+After a manual edit or a reload, Merge starts from the current OCR overlay.
+Merging runs locally and updates the current page's **OCR** overlay. Use **Save Changes** to write
 the result to disk, or **Discard Changes** to revert unsaved edits.
 
 Scanning sends each original page image directly to Google and may incur provider

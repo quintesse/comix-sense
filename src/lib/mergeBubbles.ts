@@ -622,7 +622,7 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 /** Reconstruct printed rows and their outline for an independently established membership. */
 export function assembleEnclosedWords(bubbles: readonly Bubble[]): MergeGroup {
 	if (!bubbles.length) throw new Error('An enclosure needs at least one word.');
-	return assembleGroup(rows(sourceWords(bubbles)));
+	return assembleGroup(rows(sourceWords(bubbles)), undefined, true);
 }
 
 /** Opt-in offline analysis. Candidate indexes refer to the supplied bubbles. */
@@ -641,6 +641,71 @@ export function inspectMergeBubbles(bubbles: readonly Bubble[]): MergeAnalysis {
 		decisions: trace.events
 	};
 }
+// Estimate a shared text-line slope from OCR quadrilaterals. Keep the original
+// word boxes intact for the assembled shape.
+function orientationRows(members: SourceWord[], trace?: Trace): Line[] {
+	const polygonSlopes = members.flatMap((word) => {
+		const vs = word.bubble.shape.vs;
+		if (word.bubble.shape.type !== 'poly' || vs.length !== 4) return [];
+		const dx = vs[1].x - vs[0].x,
+			dy = vs[1].y - vs[0].y;
+		return Math.abs(dx) >= 0.5 * height(word.box) && Math.abs(dy / dx) <= 0.6 ? [dy / dx] : [];
+	});
+	if (polygonSlopes.length < 2)
+		return rows(members, trace)
+			.sort((a, b) => a.center - b.center)
+			.map((line) => {
+				line.words.sort((a, b) => a.box.l - b.box.l);
+				return line;
+			});
+	// The densest slope window favors repeated within-row evidence over pairs
+	// spanning different printed lines. It is independent of page coordinates.
+	const evidence = polygonSlopes;
+	evidence.sort((a, b) => a - b);
+	let bestStart = 0,
+		bestCount = 0;
+	for (let i = 0, j = 0; i < evidence.length; i++) {
+		while (j < evidence.length && evidence[j] - evidence[i] <= 0.12) j++;
+		if (j - i > bestCount) {
+			bestStart = i;
+			bestCount = j - i;
+		}
+	}
+	const slope = median(evidence.slice(bestStart, bestStart + bestCount));
+	if (bestCount < 2 || Math.abs(slope) < 0.08 || Math.abs(slope) > 0.6)
+		return rows(members, trace)
+			.sort((a, b) => a.center - b.center)
+			.map((line) => {
+				line.words.sort((a, b) => a.box.l - b.box.l);
+				return line;
+			});
+	const angle = Math.atan(slope),
+		cos = Math.cos(angle),
+		sin = Math.sin(angle);
+	const adjusted = members.map((w) => {
+		const vs = w.bubble.shape.vs.map((v) => ({
+			x: cos * v.x + sin * v.y,
+			y: -sin * v.x + cos * v.y
+		}));
+		return {
+			...w,
+			box: {
+				l: Math.min(...vs.map((v) => v.x)),
+				r: Math.max(...vs.map((v) => v.x)),
+				t: Math.min(...vs.map((v) => v.y)),
+				b: Math.max(...vs.map((v) => v.y))
+			}
+		};
+	});
+	const byIndex = new Map(members.map((w) => [w.index, w]));
+	return rows(adjusted, trace)
+		.sort((a, b) => a.center - b.center)
+		.map(
+			(line) =>
+				new Line(line.words.sort((a, b) => a.box.l - b.box.l).map((w) => byIndex.get(w.index)!))
+		);
+}
+
 function sourceWords(bubbles: readonly Bubble[]): SourceWord[] {
 	return bubbles.map((bubble, index) => {
 		const { type, vs } = bubble.shape;
@@ -781,13 +846,15 @@ function mergeSourceWords(words: SourceWord[], trace?: Trace): MergeGroup[] {
 }
 
 /** Metadata, final rows, formatting and outlines are downstream of grouping. */
-function assembleGroup(group: Line[], trace?: Trace): MergeGroup {
+function assembleGroup(group: Line[], trace?: Trace, assemblyOriented = false): MergeGroup {
 	const members = group.flatMap((line) => line.words);
 	const first = members.reduce((a, b) => (a.index < b.index ? a : b));
 	const merged: Bubble = JSON.parse(JSON.stringify(first.bubble));
 	merged.text = first.text;
-	const textRows = rows(members, trace).sort((a, b) => a.center - b.center);
-	for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
+	const textRows = assemblyOriented
+		? orientationRows(members, trace)
+		: rows(members, trace).sort((a, b) => a.center - b.center);
+	if (!assemblyOriented) for (const row of textRows) row.words.sort((a, b) => a.box.l - b.box.l);
 	if (members.length > 1) {
 		merged.text = unformatted(textRows.map(text).filter(Boolean).join('\n'));
 		merged.shape = outline(group);
@@ -800,4 +867,171 @@ function assembleGroup(group: Line[], trace?: Trace): MergeGroup {
 			sourceIndexes: row.words.map((word) => word.index)
 		}))
 	};
+}
+
+// Isolate locally connected, inclined OCR polygons. Group a projected copy in
+// the text axes, then restore original coordinates and source metadata.
+export function analyzeOrientedMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
+	const baseline = analyzeMergeBubbles(bubbles);
+	const candidates = bubbles
+		.map((bubble, index) => {
+			const vs = bubble.shape.vs;
+			if (bubble.shape.type !== 'poly' || vs.length !== 4 || bubble.layout !== undefined)
+				return null;
+			const dx = vs[1].x - vs[0].x,
+				dy = vs[1].y - vs[0].y;
+			const angle = Math.atan2(dy, dx),
+				b = sourceWords([bubble])[0].box;
+			return Math.abs(angle) >= 0.12 && Math.abs(angle) <= 0.65 && Math.abs(dx) >= 0.5 * height(b)
+				? { index, angle, box: b, bubble }
+				: null;
+		})
+		.filter((item): item is NonNullable<typeof item> => item !== null);
+	// Bound the additional pair search on unusually dense OCR pages.
+	if (candidates.length > 1000) return baseline;
+	const parent = candidates.map((_, i) => i);
+	const root = (i: number): number => {
+		while (parent[i] !== i) i = parent[i] = parent[parent[i]];
+		return i;
+	};
+	for (let i = 0; i < candidates.length; i++)
+		for (let j = i + 1; j < candidates.length; j++) {
+			const a = candidates[i],
+				b = candidates[j];
+			if (
+				Math.abs(a.angle - b.angle) > 0.1 ||
+				a.bubble.lang !== b.bubble.lang ||
+				!equal(a.bubble.style, b.bubble.style) ||
+				!equal(a.bubble.font, b.bubble.font)
+			)
+				continue;
+			const h = Math.max(height(a.box), height(b.box));
+			const xGap = Math.max(a.box.l - b.box.r, b.box.l - a.box.r, 0);
+			const yGap = Math.max(a.box.t - b.box.b, b.box.t - a.box.b, 0);
+			if (xGap <= 2.5 * h && yGap <= 1.5 * h) parent[root(j)] = root(i);
+		}
+	const components = new Map<number, typeof candidates>();
+	for (let i = 0; i < candidates.length; i++) {
+		const list = components.get(root(i)) ?? [];
+		list.push(candidates[i]);
+		components.set(root(i), list);
+	}
+	const inclined = [...components.values()].filter((component) => component.length >= 2);
+	if (!inclined.length) return baseline;
+	// Retain nearby punctuation already associated with an inclined baseline
+	// passage, even when its narrow OCR polygon cannot supply a reliable axis.
+	for (const group of baseline)
+		for (const index of group.sourceIndexes) {
+			const bubble = bubbles[index];
+			if (
+				/[\\p{L}\\p{Nd}]/u.test(bubble.text ?? '') ||
+				bubble.layout !== undefined ||
+				inclined.some((component) => component.some((item) => item.index === index))
+			)
+				continue;
+			const b = sourceWords([bubble])[0].box;
+			const matches = inclined.filter((component) =>
+				component.some(
+					(item) =>
+						group.sourceIndexes.includes(item.index) &&
+						bubble.lang === item.bubble.lang &&
+						equal(bubble.style, item.bubble.style) &&
+						Math.max(b.l - item.box.r, item.box.l - b.r, 0) <= height(item.box) &&
+						Math.max(b.t - item.box.b, item.box.t - b.b, 0) <= height(item.box)
+				)
+			);
+			if (matches.length === 1)
+				matches[0].push({
+					index,
+					angle: median(matches[0].map((item) => item.angle)),
+					box: b,
+					bubble
+				});
+		}
+	const picked = new Set(inclined.flatMap((component) => component.map((item) => item.index)));
+	const affected = baseline.filter((group) => group.sourceIndexes.some((i) => picked.has(i)));
+	const affectedIndexes = new Set(affected.flatMap((group) => group.sourceIndexes));
+	const results = baseline.filter(
+		(group) => !group.sourceIndexes.some((i) => affectedIndexes.has(i))
+	);
+	const outside = [...affectedIndexes].filter((i) => !picked.has(i)).sort((a, b) => a - b);
+	const remap = (indexes: number[], angle: number) => {
+		const cos = Math.cos(angle),
+			sin = Math.sin(angle);
+		const rotated = indexes.map((index) => {
+			const shape = bubbles[index].shape;
+			const vs =
+				shape.type === 'box'
+					? [
+							shape.vs[0],
+							{ x: shape.vs[1].x, y: shape.vs[0].y },
+							shape.vs[1],
+							{ x: shape.vs[0].x, y: shape.vs[1].y }
+						]
+					: shape.vs;
+			return {
+				...bubbles[index],
+				shape: {
+					type: BblShapeType.poly,
+					vs: vs.map((v) => ({ x: cos * v.x + sin * v.y, y: -sin * v.x + cos * v.y }))
+				}
+			};
+		});
+		return analyzeMergeBubbles(rotated).map((group) => {
+			const members = group.sourceIndexes.map((i) => indexes[i]);
+			if (members.length === 1)
+				return { ...group, sourceIndexes: members, bubble: bubbles[members[0]] };
+			const shape = group.bubble.shape;
+			const vs =
+				shape.type === 'box'
+					? [
+							shape.vs[0],
+							{ x: shape.vs[1].x, y: shape.vs[0].y },
+							shape.vs[1],
+							{ x: shape.vs[0].x, y: shape.vs[1].y }
+						]
+					: shape.vs;
+			const restored = vs.map((v) => ({ x: cos * v.x - sin * v.y, y: sin * v.x + cos * v.y }));
+			return {
+				...group,
+				sourceIndexes: members,
+				rows: group.rows.map((row) => ({
+					...row,
+					sourceIndexes: row.sourceIndexes.map((i) => indexes[i])
+				})),
+				bubble: { ...group.bubble, shape: { type: BblShapeType.poly, vs: restored } }
+			};
+		});
+	};
+	if (outside.length)
+		results.push(
+			...analyzeMergeBubbles(outside.map((i) => bubbles[i])).map((group) => {
+				const indexes = group.sourceIndexes.map((i) => outside[i]);
+				return { ...group, sourceIndexes: indexes };
+			})
+		);
+	for (const component of inclined) {
+		const sorted = component.map((item) => item.index).sort((a, b) => a - b);
+		const angle = median(component.map((item) => item.angle));
+		results.push(...remap(sorted, angle));
+	}
+	const baselinePosition = new Map<number, number>();
+	baseline.forEach((group, position) =>
+		group.sourceIndexes.forEach((index) => baselinePosition.set(index, position))
+	);
+	const originalByMembership = new Map(
+		baseline.map((group) => [[...group.sourceIndexes].sort((a, b) => a - b).join(','), group])
+	);
+	return results
+		.map((group) => {
+			const previous = originalByMembership.get(
+				[...group.sourceIndexes].sort((a, b) => a - b).join(',')
+			);
+			return previous && previous.bubble.text === group.bubble.text ? previous : group;
+		})
+		.sort(
+			(a, b) =>
+				Math.min(...a.sourceIndexes.map((i) => baselinePosition.get(i)!)) -
+				Math.min(...b.sourceIndexes.map((i) => baselinePosition.get(i)!))
+		);
 }

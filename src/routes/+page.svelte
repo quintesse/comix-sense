@@ -57,7 +57,9 @@
 		normalizeAiSettings,
 		type AiSettings
 	} from '#lib/textCleanup.js';
-	import { scanImage, mergeOcrBubbles } from '#lib/ocr.js';
+	import { scanImage } from '#lib/ocr.js';
+	import { mergeOcrForPage } from '#lib/ocrMergeWorker.js';
+	import { OcrMergeSession, readOcrPixels } from '#lib/ocrMergeSession.js';
 	import { isRenderLanguage, prepareRender, requestRender } from '#lib/render.js';
 	import { releaseImageUrl } from '#lib/ImageUrls.js';
 	import { dedup } from '#lib/types/funcs.js';
@@ -325,6 +327,24 @@
 	let scanOpen = $state(false);
 	let scanScope = $state('page');
 	let scanMergeBubbles = $state(true);
+	let mergeOpen = $state(false);
+	let returnToScan = $state(false);
+	let mergeOptions = $state({ boundaries: false, inclination: false });
+	let draftOptions = $state({ boundaries: false, inclination: false });
+	const mergeSession = new OcrMergeSession();
+
+	function openMergeOptions(fromScan = false) {
+		draftOptions = { ...mergeOptions };
+		returnToScan = fromScan;
+		if (fromScan) scanOpen = false;
+		mergeOpen = true;
+	}
+
+	function submitMergeOptions() {
+		mergeOptions = { ...draftOptions };
+		mergeOpen = false;
+		if (!returnToScan) void mergeOcr();
+	}
 	let pendingScanPages = $state.raw<Comic[]>([]);
 	let overwriteOcrCount = $derived(
 		pendingScanPages.filter((comic) => comic.languages.some((lang) => lang.toLowerCase() === 'ocr'))
@@ -371,11 +391,13 @@
 	}
 
 	async function scanPages(confirmed = false) {
-		if (!pendingScanPages.length || scanning || cleaning || rendering || !editable || loadingPages)
+		if (!pendingScanPages.length || changesBusy || scanning || cleaning || rendering || !editable || loadingPages)
 			return;
 		const pages = [...pendingScanPages];
 		const key = effectiveOcrKey;
 		const merge = scanMergeBubbles;
+		const { boundaries, inclination } = mergeOptions;
+		const analyzeBoundaries = merge && boundaries;
 		if (overwriteOcrCount && !confirmed) {
 			overwriteOcrOpen = true;
 			return;
@@ -389,8 +411,8 @@
 		try {
 			for (const comic of pages) {
 				controller.signal.throwIfAborted();
-				if (!folders.some((folder) => folder.comics.includes(comic)))
-					throw new Error('The page directory was disconnected during scanning.');
+				const folder = folders.find((folder) => folder.comics.includes(comic));
+				if (!folder) throw new Error('The page directory was disconnected during scanning.');
 				scanMessage = `Scanning ${comic.displayName} (${completed + 1}/${pages.length})…`;
 				const ocrLanguage = comic.languages.find((lang) => lang.toLowerCase() === 'ocr') ?? 'OCR';
 				const release = comic.protectImage();
@@ -404,7 +426,11 @@
 					const response = await fetch(url, { signal: controller.signal });
 					if (!response.ok) throw new Error('Could not read the page image.');
 					const result = await scanImage(await response.blob(), key, controller.signal);
-					if (merge) result.bubbles = mergeOcrBubbles(result.bubbles);
+					const words = result.bubbles;
+					const pixels = analyzeBoundaries
+						? await readOcrPixels(url).catch(() => undefined)
+						: undefined;
+					if (merge) result.bubbles = await mergeOcrForPage(words, pixels, controller.signal, inclination);
 					if (
 						controller.signal.aborted ||
 						!folders.some((folder) => folder.comics.includes(comic))
@@ -420,6 +446,8 @@
 					await comic.editBubbles(ocrLanguage, result.bubbles, font, { signal: controller.signal });
 					comic.setSourceLanguage(ocrLanguage, result.lang);
 					comic.setBubbles(ocrLanguage, result.bubbles);
+					if (merge) mergeSession.record(folder.directory, comic.path, words, result.bubbles);
+					else mergeSession.forget(folder.directory, comic.path);
 					comic.languages = [...new Set([...comic.languages, ocrLanguage])];
 					comics.update((values) => [...values]);
 					if ($selectedComic === comic) {
@@ -461,18 +489,52 @@
 	async function mergeOcr() {
 		const comic = $selectedComic;
 		const language = comic?.languages.find((lang) => lang.toLowerCase() === 'ocr');
-		if (!comic || !language || !editable || loadingPages || scanning || cleaning || rendering)
+		const folder = folders.find((folder) => comic && folder.comics.includes(comic));
+		if (
+			!comic ||
+			!folder ||
+			!language ||
+			changesBusy ||
+			!editable ||
+			loadingPages ||
+			scanning ||
+			cleaning ||
+			rendering
+		)
 			return;
 		changesBusy = true;
 		scanError = '';
 		scanMessage = '';
 		try {
-			const bubbles = mergeOcrBubbles(await comic.getBubbles(language));
+			const current = await comic.getBubbles(language);
+			const baseline = JSON.stringify(current);
+			const words = mergeSession.input(folder.directory, comic.path, current);
+			let pixels: ImageData | undefined;
+			if (mergeOptions.boundaries) {
+				const release = comic.protectImage();
+				let url: string | undefined;
+				try {
+					url = await comic.getImageUrl();
+					pixels = await readOcrPixels(url);
+				} catch {
+					// The geometric merge also works when the original cannot be decoded locally.
+				} finally {
+					if (url) releaseImageUrl(url);
+					release();
+				}
+			}
+			const bubbles = await mergeOcrForPage(words, pixels, undefined, mergeOptions.inclination);
+			if (
+				!folders.includes(folder) ||
+				JSON.stringify(await comic.getBubbles(language)) !== baseline
+			)
+				throw new Error('The OCR overlay or its directory changed. Open Merge again.');
 			const font = { ...comic.pageFont(language) };
 			delete font.whiteSpace;
 			await comic.editBubbles(language, bubbles);
 			await comic.editBubbles(language, bubbles, font);
 			comic.setBubbles(language, bubbles);
+			mergeSession.record(folder.directory, comic.path, words, bubbles);
 			if ($selectedComic === comic) {
 				selectLanguage(language);
 				showBubbles = true;
@@ -481,6 +543,8 @@
 				);
 			}
 			scanMessage = `${comic.displayName}: OCR bubbles merged. Use Save Changes to write them to disk.`;
+			if (mergeOptions.boundaries && !pixels)
+				scanMessage += ' Image analysis unavailable; used geometric grouping.';
 		} catch (error) {
 			scanError = 'Merge failed: ' + (error instanceof Error ? error.message : String(error));
 		} finally {
@@ -1561,12 +1625,12 @@
 							class="toolbar-button"
 							aria-label="Merge"
 							title="Merge OCR bubbles"
-							disabled={!$selectedComic?.languages.some((lang) => lang.toLowerCase() === 'ocr') ||
+							disabled={changesBusy || !pageLanguages.some((lang) => lang.toLowerCase() === 'ocr') ||
 								loadingPages ||
 								scanning ||
 								cleaning ||
 								rendering}
-							onclick={() => void mergeOcr()}><ToolbarIcon name="merge" /></button
+							onclick={() => openMergeOptions()}><ToolbarIcon name="merge" /></button
 						>
 						<button
 							type="button"
@@ -1808,6 +1872,36 @@
 			</label>
 		</p>
 		<p>Uncheck to keep the original OCR word shapes, including numbers and punctuation.</p>
+		{#if scanMergeBubbles}
+			<p>
+				Balloon boundaries: {mergeOptions.boundaries ? 'on' : 'off'}.
+				Inclined text: {mergeOptions.inclination ? 'on' : 'off'}.
+				<button type="button" onclick={() => openMergeOptions(true)}>Merge options</button>
+			</p>
+		{/if}
+	</Modal>
+
+	<Modal
+		bind:open={mergeOpen}
+		modalHeading="Merge OCR bubbles"
+		primaryButtonText={returnToScan ? 'Use settings' : 'Merge'}
+		secondaryButtonText="Cancel"
+		size="sm"
+		shouldSubmitOnEnter={false}
+		on:submit={submitMergeOptions}
+		on:click:button--secondary={() => (mergeOpen = false)}
+		on:close={() => {
+			if (returnToScan) scanOpen = true;
+			returnToScan = false;
+		}}
+	>
+		<p>Group OCR words by their position on the page.</p>
+		<label><input type="checkbox" bind:checked={draftOptions.boundaries} /> Use balloon boundaries</label>
+		<p>
+			Use the original artwork to separate or join words inside closed balloons.
+		</p>
+	<label><input type="checkbox" bind:checked={draftOptions.inclination} /> Follow inclined text</label>
+		<p>Use the angle of OCR words to group and read tilted lines. Both choices also apply to automatic merges until you reload the app.</p>
 	</Modal>
 
 	<Modal
