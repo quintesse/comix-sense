@@ -257,8 +257,14 @@
 		const timeout = window.setTimeout(() => controller.abort('timeout'), 180000);
 		try {
 			const job = await prepareCleanup(pages, selected, language, outputLanguage);
-			if (!job.document.items.some((item) => item.text.trim()))
+			if (!job.document.items.some((item) => item.text.trim())) {
+				if (translating && job.skippedPassages) {
+					cleanupMessage =
+						'Nothing to translate. Number- and punctuation-only passages keep their original lettering.';
+					return;
+				}
 				throw new Error('No bubble text in this overlay.');
+			}
 			controller.signal.throwIfAborted();
 			const result = await (translating ? requestTranslation : requestCleanup)(
 				job.document,

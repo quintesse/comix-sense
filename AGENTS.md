@@ -1,3 +1,17 @@
+# General processing rules
+
+This rule applies only to production code. Implement processing rules that
+address a recurring class of problems. Never select a production outcome
+by matching a particular album, page,
+passage, word, character, or known coordinate. A combination of thresholds
+or geometry chosen to reproduce one example is also a case-specific fix.
+
+Exact matching is allowed in tests and regression examples, including review
+crops and before-and-after comparisons. Keep fixture identifiers and expected
+answers out of production decisions. Identify manual corrections separately when reporting automatic
+results. Check proposed rules on independent examples and genuine content
+they could damage before claiming that they generalize.
+
 # README maintenance
 
 Keep `README.md` current when changes affect how users understand or use the app.

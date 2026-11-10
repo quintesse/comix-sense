@@ -619,6 +619,12 @@ export function analyzeMergeBubbles(bubbles: readonly Bubble[]): MergeGroup[] {
 	return mergeSourceWords(sourceWords(bubbles));
 }
 
+/** Reconstruct printed rows and their outline for an independently established membership. */
+export function assembleEnclosedWords(bubbles: readonly Bubble[]): MergeGroup {
+	if (!bubbles.length) throw new Error('An enclosure needs at least one word.');
+	return assembleGroup(rows(sourceWords(bubbles)));
+}
+
 /** Opt-in offline analysis. Candidate indexes refer to the supplied bubbles. */
 export function inspectMergeBubbles(bubbles: readonly Bubble[]): MergeAnalysis {
 	const words = sourceWords(bubbles);

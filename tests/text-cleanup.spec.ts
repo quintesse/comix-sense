@@ -228,6 +228,46 @@ test('translation copies source geometry independently and registers a new targe
 	expect(pages[0].languages).not.toContain('fr');
 });
 
+test('translation skips whole numeric and punctuation passages while retaining the original IDs and geometry', async () => {
+	const pages = fixture();
+	const page = pages[0];
+	const base = (await page.getBubbles('en'))[0];
+	const source = ['４２؟', 'Room 35.', '?!', '€'].map((text, index) => ({
+		...base,
+		text,
+		shape: { ...base.shape, vs: base.shape.vs.map((v) => ({ ...v, x: v.x + index })) }
+	}));
+	page.setBubbles('en', source);
+	const job = await prepareCleanup(pages, [page], 'en', 'fr');
+	expect(job.skippedPassages).toBe(2);
+	expect(job.document.items).toEqual([
+		{ id: '/pages/0/bubbles/1', text: 'Room 35.' },
+		{ id: '/pages/0/bubbles/3', text: '€' }
+	]);
+	await job.apply(
+		{
+			...job.document,
+			items: job.document.items.map((item) => ({
+				...item,
+				text: item.text === 'Room 35.' ? 'Salle 35.' : item.text
+			}))
+		},
+		() => true
+	);
+	expect(await page.getBubbles('fr')).toEqual([
+		{ ...source[1], text: 'Salle 35.', lang: 'fr' },
+		{ ...source[3], lang: 'fr' }
+	]);
+	expect((await prepareCleanup(pages, [page], 'en')).document.items.map((i) => i.text)).toEqual(
+		source.map((b) => b.text)
+	);
+	page.setBubbles('en', [source[0], source[2]]);
+	const allSkipped = await prepareCleanup(pages, [page], 'en', 'fr');
+	expect(allSkipped.document.items).toEqual([]);
+	await allSkipped.apply(allSkipped.document, () => true);
+	expect((await page.getBubbles('fr')).map((b) => b.text)).toEqual(['Salle 35.', '€']);
+});
+
 test('translation rejects stale target edits and never creates a target from an empty result', async () => {
 	const pages = fixture();
 	const job = await prepareCleanup(pages, [pages[0]], 'OCR', 'fr');

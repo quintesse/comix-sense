@@ -6,6 +6,7 @@ import {
 	type AiSettings
 } from './textCleanup';
 import { renderPrompt } from './renderPrompt';
+import { shouldSkipPassage } from './passageFilter';
 
 export type RenderDocument = {
 	sourceLanguage: string;
@@ -20,7 +21,7 @@ export function isRenderLanguage(language: string): boolean {
 	);
 }
 
-/** OCR contains original lettering and its language; translation preserves bubble indexes. */
+/** Older overlays include every source passage; compact translations retain eligible passage order. */
 export async function prepareRender(comic: Comic, language: string): Promise<RenderDocument> {
 	if (!isRenderLanguage(language)) throw new Error('Select a translated language to render.');
 	if (!comic.languages.includes(language)) throw new Error('No translated bubbles for this page.');
@@ -30,7 +31,11 @@ export async function prepareRender(comic: Comic, language: string): Promise<Ren
 		comic.getBubbles(overlay),
 		comic.getBubbles(language)
 	]);
-	if (!source.length || source.length !== target.length)
+	const pairedSource =
+		source.length === target.length
+			? source
+			: source.filter((bubble) => !shouldSkipPassage(bubble.text));
+	if (!pairedSource.length || pairedSource.length !== target.length)
 		throw new Error('Original and translated bubble counts must match before rendering.');
 	const sourceLanguage = resolveSourceLanguage(overlay, [
 		{ bubbles: source, declaredLanguage: comic.sourceLanguage(overlay) }
@@ -40,7 +45,7 @@ export async function prepareRender(comic: Comic, language: string): Promise<Ren
 	return {
 		sourceLanguage,
 		targetLanguage: language,
-		items: source.map((bubble: Bubble, index) => ({
+		items: pairedSource.map((bubble: Bubble, index) => ({
 			source: bubble.text,
 			target: target[index].text
 		}))

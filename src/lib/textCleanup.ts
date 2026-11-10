@@ -1,6 +1,7 @@
 import type { Bubble, Comic } from './types/Comic';
 
 import { renderPrompt } from './renderPrompt';
+import { shouldSkipPassage } from './passageFilter';
 
 export type AiTask = 'cleanup' | 'translation' | 'render';
 export type AiTaskSettings = { model: string; prompt?: string };
@@ -471,14 +472,18 @@ export async function prepareCleanup(
 		sourceLanguage: textLanguage,
 		targetLanguage: translating ? targetLanguage : textLanguage,
 		items: snapshots.flatMap(({ bubbles, pageIndex }) =>
-			bubbles.map((bubble, index) => ({
-				id: `/pages/${pageIndex}/bubbles/${index}`,
-				text: bubble.text
-			}))
+			bubbles
+				.map((bubble, index) => ({
+					id: `/pages/${pageIndex}/bubbles/${index}`,
+					text: bubble.text
+				}))
+				.filter((item) => !translating || !shouldSkipPassage(item.text))
 		)
 	};
 	return {
 		document,
+		skippedPassages:
+			snapshots.reduce((sum, page) => sum + page.bubbles.length, 0) - document.items.length,
 		async apply(value: unknown, isConnected: (comic: Comic) => boolean, signal?: AbortSignal) {
 			const result = validateCleanup(value, document);
 			const texts = new Map(result.items.map(({ id, text }) => [id, text]));
@@ -514,17 +519,16 @@ export async function prepareCleanup(
 				const source: Bubble[] = translating
 					? JSON.parse(JSON.stringify(current[snapshotIndex]))
 					: current[snapshotIndex];
-				const next = source.map((bubble, bubbleIndex) => {
+				const next = source.flatMap((bubble, bubbleIndex) => {
 					const id = `/pages/${pageIndex}/bubbles/${bubbleIndex}`;
-					const existing = targets[snapshotIndex]?.[bubbleIndex];
-					if (translating && !texts.has(id) && existing)
-						return JSON.parse(JSON.stringify(existing)) as Bubble;
+					// Validation requires every requested ID. Absent source IDs were skipped locally.
+					if (translating && !texts.has(id)) return [];
 					const text = texts.get(id) ?? bubble.text;
 					if (text !== bubble.text) changed++;
 					return { ...bubble, text, ...(translating ? { lang: targetLanguage } : {}) };
 				});
 				// An empty AI response must not create or overwrite a translation.
-				if (translating && !result.items.length) continue;
+				if (translating && !next.length) continue;
 				comic.setBubbles(targetLanguage, next);
 				if (translating) comic.languages = [...new Set([...comic.languages, targetLanguage])];
 				if (translating || changed !== before)

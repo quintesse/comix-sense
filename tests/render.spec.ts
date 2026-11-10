@@ -46,6 +46,28 @@ test('render uses OCR original metadata and exact indexed text, including empty 
 	}
 });
 
+test('render pairs compact translations and legacy overlays with their source passages', async () => {
+	const comic = new Comic('01.png', ['en', 'OCR'], {
+		list: async () => [],
+		getImageUrl: async () => '',
+		getBubbles: async () => []
+	});
+	comic.setSourceLanguage('OCR', 'nl');
+	comic.setBubbles('OCR', ['12.', 'Hallo!', '?!', 'Kamer 35'].map(bubble));
+	comic.setBubbles('en', ['Hello!', 'Room 35'].map(bubble));
+	expect((await prepareRender(comic, 'en')).items).toEqual([
+		{ source: 'Hallo!', target: 'Hello!' },
+		{ source: 'Kamer 35', target: 'Room 35' }
+	]);
+	comic.setBubbles('en', ['12.', 'Hello!', '?!', 'Room 35'].map(bubble));
+	expect((await prepareRender(comic, 'en')).items.map((i) => i.source)).toEqual([
+		'12.',
+		'Hallo!',
+		'?!',
+		'Kamer 35'
+	]);
+});
+
 test('render rejects missing original language and rounds each edge up without changing exact sizes', async () => {
 	const comic = new Comic('01.png', ['en', 'OCR'], {
 		list: async () => [],

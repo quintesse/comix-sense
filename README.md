@@ -145,9 +145,12 @@ rendering sends the page image and source/translated text.
 4. Review the selected target overlay and correct any wording or layout issues.
 
 Translation creates an independent target overlay with copied shapes and styles.
-Source text remains available. If a response omits bubbles, the app warns you and
-keeps existing target text where available, otherwise source text. Review those
-bubbles before saving. You can cancel an AI text request while it runs.
+Passages containing only numbers, punctuation, or a combination of the two keep
+their original printed lettering. Translate skips them when sending text and
+building the target overlay. Mixed text such as “Room 35.” is translated.
+If the whole page is skipped, the app makes no translation request and leaves
+any existing target overlay in place. Source text remains available. An incomplete
+provider response leaves the target unchanged. You can cancel an AI text request while it runs.
 
 ### Edit bubbles and typography
 
@@ -254,8 +257,9 @@ or sharing your editable translations.
 ### Render a translated page
 
 1. Select a translated overlay in **Edit Mode** on a directory page.
-2. Ensure the page also has an **OCR** overlay with matching bubble counts; rendering
-   pairs its source text with the translation by index.
+2. Ensure the page also has an **OCR** overlay. Rendering pairs passages in order.
+   It accepts translations covering every OCR passage and translations that omit
+   the number- and punctuation-only passages.
 3. Configure the **Render** model in AI provider settings. Choose quality and output
    format (`png`, `jpg`, or `webp`), and optionally customize its prompt.
 4. Click **Render Page** and allow write access when requested.
@@ -274,6 +278,8 @@ Archive pages, **ORG**, and **OCR** cannot be rendered.
   matching rules.
 - [OCR and Merge algorithm](docs/ocr-and-merge.md): how words become editable
   passages, what the tuning values mean, and where merging can go wrong.
+- [Offline vision replay](docs/vision-pilot.md) covers the developer tools for
+  checking recorded results and opening their overlays in the reader.
 - [Archive reference](docs/archives.md): supported formats, resource limits, and
   known decoder limitations.
 - [Product specification](SPEC.md): project direction, including planned capabilities.

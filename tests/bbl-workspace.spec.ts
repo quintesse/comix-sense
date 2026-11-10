@@ -1732,11 +1732,12 @@ test('AI page translation backs up and saves a new language without changing the
 			JSON.stringify({ url: 'https://ai.example/v1', model: 'test', apiKey: '' })
 		)
 	);
-	await page.reload();
-	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
-	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
+	const source = structuredClone(original);
+	source.pages[0].bubbles.unshift(bubble('42.'));
+	await writeDocuments(page, { 'album/album.en.bbl': source });
 	await page.route('https://ai.example/v1/chat/completions', async (route) => {
 		const document = JSON.parse(route.request().postDataJSON().messages[1].content);
+		expect(document.items).toEqual([{ id: '/pages/0/bubbles/1', text: 'Original' }]);
 		document.items[0].text = 'Bonjour';
 		await route.fulfill({
 			json: { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(document) } }] }
@@ -1756,16 +1757,49 @@ test('AI page translation backs up and saves a new language without changing the
 	await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 	await expect(page.getByRole('status').filter({ hasText: 'Saved changes to' })).toBeVisible();
 	const translated = await disk(page, 'album/01.fr.bbl');
+	expect(translated.pages[0].bubbles).toHaveLength(1);
 	expect(translated.pages[0].bubbles[0]).toMatchObject({
 		text: 'Bonjour',
 		lang: 'fr',
 		shape: original.pages[0].bubbles[0].shape
 	});
-	expect(await disk(page)).toEqual(original);
+	expect(await disk(page)).toEqual(source);
 	await page.reload();
 	await expect(page.getByRole('img', { name: 'Comic page' }).first()).toBeVisible();
 	await page.getByRole('button', { name: 'Edit Mode', exact: true }).click();
 	await expect(page.locator('foreignObject')).toHaveText('Bonjour');
+});
+
+test('a page of numeric and punctuation passages skips the translation provider and target overlay', async ({
+	page
+}) => {
+	await setup(page);
+	await page.evaluate(() =>
+		localStorage.setItem(
+			'comix-sense.ai-settings',
+			JSON.stringify({ url: 'https://ai.example/v1', model: 'test' })
+		)
+	);
+	await writeDocuments(page, {
+		'album/album.en.bbl': {
+			...original,
+			pages: [{ ...original.pages[0], bubbles: [bubble('４２!'), bubble('?!')] }, original.pages[1]]
+		}
+	});
+	let requests = 0;
+	await page.route('https://ai.example/v1/chat/completions', (route) => {
+		requests++;
+		return route.abort();
+	});
+	await page.getByRole('button', { name: 'Translate', exact: true }).click();
+	await page
+		.getByRole('dialog', { name: 'Translate page', exact: true })
+		.getByRole('button', { name: 'OK', exact: true })
+		.click();
+	await expect(page.getByRole('status').filter({ hasText: 'Nothing to translate' })).toBeVisible();
+	expect(requests).toBe(0);
+	await expect(page.locator('foreignObject')).toHaveText(['４２!', '?!']);
+	expect(await disk(page, 'album/01.fr.bbl')).toBeNull();
 });
 
 test('independent text and mask editing, whole movement, relinking and persistence', async ({

@@ -33,6 +33,13 @@ npm run build
 
 Browser tests use deterministic local files through a simulated directory picker, exercising the actual reader and editor. On Windows they use installed Microsoft Edge by default; set `PLAYWRIGHT_CHANNEL=chromium` to use Playwright's Chromium instead. On Linux, CI installs Chromium with `npx playwright install --with-deps chromium`.
 
+## Offline vision replay
+
+See [Offline vision replay](vision-pilot.md) for paired recorded translation,
+source-only grouping export, synthetic rehearsal, and local preservation checks.
+Run `npm run test:vision-pilot` for its synthetic suite. These tools do not contact
+an AI provider or add image-based grouping to the reader.
+
 ## Building
 
 ```bash
