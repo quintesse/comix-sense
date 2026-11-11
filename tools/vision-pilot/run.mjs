@@ -2,13 +2,12 @@ import {
 	existsSync,
 	copyFileSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
 	writeFileSync,
 	realpathSync,
 	constants
 } from 'node:fs';
-import { dirname, resolve, relative, extname, isAbsolute } from 'node:path';
+import { dirname, resolve, extname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -26,24 +25,10 @@ import {
 } from './core.mjs';
 import { renderer } from './render.mjs';
 import { typographyAssets, writeAlbumTypography } from './typography.mjs';
+import { privateOutput } from './private-output.mjs';
+export { privateOutput } from './private-output.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-export function privateOutput(parent) {
-	const actual = realpathSync(parent),
-		rel = relative(realpathSync(root), actual);
-	if (
-		!isAbsolute(rel) &&
-		rel !== '..' &&
-		!rel.startsWith('..' + (process.platform === 'win32' ? '\\' : '/'))
-	) {
-		const comics = resolve(root, 'comics');
-		const allowed = relative(comics, actual);
-		if (actual !== comics && (isAbsolute(allowed) || allowed.startsWith('..')))
-			throw new Error('Output inside checkout must be under ignored comics/');
-		execFileSync('git', ['check-ignore', '--quiet', actual], { cwd: root });
-	}
-	return mkdtempSync(resolve(actual, 'attempt-'));
-}
 const dataImage = (file) =>
 	`data:image/${extname(file).slice(1) === 'jpg' ? 'jpeg' : extname(file).slice(1) === 'svg' ? 'svg+xml' : extname(file).slice(1)};base64,${readFileSync(file).toString('base64')}`;
 

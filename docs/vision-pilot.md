@@ -122,3 +122,27 @@ interior detection, connected-balloon review, erasure, or color adjustment.
 
 Synthetic success verifies local replay/export plumbing and preservation checks;
 it does not establish grouping quality or translation quality on genuine pages.
+
+## Source evidence diagnostics
+
+Source preparation also writes `source-request.json` and `freeze.json`, sealing hashes
+for the manifest, request, image, and OCR input. Replay checks the seal and requires
+the reconstructed request to match it. Legacy preparations without a freeze remain
+replayable using the manifest's image and OCR hashes.
+
+Use `npm run diagnose:vision-pilot-source -- MANIFEST RESULT_DIRECTORY OUTPUT_PARENT`
+to create a read-only HTML and JSON projection of raw memberships, exclusions, and
+coverage. An adjacent `freeze.json` is discovered automatically; an explicit form is
+`MANIFEST FREEZE RESULT_DIRECTORY OUTPUT_PARENT`. Diagnostics retain the saved report
+status and structural-validation result, and never repair or approve a response.
+They embed original artwork and OCR text, so treat the output as private evidence.
+The offline tests include synthetic rejected responses and tampering checks; they do
+not establish grouping quality on genuine pages.
+
+The human-reviewed page 20 membership regression can be scored offline with
+`node tools/vision-pilot/source-page20-regression.mjs REQUEST_JSON RESPONSE_JSON`.
+It requires the reviewed OCR fingerprint, reports the independent grouping,
+coverage, and uniqueness checks, and does not feed results into replay. Exit code 0
+means the reviewed expectations pass, 1 means the score fails, and 2 means the
+inputs or command are invalid. Its exact page-specific expectations are regression
+fixtures only, never production decisions.

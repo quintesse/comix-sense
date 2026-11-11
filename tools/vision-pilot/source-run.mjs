@@ -2,6 +2,8 @@
 import { copyFileSync, constants, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
+import { sourceEvidence } from './source-evidence.mjs';
 import { hash, json, save, wordsFromBbl } from './core.mjs';
 import {
 	sourceRequest,
@@ -41,6 +43,11 @@ export function prepareSource(image, ocr, sourceLanguage, parent, imageSize) {
 	const request = sourceRequest(manifest, page, imageFor(page));
 	save(resolve(out, 'manifest.json'), manifest);
 	save(resolve(out, 'source-request.json'), request);
+	save(resolve(out, 'freeze.json'), {
+		manifestSha256: hash(resolve(out, 'manifest.json')),
+		requestSha256: hash(resolve(out, 'source-request.json')),
+		inputHashes: { image: page.imageSha256, ocr: page.ocrSha256 }
+	});
 	return out;
 }
 function loadPage(manifest) {
@@ -65,13 +72,14 @@ function loadPage(manifest) {
 const imageFor = (p) => ({ path: p.image, sha256: p.imageSha256, size: p.imageSize });
 
 export async function runSource(manifestFile, recordingsFile, parent) {
-	const manifest = json(manifestFile),
+	const evidence = sourceEvidence(manifestFile);
+	const manifest = evidence.manifest,
 		page = loadPage(manifest);
 	const request = sourceRequest(manifest, page, imageFor(page));
+	if (evidence.frozen && !isDeepStrictEqual(request, json(evidence.requestFile)))
+		throw new Error('Frozen source request differs from implementation; prepare a new experiment');
 	const out = privateOutput(parent);
-	const inputs = new Map(
-		[manifestFile, recordingsFile, page.image, page.ocr].map((f) => [f, hash(f)])
-	);
+	const inputs = new Map([...evidence.hashes, [recordingsFile, hash(recordingsFile)]]);
 	const report = {
 		stage: manifest.stage,
 		mode: 'offline-replay',
