@@ -94,7 +94,7 @@ body{margin:0;font:16px system-ui;background:#eee;color:#17202b}header{padding:.
 }
 
 /** Update presentation only. Reads saved geometry; never reruns detection or lettering. */
-export function refreshComparison(output, name = 'source', showBounds = true) {
+export function refreshComparison(output, destination, name = 'source', showBounds = true) {
 	if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('Invalid saved render name');
 	const html = readFileSync(resolve(output, name + '.html'), 'utf8');
 	const match = html.match(/window\.pilot=(.*?)<\/script>/s);
@@ -103,7 +103,7 @@ export function refreshComparison(output, name = 'source', showBounds = true) {
 	const spaceFile = resolve(output, name + '.fitter-space.json');
 	const spaces = JSON.parse(readFileSync(spaceFile, 'utf8'));
 	const image = `data:image/png;base64,${readFileSync(resolve(output, name + '.review.png')).toString('base64')}`;
-	const file = resolve(output, 'comparison.html');
+	const file = resolve(destination);
 	writeFileSync(
 		file,
 		comparisonHtml({
@@ -114,13 +114,16 @@ export function refreshComparison(output, name = 'source', showBounds = true) {
 			target: props.bubbles[0]?.lang ?? 'und',
 			spaces,
 			showBounds
-		})
+		}),
+		{ flag: 'wx' }
 	);
 	return file;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-	if (process.argv.length !== 3)
-		throw new Error('Usage: node tools/vision-pilot/comparison.mjs SAVED_SOURCE_ATTEMPT_DIRECTORY');
-	console.log(refreshComparison(resolve(process.argv[2])));
+	if (process.argv.length !== 4)
+		throw new Error(
+			'Usage: node tools/vision-pilot/comparison.mjs SAVED_SOURCE_ATTEMPT_DIRECTORY NEW_COMPARISON_HTML'
+		);
+	console.log(refreshComparison(resolve(process.argv[2]), resolve(process.argv[3])));
 }

@@ -138,7 +138,8 @@ test('presentation refresh uses saved masks/candidates and leaves evidence and r
 		resolve(dir, p)
 	);
 	const before = paths.map((p) => readFileSync(p, 'utf8'));
-	refreshComparison(dir);
+	const first = resolve(dir, 'comparison.html');
+	refreshComparison(dir, first);
 	assert.deepEqual(JSON.parse(readFileSync(resolve(dir, 'source.fitter-space.json'))), spaces);
 	assert.deepEqual(
 		paths.map((p) => readFileSync(p, 'utf8')),
@@ -152,8 +153,8 @@ test('presentation refresh uses saved masks/candidates and leaves evidence and r
 		readFileSync(resolve(dir, 'comparison.html'), 'utf8'),
 		/id="selected-layout"[^>]*checked/
 	);
-	refreshComparison(dir, 'source', false);
-	assert.ok(
-		!/id="available-space"[^>]*checked/.test(readFileSync(resolve(dir, 'comparison.html'), 'utf8'))
-	);
+	const second = resolve(dir, 'comparison-without-bounds.html');
+	refreshComparison(dir, second, 'source', false);
+	assert.ok(!/id="available-space"[^>]*checked/.test(readFileSync(second, 'utf8')));
+	assert.throws(() => refreshComparison(dir, first), /exist/i);
 });

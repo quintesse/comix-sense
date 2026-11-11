@@ -24,7 +24,8 @@
 		"replay:vision-pilot": "node --import ./tools/merge-eval/register.mjs tools/vision-pilot/run.mjs",
 		"rehearse:vision-pilot": "node --import ./tools/merge-eval/register.mjs tools/vision-pilot/demo.mjs",
 		"source:vision-pilot": "node --import ./tools/merge-eval/register.mjs tools/vision-pilot/source-run.mjs",
-		"diagnose:vision-pilot-source": "node tools/vision-pilot/source-diagnostic.mjs"
+		"diagnose:vision-pilot-source": "node tools/vision-pilot/source-diagnostic.mjs",
+		"review:vision-artifacts": "node tools/vision-pilot/artifact-review.mjs"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.64.1",

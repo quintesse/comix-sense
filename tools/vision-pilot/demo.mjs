@@ -6,6 +6,7 @@ import { run } from './run.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
+import { artifactReview } from './artifact-review.mjs';
 
 export async function demo(parent) {
 	const fixture = mkdtempSync(resolve(parent, 'synthetic-'));
@@ -125,6 +126,43 @@ export async function demo(parent) {
 	assert.equal(success.report.status, 'complete');
 	assert.equal(success.report.inputsUnchanged, true);
 	assert.equal(success.report.pages[0].methods.vision.parsedBubbles, 1);
+	const reviewManifest = resolve(fixture, 'artifact-review.json');
+	save(reviewManifest, {
+		schemaVersion: 1,
+		title: 'Synthetic saved-artifact review',
+		pages: [
+			{
+				id: 'invented',
+				label: 'Invented page',
+				width: 600,
+				height: 450,
+				note: 'Synthetic plumbing demonstration; not evidence of comic quality.',
+				variants: [
+					{ id: 'original', label: 'Original synthetic artwork', image: 'invented.png' },
+					{
+						id: 'baseline',
+						label: 'Saved baseline rendering',
+						image: resolve(success.out, 'invented-baseline.review.png')
+					},
+					{
+						id: 'vision',
+						label: 'Saved recorded-response rendering',
+						image: resolve(success.out, 'invented-vision.review.png')
+					}
+				],
+				passages: [
+					{
+						id: 'speech',
+						label: 'Synthetic speech balloon',
+						view: [20, 20, 390, 180],
+						note: 'The crop and labels are manually authored synthetic review metadata.',
+						provenance: 'synthetic-manual'
+					}
+				]
+			}
+		]
+	});
+	const savedArtifactReview = artifactReview(reviewManifest, parent);
 	const bad = structuredClone(records);
 	bad['invented:vision'].value.passages[0].wordIds.pop();
 	bad['invented:vision'].value.passages[0].tokens.pop();
@@ -150,6 +188,7 @@ export async function demo(parent) {
 		success: success.out,
 		rejected: rejected.out,
 		budgetRefusal: refused.out,
+		savedArtifactReview,
 		checks: [
 			'both workflows rendered',
 			'ordinary BBL parsed by production parser',

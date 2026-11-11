@@ -28,6 +28,10 @@ of an omitted OCR ID, and a simulated budget refusal before recorded dispatch.
 Tests also exercise source-only export, complete token accounting, filtering,
 fonts, fitting, and comparison controls.
 
+For a generic read-only gallery of already generated images, its manifest format,
+and a clearly qualified record of the historical vision findings, see
+[Offline visual review tooling and research record](vision-review-tooling.md).
+
 Open the successful attempt's `index.html` for the paired review. Each comparison
 shows the original and rendered page, with independent fitting-space, selected-layout,
 and original-size controls. Reports keep the A/B method key separately. The
